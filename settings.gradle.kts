@@ -14,5 +14,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "CreditCardTracker"
+rootProject.name = "Shuaji"
 include(":app")

@@ -1,0 +1,156 @@
+package com.shuaji.cards.data.local
+
+import android.content.Context
+import androidx.room.Database
+import androidx.room.Room
+import androidx.room.RoomDatabase
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
+
+@Database(
+    entities = [CardEntity::class, TransactionEntity::class, CardFolderEntity::class],
+    version = 4,
+    exportSchema = false,
+)
+abstract class AppDatabase : RoomDatabase() {
+    abstract fun cardDao(): CardDao
+
+    abstract fun transactionDao(): TransactionDao
+
+    abstract fun cardFolderDao(): CardFolderDao
+
+    companion object {
+        @Volatile
+        private var instance: AppDatabase? = null
+
+        /**
+         * v1 → v2：新增卡面来源、卡组织、朝向三列。
+         * 旧数据的 image_source_type 默认为 USER（兼容以前的上传图片卡面），
+         * card_orientation 默认为 LANDSCAPE（标准横版卡片）。
+         *
+         * 注：v1.0 时代主表叫 `credit_cards`，MIGRATION_1_2 是从 v1 升上来的
+         * 老用户会执行到的路径，必须保留旧表名。v1.3.4 起新表名才叫 `cards`。
+         */
+        private val MIGRATION_1_2 =
+            object : Migration(1, 2) {
+                override fun migrate(db: SupportSQLiteDatabase) {
+                    db.execSQL(
+                        "ALTER TABLE credit_cards ADD COLUMN image_source_type TEXT NOT NULL DEFAULT 'USER'",
+                    )
+                    db.execSQL(
+                        "ALTER TABLE credit_cards ADD COLUMN image_provider_key TEXT",
+                    )
+                    db.execSQL(
+                        "ALTER TABLE credit_cards ADD COLUMN card_orientation TEXT NOT NULL DEFAULT 'LANDSCAPE'",
+                    )
+                }
+            }
+
+        /**
+         * v2 → v3：新增「文件夹」概念。
+         * 1. 新建 card_folders 表
+         * 2. credit_cards 增加 folder_id 列（可空，默认 NULL 即未分类）
+         *
+         * 关键：表结构必须**逐字符匹配** Room kapt 生成的 schema。
+         * Room 会在 onValidateSchema 里通过 TableInfo.equals 对比：
+         * - icon_key / sort_order 在 @ColumnInfo 里没有 defaultValue
+         *   ⇒ 生成的 SQL 是 `icon_key TEXT NOT NULL`（无 DEFAULT）
+         *   ⇒ 迁移脚本也不能加 DEFAULT 'folder' / DEFAULT 0
+         * - credit_cards 没在 @Entity(indices=...) 声明索引
+         *   ⇒ Room 不期望 index_credit_cards_folder_id，迁移不要建这个索引
+         * 否则 TableInfo.equals 返回 false、validateSchema 失败，
+         * 在某些设备上 fallbackToDestructiveMigration 不彻底会 IllegalStateException。
+         *
+         * 注：v1.3.4 前主表叫 `credit_cards`，本迁移针对的是从老版本升上来的用户，
+         *     必须保留旧表名。
+         */
+        private val MIGRATION_2_3 =
+            object : Migration(2, 3) {
+                override fun migrate(db: SupportSQLiteDatabase) {
+                    db.execSQL(
+                        """
+                        CREATE TABLE IF NOT EXISTS `card_folders` (
+                            `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                            `name` TEXT NOT NULL,
+                            `color_argb` INTEGER NOT NULL,
+                            `icon_key` TEXT NOT NULL,
+                            `sort_order` INTEGER NOT NULL,
+                            `created_at_millis` INTEGER NOT NULL
+                        )
+                        """.trimIndent(),
+                    )
+                    db.execSQL(
+                        "ALTER TABLE `credit_cards` ADD COLUMN `folder_id` INTEGER",
+                    )
+                }
+            }
+
+        /**
+         * v3 → v4：修复 v1.3.0 留下的坏 schema。
+         *
+         * v1.3.0 的 MIGRATION_2_3 写错了：在 `card_folders` 上加了
+         * `DEFAULT 'folder'` / `DEFAULT 0`、在 `credit_cards.folder_id` 上
+         * 多建了一个 Room 不期望的索引。Room kapt 生成的 schema 跟它对不上，
+         * v1.3.0 启动时 fallbackToDestructiveMigration 触发，把全表清空重建。
+         *
+         * 这一次：
+         * - DROP 坏 schema 的 `card_folders` 表（v1.3.0 留下的，里面没数据）
+         * - 用正确 schema 重建
+         * - DROP Room 不期望的多余索引
+         * - **`credit_cards` 表本身完全不动**，里面历史卡片保留
+         *
+         * 注：本迁移针对老版本（主表叫 `credit_cards`）的升级路径，保留旧表名。
+         */
+        private val MIGRATION_3_4 =
+            object : Migration(3, 4) {
+                override fun migrate(db: SupportSQLiteDatabase) {
+                    // 1. 删多余索引（如果存在）
+                    db.execSQL("DROP INDEX IF EXISTS `index_credit_cards_folder_id`")
+                    // 2. 删坏 schema 的 card_folders 表
+                    db.execSQL("DROP TABLE IF EXISTS `card_folders`")
+                    // 3. 用正确 schema 重建 card_folders
+                    db.execSQL(
+                        """
+                        CREATE TABLE IF NOT EXISTS `card_folders` (
+                            `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                            `name` TEXT NOT NULL,
+                            `color_argb` INTEGER NOT NULL,
+                            `icon_key` TEXT NOT NULL,
+                            `sort_order` INTEGER NOT NULL,
+                            `created_at_millis` INTEGER NOT NULL
+                        )
+                        """.trimIndent(),
+                    )
+                    // 注意：完全不碰 credit_cards 表，历史卡数据保留
+                }
+            }
+
+        /**
+         * v4 → v5：主表重命名。
+         *
+         * v1.3.4 改类名/包名/项目名时同步把 Room 主表 `credit_cards` 重命名为 `cards`。
+         * 数据完全保留，只是 SQLite 内部对表名做 RENAME。
+         * Foreign key 引用会自动跟随新表名（SQLite RENAME 会更新 sqlite_master 里的引用）。
+         */
+        private val MIGRATION_4_5 =
+            object : Migration(4, 5) {
+                override fun migrate(db: SupportSQLiteDatabase) {
+                    db.execSQL("ALTER TABLE `credit_cards` RENAME TO `cards`")
+                }
+            }
+
+        fun get(context: Context): AppDatabase =
+            instance ?: synchronized(this) {
+                instance ?: Room
+                    .databaseBuilder(
+                        context.applicationContext,
+                        AppDatabase::class.java,
+                        "shuaji.db",
+                    ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+                    // 兜底仍然保留，但写对迁移后这个分支永远走不到
+                    .fallbackToDestructiveMigration(true)
+                    .build()
+                    .also { instance = it }
+            }
+    }
+}

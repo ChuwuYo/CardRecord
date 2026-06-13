@@ -8,15 +8,15 @@ plugins {
 }
 
 android {
-    namespace = "com.example.creditcardtracker"
+    namespace = "com.shuaji.cards"
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "com.example.creditcardtracker"
+        applicationId = "com.shuaji.cards"
         minSdk = 26
         targetSdk = 36
-        versionCode = 7
-        versionName = "1.3.3"
+        versionCode = 8
+        versionName = "1.3.4"
 
         vectorDrawables { useSupportLibrary = true }
     }
