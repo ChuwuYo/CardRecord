@@ -45,14 +45,24 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-/** 横版卡片宽高比（ISO/IEC 7810 ID-1 标准信用卡） */
+/**
+ * ISO/IEC 7810 ID-1 标准信用卡比例：85.60 mm × 53.98 mm ⇒ 长宽比 1.586:1。
+ * 横版（LANDSCAPE）= 宽度/高度 ≈ 1.586。
+ * 竖版（PORTRAIT）= 高度/宽度 ≈ 1.586（同一物理卡片旋转 90°）。
+ *
+ * 之前 PORTRAIT_RATIO 写成 1.6、且 LandscapeCardBody 用了
+ * `heightIn(min = 140.dp)`，导致 grid 模式（cell 宽 ~158dp）下卡片被
+ * 强制拉到 158×140 → 几乎成正方形。这里统一改为 1.586f，并把下限
+ * 放宽到 96dp 让卡片始终是标准长方形比例。
+ */
 private const val LANDSCAPE_RATIO = 1.586f
-
-/** 竖版卡片高宽比 */
-private const val PORTRAIT_RATIO = 1.6f
+private const val PORTRAIT_RATIO = 1.586f
 
 /** 竖版宽度占父容器比例 */
 private const val PORTRAIT_WIDTH_FRACTION = 0.6f
+
+/** 卡面最小可视高度（避免在极窄容器下被压成扁条） */
+private const val CARD_MIN_HEIGHT_DP = 96f
 
 /** 卡面演示用淡灰反光色（当无品牌色时使用） */
 private val DEFAULT_GREY_BASE = 0xFF8A8E96.toInt()
@@ -131,10 +141,11 @@ private fun LandscapeCardBody(
         modifier =
             Modifier
                 .fillMaxWidth()
-                .heightIn(min = 140.dp)
+                .heightIn(min = CARD_MIN_HEIGHT_DP.dp)
                 .clip(MaterialTheme.shapes.extraLarge),
     ) {
-        val height: Dp = (maxWidth / LANDSCAPE_RATIO).coerceAtLeast(140.dp)
+        // 严格按 ISO 7810 ID-1 (1.586:1) 计算高度
+        val height: Dp = (maxWidth / LANDSCAPE_RATIO).coerceAtLeast(CARD_MIN_HEIGHT_DP.dp)
         Box(
             modifier =
                 Modifier
@@ -178,11 +189,12 @@ private fun PortraitCardBody(
         modifier = Modifier.fillMaxWidth(),
         contentAlignment = Alignment.Center,
     ) {
+        // 竖版：width = parent * 0.6，限制在 100..180dp 之间
         val width: Dp =
             (maxWidth * PORTRAIT_WIDTH_FRACTION)
-                .coerceAtMost(220.dp)
-                .coerceAtLeast(140.dp)
-        val height: Dp = (width * PORTRAIT_RATIO).coerceAtMost(360.dp)
+                .coerceIn(100.dp, 180.dp)
+        // 高度严格按 1.586:1 比例
+        val height: Dp = (width * PORTRAIT_RATIO).coerceAtMost(280.dp)
         Box(
             modifier =
                 Modifier

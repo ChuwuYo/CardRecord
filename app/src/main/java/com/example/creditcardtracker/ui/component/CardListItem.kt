@@ -92,13 +92,22 @@ fun CardListItem(
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             // 1. 卡面
+            // - 列表模式（compact=false）：横版卡 88% 宽居中、竖版卡 60% 宽居中
+            //   给两侧留点呼吸空间，整体不显挤
+            // - 网格模式（compact=true）：撑满 cell 宽
             Box(
                 modifier = Modifier.fillMaxWidth(),
                 contentAlignment = Alignment.Center,
             ) {
+                val cardWidthFraction =
+                    when {
+                        compact -> 1f
+                        isPortrait -> 0.6f
+                        else -> 0.88f
+                    }
                 CreditCardVisual(
                     card = card,
-                    modifier = Modifier.fillMaxWidth(if (isPortrait) 0.7f else 1f),
+                    modifier = Modifier.fillMaxWidth(cardWidthFraction),
                 )
             }
 

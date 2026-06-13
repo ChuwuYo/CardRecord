@@ -77,6 +77,7 @@ import com.example.creditcardtracker.data.local.CardOrientation
 import com.example.creditcardtracker.data.local.ImageSourceType
 import com.example.creditcardtracker.ui.ViewModelFactories
 import com.example.creditcardtracker.ui.component.ModernColorPicker
+import com.example.creditcardtracker.ui.component.horizontalEdgeFade
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -611,6 +612,7 @@ private fun CardNetworkPicker(
     onSelect: (CardNetworkProvider) -> Unit,
 ) {
     LazyRow(
+        modifier = Modifier.horizontalEdgeFade(fadeWidth = 28.dp),
         horizontalArrangement = Arrangement.spacedBy(10.dp),
         contentPadding = PaddingValues(vertical = 4.dp),
     ) {
