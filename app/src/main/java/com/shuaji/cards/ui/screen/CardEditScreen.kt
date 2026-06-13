@@ -77,7 +77,6 @@ import com.shuaji.cards.data.local.CardOrientation
 import com.shuaji.cards.data.local.ImageSourceType
 import com.shuaji.cards.ui.ViewModelFactories
 import com.shuaji.cards.ui.component.ModernColorPicker
-import com.shuaji.cards.ui.component.horizontalEdgeFade
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -612,9 +611,12 @@ private fun CardNetworkPicker(
     onSelect: (CardNetworkProvider) -> Unit,
 ) {
     LazyRow(
-        modifier = Modifier.horizontalEdgeFade(fadeWidth = 28.dp),
+        // 用 contentPadding 留出首尾边距，让最后一项自然"露半边"作为可滑动 hint
+        // —— 官方推荐做法（Compose sample 标准 pattern），比 drawWithContent+BlendMode.DstIn
+        //     的渐隐 mask 干净：不会闪烁、不会卡顿、也不会跟主题背景色冲突
+        modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(10.dp),
-        contentPadding = PaddingValues(vertical = 4.dp),
+        contentPadding = PaddingValues(horizontal = 4.dp, vertical = 4.dp),
     ) {
         items(CardNetworkProvider.entries) { network ->
             val selected = selectedKey == network.key
