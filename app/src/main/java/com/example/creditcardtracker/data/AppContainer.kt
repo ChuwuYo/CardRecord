@@ -15,5 +15,6 @@ class DefaultAppContainer(
         CreditCardRepository(
             cardDao = database.creditCardDao(),
             transactionDao = database.transactionDao(),
+            folderDao = database.cardFolderDao(),
         )
 }

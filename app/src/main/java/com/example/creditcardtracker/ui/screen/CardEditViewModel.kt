@@ -4,13 +4,16 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.creditcardtracker.data.CardNetworkProvider
 import com.example.creditcardtracker.data.CreditCardRepository
+import com.example.creditcardtracker.data.local.CardFolderEntity
 import com.example.creditcardtracker.data.local.CardOrientation
 import com.example.creditcardtracker.data.local.CreditCardEntity
 import com.example.creditcardtracker.data.local.ImageSourceType
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -32,6 +35,7 @@ data class CardEditUiState(
     val imageProviderKey: String? = CardNetworkProvider.VISA.key,
     val imageUri: String? = null,
     val cardOrientation: CardOrientation = CardOrientation.LANDSCAPE,
+    val folderId: Long? = null,
     val isLoading: Boolean = false,
     val saved: Boolean = false,
     val editingId: Long? = null,
@@ -45,6 +49,12 @@ class CardEditViewModel(
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(CardEditUiState())
     val uiState: StateFlow<CardEditUiState> = _uiState.asStateFlow()
+
+    /** 供编辑表单下拉选择使用 */
+    val folders: StateFlow<List<CardFolderEntity>> =
+        repository
+            .observeFolders()
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     /**
      * 重置表单到初始状态。新建卡片时调用。
@@ -82,6 +92,7 @@ class CardEditViewModel(
                             runCatching {
                                 CardOrientation.valueOf(entity.cardOrientation)
                             }.getOrDefault(CardOrientation.LANDSCAPE),
+                        folderId = entity.folderId,
                         editingId = entity.id,
                         isLoading = false,
                     )
@@ -103,6 +114,13 @@ class CardEditViewModel(
             val required = state.requiredCount.toInt()
             val current = state.currentCount.toIntOrNull()?.coerceIn(0, required) ?: 0
             val existingId = state.editingId
+            // 保留旧的 createdAtMillis / cycleStartMillis（编辑时）
+            val preserved =
+                if (existingId != null) {
+                    repository.observeCard(existingId).first()
+                } else {
+                    null
+                }
             val entity =
                 CreditCardEntity(
                     id = existingId ?: 0L,
@@ -113,13 +131,15 @@ class CardEditViewModel(
                     currentCount = current,
                     validUntilMillis = state.validUntilMillis,
                     nextDueDateMillis = state.nextDueDateMillis,
-                    cycleStartMillis = System.currentTimeMillis(),
+                    cycleStartMillis = preserved?.cycleStartMillis ?: System.currentTimeMillis(),
                     colorArgb = state.colorArgb,
                     note = state.note,
                     imageUri = state.imageUri,
                     imageSourceType = state.imageSourceType.name,
                     imageProviderKey = state.imageProviderKey,
                     cardOrientation = state.cardOrientation.name,
+                    folderId = state.folderId,
+                    createdAtMillis = preserved?.createdAtMillis ?: System.currentTimeMillis(),
                 )
             val id = repository.upsertCard(entity)
             _uiState.update { it.copy(saved = true, editingId = if (existingId == null) id else existingId) }

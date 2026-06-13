@@ -8,6 +8,7 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.example.creditcardtracker.ui.screen.CardDetailScreen
 import com.example.creditcardtracker.ui.screen.CardEditScreen
+import com.example.creditcardtracker.ui.screen.CardFolderScreen
 import com.example.creditcardtracker.ui.screen.CardListScreen
 
 object Routes {
@@ -15,6 +16,7 @@ object Routes {
     const val CREATE = "create"
     const val EDIT = "edit/{cardId}"
     const val DETAIL = "detail/{cardId}"
+    const val FOLDERS = "folders"
 
     fun edit(cardId: Long?) = if (cardId == null) CREATE else "edit/$cardId"
 
@@ -29,6 +31,7 @@ fun CreditCardApp() {
             CardListScreen(
                 onAdd = { navController.navigate(Routes.CREATE) },
                 onOpen = { id -> navController.navigate(Routes.detail(id)) },
+                onOpenFolders = { navController.navigate(Routes.FOLDERS) },
             )
         }
         composable(Routes.CREATE) {
@@ -56,6 +59,11 @@ fun CreditCardApp() {
                 cardId = id,
                 onBack = { navController.popBackStack() },
                 onEdit = { navController.navigate(Routes.edit(id)) },
+            )
+        }
+        composable(Routes.FOLDERS) {
+            CardFolderScreen(
+                onBack = { navController.popBackStack() },
             )
         }
     }

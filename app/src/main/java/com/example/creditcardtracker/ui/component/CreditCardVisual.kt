@@ -1,11 +1,7 @@
 package com.example.creditcardtracker.ui.component
 
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -24,9 +20,7 @@ import androidx.compose.material.icons.filled.CreditCard
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ProgressIndicatorDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -64,7 +58,10 @@ private const val PORTRAIT_WIDTH_FRACTION = 0.6f
 private val DEFAULT_GREY_BASE = 0xFF8A8E96.toInt()
 
 /**
- * 信用卡视觉组件：渐变 + 反光 + 进度条 + 卡面图片。
+ * 信用卡视觉组件：渐变 + 反光 + 卡面图片。
+ *
+ * 简化为「只画卡面」，不再附带进度条 / 笔数 / 日期——
+ * 那些由列表项 [CardListItem] 在卡外侧的信息区展示。
  *
  * 横版 LANDSCAPE：宽高比 ≈ 1.586 : 1
  * 竖版 PORTRAIT：高宽比 ≈ 1.6 : 1，宽度自动取父级 60% 居中
@@ -78,19 +75,10 @@ private val DEFAULT_GREY_BASE = 0xFF8A8E96.toInt()
 fun CreditCardVisual(
     card: CreditCardEntity,
     modifier: Modifier = Modifier,
+    showNumber: Boolean = true,
+    showBank: Boolean = true,
+    showName: Boolean = true,
 ) {
-    val progress =
-        if (card.requiredCount > 0) {
-            card.currentCount.toFloat() / card.requiredCount.toFloat()
-        } else {
-            0f
-        }
-    val animatedProgress by animateFloatAsState(
-        targetValue = progress.coerceIn(0f, 1f),
-        animationSpec = spring(dampingRatio = Spring.DampingRatioLowBouncy),
-        label = "progress",
-    )
-
     val network = CardNetworkProvider.fromKey(card.imageProviderKey)
     val sourceType =
         runCatching { ImageSourceType.valueOf(card.imageSourceType) }
@@ -111,77 +99,20 @@ fun CreditCardVisual(
                     card = card,
                     network = network,
                     sourceType = sourceType,
+                    showNumber = showNumber,
+                    showBank = showBank,
+                    showName = showName,
                 )
             CardOrientation.PORTRAIT ->
                 PortraitCardBody(
                     card = card,
                     network = network,
                     sourceType = sourceType,
+                    showNumber = showNumber,
+                    showBank = showBank,
+                    showName = showName,
                 )
         }
-    }
-
-    Spacer(Modifier.height(12.dp))
-
-    // 进度：x / y
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(
-            "${card.currentCount} / ${card.requiredCount}",
-            style = MaterialTheme.typography.headlineSmall,
-            color = MaterialTheme.colorScheme.onSurface,
-            fontWeight = FontWeight.Black,
-        )
-        Text(
-            if (card.currentCount >= card.requiredCount) {
-                "已达标"
-            } else {
-                "还需 ${card.requiredCount - card.currentCount} 笔"
-            },
-            style = MaterialTheme.typography.labelMedium,
-            color =
-                if (card.currentCount >= card.requiredCount) {
-                    MaterialTheme.colorScheme.secondary
-                } else {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                },
-        )
-    }
-    Spacer(Modifier.height(6.dp))
-    LinearProgressIndicator(
-        progress = { animatedProgress },
-        modifier =
-            Modifier
-                .fillMaxWidth()
-                .height(8.dp)
-                .clip(MaterialTheme.shapes.extraSmall),
-        color =
-            if (card.currentCount >= card.requiredCount) {
-                MaterialTheme.colorScheme.secondary
-            } else {
-                MaterialTheme.colorScheme.primary
-            },
-        trackColor = MaterialTheme.colorScheme.surfaceVariant,
-        strokeCap = ProgressIndicatorDefaults.LinearStrokeCap,
-    )
-
-    if (card.nextDueDateMillis != null) {
-        Spacer(Modifier.height(8.dp))
-        Text(
-            "下次年费结算：" + formatDate(card.nextDueDateMillis),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-    } else if (card.validUntilMillis != null) {
-        Spacer(Modifier.height(8.dp))
-        Text(
-            "卡片有效至：" + formatDate(card.validUntilMillis),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
     }
 }
 
@@ -192,15 +123,18 @@ private fun LandscapeCardBody(
     card: CreditCardEntity,
     network: CardNetworkProvider?,
     sourceType: ImageSourceType,
+    showNumber: Boolean,
+    showBank: Boolean,
+    showName: Boolean,
 ) {
     BoxWithConstraints(
         modifier =
             Modifier
                 .fillMaxWidth()
-                .heightIn(min = 168.dp)
+                .heightIn(min = 140.dp)
                 .clip(MaterialTheme.shapes.extraLarge),
     ) {
-        val height: Dp = (maxWidth / LANDSCAPE_RATIO).coerceAtLeast(168.dp)
+        val height: Dp = (maxWidth / LANDSCAPE_RATIO).coerceAtLeast(140.dp)
         Box(
             modifier =
                 Modifier
@@ -220,9 +154,12 @@ private fun LandscapeCardBody(
                     Modifier
                         .align(Alignment.BottomStart)
                         .fillMaxWidth()
-                        .padding(20.dp),
+                        .padding(16.dp),
                 card = card,
                 network = network,
+                showNumber = showNumber,
+                showBank = showBank,
+                showName = showName,
             )
         }
     }
@@ -233,6 +170,9 @@ private fun PortraitCardBody(
     card: CreditCardEntity,
     network: CardNetworkProvider?,
     sourceType: ImageSourceType,
+    showNumber: Boolean,
+    showBank: Boolean,
+    showName: Boolean,
 ) {
     BoxWithConstraints(
         modifier = Modifier.fillMaxWidth(),
@@ -240,9 +180,9 @@ private fun PortraitCardBody(
     ) {
         val width: Dp =
             (maxWidth * PORTRAIT_WIDTH_FRACTION)
-                .coerceAtMost(240.dp)
-                .coerceAtLeast(160.dp)
-        val height: Dp = (width * PORTRAIT_RATIO).coerceAtMost(380.dp)
+                .coerceAtMost(220.dp)
+                .coerceAtLeast(140.dp)
+        val height: Dp = (width * PORTRAIT_RATIO).coerceAtMost(360.dp)
         Box(
             modifier =
                 Modifier
@@ -263,15 +203,18 @@ private fun PortraitCardBody(
                     Modifier
                         .align(Alignment.BottomStart)
                         .fillMaxWidth()
-                        .padding(16.dp),
+                        .padding(14.dp),
                 card = card,
                 network = network,
+                showNumber = showNumber,
+                showBank = showBank,
+                showName = showName,
             )
         }
     }
 }
 
-// ── 卡面背景（核心：决定用什么底色 + 反光） ───────────────────────
+// ── 卡面背景（核心：决定用什么底色 + 反光） ────────────────────────
 
 /**
  * 根据卡面来源返回卡面背景 brush：
@@ -367,52 +310,60 @@ private fun CardContent(
     modifier: Modifier,
     card: CreditCardEntity,
     network: CardNetworkProvider?,
+    showNumber: Boolean,
+    showBank: Boolean,
+    showName: Boolean,
 ) {
     Column(modifier = modifier) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(
-                imageVector = Icons.Default.CreditCard,
-                contentDescription = null,
-                tint = Color.White.copy(alpha = 0.9f),
-            )
-            Spacer(Modifier.width(8.dp))
+        if (showBank) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.Default.CreditCard,
+                    contentDescription = null,
+                    tint = Color.White.copy(alpha = 0.9f),
+                    modifier = Modifier.size(14.dp),
+                )
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    card.bank.ifBlank { "—" },
+                    style = MaterialTheme.typography.labelMedium,
+                    color = Color.White.copy(alpha = 0.85f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                if (network != null) {
+                    Spacer(Modifier.width(6.dp))
+                    Box(
+                        modifier =
+                            Modifier
+                                .background(
+                                    Color.White.copy(alpha = 0.18f),
+                                    MaterialTheme.shapes.extraSmall,
+                                ).padding(horizontal = 5.dp, vertical = 1.dp),
+                    ) {
+                        Text(
+                            network.displayName,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color.White,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+            }
+            Spacer(Modifier.height(4.dp))
+        }
+        if (showName) {
             Text(
-                card.bank.ifBlank { "—" },
-                style = MaterialTheme.typography.labelLarge,
-                color = Color.White.copy(alpha = 0.85f),
+                card.name.ifBlank { "未命名卡片" },
+                style = MaterialTheme.typography.titleLarge,
+                color = Color.White,
+                fontWeight = FontWeight.ExtraBold,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            if (network != null) {
-                Spacer(Modifier.width(8.dp))
-                Box(
-                    modifier =
-                        Modifier
-                            .background(
-                                Color.White.copy(alpha = 0.18f),
-                                MaterialTheme.shapes.extraSmall,
-                            ).padding(horizontal = 6.dp, vertical = 2.dp),
-                ) {
-                    Text(
-                        network.displayName,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = Color.White,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-            }
         }
-        Spacer(Modifier.height(8.dp))
-        Text(
-            card.name.ifBlank { "未命名卡片" },
-            style = MaterialTheme.typography.headlineMedium,
-            color = Color.White,
-            fontWeight = FontWeight.ExtraBold,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-        if (card.cardNumberMasked.isNotBlank()) {
+        if (showNumber && card.cardNumberMasked.isNotBlank()) {
             Spacer(Modifier.height(2.dp))
             Text(
                 card.cardNumberMasked,
@@ -423,6 +374,12 @@ private fun CardContent(
             )
         }
     }
+}
+
+/** 仅提取卡号后四位（脱敏显示） */
+internal fun lastFourDigits(masked: String): String {
+    val digits = masked.filter(Char::isDigit)
+    return if (digits.length >= 4) digits.takeLast(4) else digits.ifBlank { "****" }
 }
 
 private fun formatDate(millis: Long): String {

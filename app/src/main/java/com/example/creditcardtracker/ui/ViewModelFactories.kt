@@ -9,6 +9,7 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.example.creditcardtracker.CreditCardApp
 import com.example.creditcardtracker.ui.screen.CardEditViewModel
+import com.example.creditcardtracker.ui.screen.CardFolderViewModel
 import com.example.creditcardtracker.ui.screen.CardListViewModel
 
 /**
@@ -22,6 +23,10 @@ object ViewModelFactories {
     val Edit =
         viewModelFactory {
             initializer { CardEditViewModel(app().container.repository) }
+        }
+    val Folders =
+        viewModelFactory {
+            initializer { CardFolderViewModel(app().container.repository) }
         }
 
     private fun CreationExtras.app(): CreditCardApp {

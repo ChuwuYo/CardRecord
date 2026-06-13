@@ -51,6 +51,8 @@ data class CreditCardEntity(
     val imageProviderKey: String? = null,
     @ColumnInfo(name = "card_orientation", defaultValue = "LANDSCAPE")
     val cardOrientation: String = CardOrientation.LANDSCAPE.name,
+    @ColumnInfo(name = "folder_id")
+    val folderId: Long? = null,
     @ColumnInfo(name = "created_at_millis")
     val createdAtMillis: Long = System.currentTimeMillis(),
     @ColumnInfo(name = "archived")

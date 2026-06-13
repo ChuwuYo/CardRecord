@@ -89,6 +89,7 @@ fun CardEditScreen(
 ) {
     val viewModel: CardEditViewModel = viewModel(factory = ViewModelFactories.Edit)
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val folders by viewModel.folders.collectAsStateWithLifecycle()
 
     LaunchedEffect(cardId) {
         if (cardId == null) viewModel.reset() else viewModel.load(cardId)
@@ -260,6 +261,20 @@ fun CardEditScreen(
                 current = state.cardOrientation,
                 onSelect = { o -> viewModel.update { it.copy(cardOrientation = o) } },
             )
+
+            // ── 文件夹 ──
+            if (folders.isNotEmpty()) {
+                Text(
+                    "文件夹",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                FolderPicker(
+                    folders = folders,
+                    currentId = state.folderId,
+                    onSelect = { id -> viewModel.update { it.copy(folderId = id) } },
+                )
+            }
 
             // ── 主题色（自定义调色板） ──
             Text(
@@ -538,6 +553,53 @@ private fun OrientationSelector(
                 },
             ) {
                 Text(label, style = MaterialTheme.typography.labelMedium)
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun FolderPicker(
+    folders: List<com.example.creditcardtracker.data.local.CardFolderEntity>,
+    currentId: Long?,
+    onSelect: (Long?) -> Unit,
+) {
+    val allOptions =
+        remember(folders) {
+            listOf<Pair<Long?, com.example.creditcardtracker.data.local.CardFolderEntity?>>(
+                null to null,
+            ) + folders.map { it.id to it }
+        }
+    SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+        allOptions.forEachIndexed { index, (id, folder) ->
+            val selected = currentId == id
+            SegmentedButton(
+                selected = selected,
+                onClick = { onSelect(id) },
+                shape = SegmentedButtonDefaults.itemShape(index = index, count = allOptions.size),
+                icon = {
+                    if (id == null) {
+                        Icon(Icons.Default.LayersClear, contentDescription = null, modifier = Modifier.size(16.dp))
+                    } else {
+                        Box(
+                            modifier =
+                                Modifier
+                                    .size(14.dp)
+                                    .clip(CircleShape)
+                                    .background(
+                                        androidx.compose.ui.graphics
+                                            .Color(folder!!.colorArgb),
+                                    ),
+                        )
+                    }
+                },
+            ) {
+                Text(
+                    folder?.name ?: "未分类",
+                    style = MaterialTheme.typography.labelMedium,
+                    maxLines = 1,
+                )
             }
         }
     }
