@@ -9,7 +9,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [CreditCardEntity::class, TransactionEntity::class, CardFolderEntity::class],
-    version = 3,
+    version = 4,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -47,28 +47,34 @@ abstract class AppDatabase : RoomDatabase() {
          * v2 → v3：新增「文件夹」概念。
          * 1. 新建 card_folders 表
          * 2. credit_cards 增加 folder_id 列（可空，默认 NULL 即未分类）
-         * 3. 建索引加速按文件夹过滤
+         *
+         * 关键：表结构必须**逐字符匹配** Room kapt 生成的 schema。
+         * Room 会在 onValidateSchema 里通过 TableInfo.equals 对比：
+         * - icon_key / sort_order 在 @ColumnInfo 里没有 defaultValue
+         *   ⇒ 生成的 SQL 是 `icon_key TEXT NOT NULL`（无 DEFAULT）
+         *   ⇒ 迁移脚本也不能加 DEFAULT 'folder' / DEFAULT 0
+         * - credit_cards 没在 @Entity(indices=...) 声明索引
+         *   ⇒ Room 不期望 index_credit_cards_folder_id，迁移不要建这个索引
+         * 否则 TableInfo.equals 返回 false、validateSchema 失败，
+         * 在某些设备上 fallbackToDestructiveMigration 不彻底会 IllegalStateException。
          */
         private val MIGRATION_2_3 =
             object : Migration(2, 3) {
                 override fun migrate(db: SupportSQLiteDatabase) {
                     db.execSQL(
                         """
-                        CREATE TABLE IF NOT EXISTS card_folders (
-                            id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
-                            name TEXT NOT NULL,
-                            color_argb INTEGER NOT NULL,
-                            icon_key TEXT NOT NULL DEFAULT 'folder',
-                            sort_order INTEGER NOT NULL DEFAULT 0,
-                            created_at_millis INTEGER NOT NULL
+                        CREATE TABLE IF NOT EXISTS `card_folders` (
+                            `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                            `name` TEXT NOT NULL,
+                            `color_argb` INTEGER NOT NULL,
+                            `icon_key` TEXT NOT NULL,
+                            `sort_order` INTEGER NOT NULL,
+                            `created_at_millis` INTEGER NOT NULL
                         )
                         """.trimIndent(),
                     )
                     db.execSQL(
-                        "ALTER TABLE credit_cards ADD COLUMN folder_id INTEGER",
-                    )
-                    db.execSQL(
-                        "CREATE INDEX IF NOT EXISTS index_credit_cards_folder_id ON credit_cards(folder_id)",
+                        "ALTER TABLE `credit_cards` ADD COLUMN `folder_id` INTEGER",
                     )
                 }
             }
