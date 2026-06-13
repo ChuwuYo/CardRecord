@@ -26,11 +26,11 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.AccountBox
 import androidx.compose.material.icons.filled.AddPhotoAlternate
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.CreditCard
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.LayersClear
+import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Rotate90DegreesCcw
 import androidx.compose.material.icons.filled.Rotate90DegreesCw
 import androidx.compose.material3.Button
@@ -41,6 +41,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SegmentedButton
@@ -52,6 +53,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberDatePickerState
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -73,21 +75,10 @@ import com.example.creditcardtracker.data.CardNetworkProvider
 import com.example.creditcardtracker.data.local.CardOrientation
 import com.example.creditcardtracker.data.local.ImageSourceType
 import com.example.creditcardtracker.ui.ViewModelFactories
+import com.example.creditcardtracker.ui.component.ModernColorPicker
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-
-private val CardColorPalette =
-    listOf(
-        0xFF0F1F2E.toInt(), // 深夜蓝
-        0xFF0061A4.toInt(), // 钢蓝
-        0xFF00B5A5.toInt(), // 青绿
-        0xFF1F8A4C.toInt(), // 翡翠
-        0xFFFFB300.toInt(), // 琥珀
-        0xFFFF6E6E.toInt(), // 珊瑚
-        0xFF8E24AA.toInt(), // 紫罗兰
-        0xFF424242.toInt(), // 石墨
-    )
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -106,6 +97,8 @@ fun CardEditScreen(
     }
 
     var dateDialogTarget by remember { mutableStateOf<DateField?>(null) }
+    var showColorPicker by remember { mutableStateOf(false) }
+    val colorSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     val imagePicker =
         rememberLauncherForActivityResult(
@@ -156,7 +149,7 @@ fun CardEditScreen(
         ) {
             // ── 卡面来源 ──
             Text(
-                text = "卡面",
+                "卡面",
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -178,10 +171,9 @@ fun CardEditScreen(
                 },
             )
 
-            // 卡组织预设列表
             if (state.imageSourceType == ImageSourceType.PROVIDER) {
                 Text(
-                    text = "选择卡组织",
+                    "选择卡组织",
                     style = MaterialTheme.typography.labelLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -199,7 +191,6 @@ fun CardEditScreen(
                 )
             }
 
-            // 自定义上传
             if (state.imageSourceType == ImageSourceType.USER) {
                 Surface(
                     modifier =
@@ -260,7 +251,7 @@ fun CardEditScreen(
 
             // ── 朝向选择 ──
             Text(
-                text = "卡面朝向",
+                "卡面朝向",
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -269,28 +260,54 @@ fun CardEditScreen(
                 onSelect = { o -> viewModel.update { it.copy(cardOrientation = o) } },
             )
 
-            // ── 主题色 ──
+            // ── 主题色（自定义调色板） ──
             Text(
-                text = "主题色（与卡组织色联动）",
+                "主题色",
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                items(CardColorPalette) { c ->
-                    val selected = state.colorArgb == c
-                    Box(
-                        modifier =
-                            Modifier
-                                .size(if (selected) 44.dp else 36.dp)
-                                .clip(CircleShape)
-                                .background(Color(c))
-                                .clickable { viewModel.update { it.copy(colorArgb = c) } },
-                        contentAlignment = Alignment.Center,
+            Surface(
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .clickable { showColorPicker = true },
+                shape = MaterialTheme.shapes.medium,
+                color = MaterialTheme.colorScheme.surfaceVariant,
+            ) {
+                Row(
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
-                        if (selected) {
-                            Icon(Icons.Default.Check, contentDescription = null, tint = Color.White)
-                        }
+                        Box(
+                            modifier =
+                                Modifier
+                                    .size(36.dp)
+                                    .clip(CircleShape)
+                                    .background(Color(state.colorArgb))
+                                    .border(
+                                        width = 1.dp,
+                                        color = MaterialTheme.colorScheme.outlineVariant,
+                                        shape = CircleShape,
+                                    ),
+                        )
+                        Text(
+                            text = "#%06X".format(state.colorArgb.toLong() and 0xFFFFFFL),
+                            style = MaterialTheme.typography.titleMedium,
+                        )
                     }
+                    Icon(
+                        Icons.Default.Palette,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
             }
 
@@ -428,6 +445,42 @@ fun CardEditScreen(
             DatePicker(state = pickerState)
         }
     }
+
+    // ── 颜色选择器 BottomSheet ──
+    if (showColorPicker) {
+        ModalBottomSheet(
+            onDismissRequest = { showColorPicker = false },
+            sheetState = colorSheetState,
+        ) {
+            Column(modifier = Modifier.padding(20.dp)) {
+                Text(
+                    "选择主题色",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "支持 HSV 色环 + 亮度滑块",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(16.dp))
+                ModernColorPicker(
+                    initialColor = Color(state.colorArgb),
+                    onColorSelected = { c ->
+                        viewModel.update { it.copy(colorArgb = c.toComposeArgb()) }
+                    },
+                )
+                Spacer(Modifier.height(16.dp))
+                Button(
+                    onClick = { showColorPicker = false },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = MaterialTheme.shapes.large,
+                ) { Text("完成") }
+                Spacer(Modifier.height(8.dp))
+            }
+        }
+    }
 }
 
 private enum class DateField { VALID_UNTIL, NEXT_DUE }
@@ -442,7 +495,7 @@ private fun ImageSourceSelector(
 ) {
     val options =
         listOf(
-            Triple(ImageSourceType.PROVIDER, "预设卡组织", Icons.Default.CreditCard),
+            Triple(ImageSourceType.PROVIDER, "预设卡组织", Icons.Default.AccountBox),
             Triple(ImageSourceType.USER, "自定义上传", Icons.Default.Image),
             Triple(ImageSourceType.NONE, "纯色卡", Icons.Default.LayersClear),
         )
@@ -530,16 +583,23 @@ private fun CardNetworkPicker(
                         ).clickable { onSelect(network) }
                         .padding(8.dp),
             ) {
-                Image(
-                    painter = painterResource(network.logoRes),
-                    contentDescription = network.displayName,
-                    contentScale = ContentScale.Fit,
+                // 关键改动：白底 + 品牌色 logo（simple-icons 是单色，已自带品牌色）
+                Box(
                     modifier =
                         Modifier
                             .fillMaxWidth()
                             .height(56.dp)
-                            .clip(MaterialTheme.shapes.small),
-                )
+                            .clip(MaterialTheme.shapes.small)
+                            .background(Color.White),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Image(
+                        painter = painterResource(network.logoRes),
+                        contentDescription = network.displayName,
+                        contentScale = ContentScale.Fit,
+                        modifier = Modifier.padding(6.dp),
+                    )
+                }
                 Spacer(Modifier.height(4.dp))
                 Text(
                     network.displayName,
@@ -604,3 +664,11 @@ private fun formatDate(millis: Long): String {
     val fmt = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
     return fmt.format(Date(millis))
 }
+
+private fun Color.toComposeArgb(): Int =
+    android.graphics.Color.argb(
+        (alpha * 255).toInt(),
+        (red * 255).toInt(),
+        (green * 255).toInt(),
+        (blue * 255).toInt(),
+    )

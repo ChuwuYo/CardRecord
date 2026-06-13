@@ -70,6 +70,9 @@ dependencies {
     implementation("androidx.datastore:datastore-preferences:1.1.1")
     implementation("io.coil-kt.coil3:coil-compose:3.4.0")
     implementation("io.coil-kt.coil3:coil-network-okhttp:3.4.0")
+    // 现代化调色板：HSV 圆形色环 + 多滑动条（BrightnessSlider / AlphaSlider / SaturationSlider）
+    // 1.1.2 是 Maven Central 上最新的 Kotlin 2.0 编译版本（Kotlin 2.1.20 兼容）
+    implementation("com.github.skydoves:colorpicker-compose:1.1.2")
     debugImplementation("androidx.compose.ui:ui-tooling")
     kapt("androidx.room:room-compiler:2.7.2")
 }
