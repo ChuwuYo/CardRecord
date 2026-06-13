@@ -625,7 +625,7 @@ private fun CardNetworkPicker(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 modifier =
                     Modifier
-                        .width(110.dp)
+                        .width(120.dp)
                         .clip(MaterialTheme.shapes.medium)
                         .background(
                             if (selected) {
@@ -650,7 +650,7 @@ private fun CardNetworkPicker(
                     modifier =
                         Modifier
                             .fillMaxWidth()
-                            .height(56.dp)
+                            .height(68.dp)
                             .clip(MaterialTheme.shapes.small)
                             .background(Color.White),
                     contentAlignment = Alignment.Center,
