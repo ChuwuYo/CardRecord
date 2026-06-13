@@ -21,9 +21,24 @@ android {
         vectorDrawables { useSupportLibrary = true }
     }
 
+    signingConfigs {
+        // 本仓库尚未配置正式发布密钥库。
+        // release 构建复用 Android SDK 自带的 debug.keystore，
+        // 目的只是让产物可被 adb / 用户正常安装（未签名 APK 会因
+        // INSTALL_PARSE_FAILED_NO_CERTIFICATES 报错）。这不是生产级签名。
+        create("releaseDebugSigned") {
+            val debugKeystore = file("${System.getProperty("user.home")}/.android/debug.keystore")
+            storeFile = debugKeystore
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("releaseDebugSigned")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
