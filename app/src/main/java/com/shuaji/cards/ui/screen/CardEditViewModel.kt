@@ -4,9 +4,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.shuaji.cards.data.CardNetworkProvider
 import com.shuaji.cards.data.CardRepository
+import com.shuaji.cards.data.local.CardEntity
 import com.shuaji.cards.data.local.CardFolderEntity
 import com.shuaji.cards.data.local.CardOrientation
-import com.shuaji.cards.data.local.CardEntity
 import com.shuaji.cards.data.local.ImageSourceType
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
