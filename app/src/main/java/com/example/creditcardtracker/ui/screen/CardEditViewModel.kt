@@ -2,6 +2,7 @@ package com.example.creditcardtracker.ui.screen
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.creditcardtracker.data.CardNetworkProvider
 import com.example.creditcardtracker.data.CreditCardRepository
 import com.example.creditcardtracker.data.local.CardOrientation
 import com.example.creditcardtracker.data.local.CreditCardEntity
@@ -28,7 +29,7 @@ data class CardEditUiState(
     val note: String = "",
     // 卡面三态
     val imageSourceType: ImageSourceType = ImageSourceType.PROVIDER,
-    val imageProviderKey: String? = null,
+    val imageProviderKey: String? = CardNetworkProvider.VISA.key,
     val imageUri: String? = null,
     val cardOrientation: CardOrientation = CardOrientation.LANDSCAPE,
     val isLoading: Boolean = false,

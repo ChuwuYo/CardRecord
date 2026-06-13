@@ -74,7 +74,7 @@ fun CardListScreen(
                 title = {
                     Column {
                         Text(
-                            text = "信用卡管家",
+                            text = "刷记",
                             style = MaterialTheme.typography.headlineMedium,
                             fontWeight = FontWeight.ExtraBold,
                         )
@@ -128,29 +128,51 @@ fun CardListScreen(
                     item { OverallProgress(cards = cards) }
                 }
                 items(cards, key = { it.id }) { card ->
-                    Column(
+                    val isPortrait = card.cardOrientation == "PORTRAIT"
+                    Box(
                         modifier =
-                            Modifier.combinedClickable(
-                                onClick = { onOpen(card.id) },
-                                onLongClick = {
-                                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                                    cardToDelete = card
-                                },
-                            ),
+                            Modifier
+                                .fillMaxWidth()
+                                .combinedClickable(
+                                    onClick = { onOpen(card.id) },
+                                    onLongClick = {
+                                        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                        cardToDelete = card
+                                    },
+                                ),
+                        contentAlignment = Alignment.Center,
                     ) {
-                        CreditCardVisual(card = card)
-                        Spacer(Modifier.height(8.dp))
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                        ) {
-                            Text(
-                                text = "长按可删除",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                            androidx.compose.material3.TextButton(onClick = { onOpen(card.id) }) {
-                                Text("查看 / 记一笔")
+                        Box(modifier = Modifier.fillMaxWidth()) {
+                            Column {
+                                // 竖版：把卡用更窄的容器居中显示；横版：保持 fillMaxWidth
+                                Box(
+                                    modifier =
+                                        if (isPortrait) {
+                                            Modifier.fillMaxWidth()
+                                        } else {
+                                            Modifier.fillMaxWidth()
+                                        },
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    CreditCardVisual(
+                                        card = card,
+                                        modifier = if (isPortrait) Modifier.fillMaxWidth(0.7f) else Modifier,
+                                    )
+                                }
+                                Spacer(Modifier.height(8.dp))
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                ) {
+                                    Text(
+                                        "长按可删除",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                    androidx.compose.material3.TextButton(onClick = { onOpen(card.id) }) {
+                                        Text("查看 / 记一笔")
+                                    }
+                                }
                             }
                         }
                     }

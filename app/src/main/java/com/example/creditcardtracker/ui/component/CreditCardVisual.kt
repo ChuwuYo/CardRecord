@@ -51,20 +51,28 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-/** 横版卡片宽高比（ISO/IEC 7810 ID-1） */
+/** 横版卡片宽高比（ISO/IEC 7810 ID-1 标准信用卡） */
 private const val LANDSCAPE_RATIO = 1.586f
 
-/** 竖版卡片宽高比 */
-private const val PORTRAIT_HEIGHT_RATIO = 1.6f
+/** 竖版卡片高宽比 */
+private const val PORTRAIT_RATIO = 1.6f
 
 /** 竖版宽度占父容器比例 */
 private const val PORTRAIT_WIDTH_FRACTION = 0.6f
 
+/** 卡面演示用淡灰反光色（当无品牌色时使用） */
+private val DEFAULT_GREY_BASE = 0xFF8A8E96.toInt()
+
 /**
- * 信用卡视觉组件：渐变背景 + 进度条 + 卡面图片 + 装饰斜条纹。
+ * 信用卡视觉组件：渐变 + 反光 + 进度条 + 卡面图片。
  *
- * 横版 LANDSCAPE：宽高比 ≈ 1.586 : 1（标准 ISO/IEC 7810 ID-1 信用卡）
- * 竖版 PORTRAIT：宽高比 ≈ 0.625 : 1（运通 / 大来卡），居中显示
+ * 横版 LANDSCAPE：宽高比 ≈ 1.586 : 1
+ * 竖版 PORTRAIT：高宽比 ≈ 1.6 : 1，宽度自动取父级 60% 居中
+ *
+ * 三种卡面来源：
+ * - USER：用户上传图片
+ * - PROVIDER：simple-icons 官方品牌 logo
+ * - NONE：质感深灰卡（带反光高光）
  */
 @Composable
 fun CreditCardVisual(
@@ -82,17 +90,6 @@ fun CreditCardVisual(
         animationSpec = spring(dampingRatio = Spring.DampingRatioLowBouncy),
         label = "progress",
     )
-
-    val base = Color(card.colorArgb)
-    val gradient =
-        Brush.linearGradient(
-            colors =
-                listOf(
-                    base.copy(alpha = 1f),
-                    base.copy(alpha = 0.78f),
-                    base.copy(alpha = 0.95f),
-                ),
-        )
 
     val network = CardNetworkProvider.fromKey(card.imageProviderKey)
     val sourceType =
@@ -112,14 +109,12 @@ fun CreditCardVisual(
             CardOrientation.LANDSCAPE ->
                 LandscapeCardBody(
                     card = card,
-                    gradient = gradient,
                     network = network,
                     sourceType = sourceType,
                 )
             CardOrientation.PORTRAIT ->
                 PortraitCardBody(
                     card = card,
-                    gradient = gradient,
                     network = network,
                     sourceType = sourceType,
                 )
@@ -135,18 +130,17 @@ fun CreditCardVisual(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
-            text = "${card.currentCount} / ${card.requiredCount}",
+            "${card.currentCount} / ${card.requiredCount}",
             style = MaterialTheme.typography.headlineSmall,
             color = MaterialTheme.colorScheme.onSurface,
             fontWeight = FontWeight.Black,
         )
         Text(
-            text =
-                if (card.currentCount >= card.requiredCount) {
-                    "已达标"
-                } else {
-                    "还需 ${card.requiredCount - card.currentCount} 笔"
-                },
+            if (card.currentCount >= card.requiredCount) {
+                "已达标"
+            } else {
+                "还需 ${card.requiredCount - card.currentCount} 笔"
+            },
             style = MaterialTheme.typography.labelMedium,
             color =
                 if (card.currentCount >= card.requiredCount) {
@@ -177,14 +171,14 @@ fun CreditCardVisual(
     if (card.nextDueDateMillis != null) {
         Spacer(Modifier.height(8.dp))
         Text(
-            text = "下次年费结算：" + formatDate(card.nextDueDateMillis),
+            "下次年费结算：" + formatDate(card.nextDueDateMillis),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     } else if (card.validUntilMillis != null) {
         Spacer(Modifier.height(8.dp))
         Text(
-            text = "卡片有效至：" + formatDate(card.validUntilMillis),
+            "卡片有效至：" + formatDate(card.validUntilMillis),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -196,7 +190,6 @@ fun CreditCardVisual(
 @Composable
 private fun LandscapeCardBody(
     card: CreditCardEntity,
-    gradient: Brush,
     network: CardNetworkProvider?,
     sourceType: ImageSourceType,
 ) {
@@ -213,7 +206,7 @@ private fun LandscapeCardBody(
                 Modifier
                     .fillMaxWidth()
                     .height(height)
-                    .background(gradient),
+                    .background(cardSurfaceBrush(card, sourceType, network)),
         ) {
             CardImageLayer(
                 modifier = Modifier.fillMaxSize(),
@@ -238,7 +231,6 @@ private fun LandscapeCardBody(
 @Composable
 private fun PortraitCardBody(
     card: CreditCardEntity,
-    gradient: Brush,
     network: CardNetworkProvider?,
     sourceType: ImageSourceType,
 ) {
@@ -250,14 +242,14 @@ private fun PortraitCardBody(
             (maxWidth * PORTRAIT_WIDTH_FRACTION)
                 .coerceAtMost(240.dp)
                 .coerceAtLeast(160.dp)
-        val height: Dp = (width * PORTRAIT_HEIGHT_RATIO).coerceAtMost(380.dp)
+        val height: Dp = (width * PORTRAIT_RATIO).coerceAtMost(380.dp)
         Box(
             modifier =
                 Modifier
                     .width(width)
                     .height(height)
                     .clip(MaterialTheme.shapes.extraLarge)
-                    .background(gradient),
+                    .background(cardSurfaceBrush(card, sourceType, network)),
         ) {
             CardImageLayer(
                 modifier = Modifier.fillMaxSize(),
@@ -277,6 +269,36 @@ private fun PortraitCardBody(
             )
         }
     }
+}
+
+// ── 卡面背景（核心：决定用什么底色 + 反光） ───────────────────────
+
+/**
+ * 根据卡面来源返回卡面背景 brush：
+ * - USER：用户自定义颜色（来自 colorArgb）
+ * - PROVIDER：品牌色渐变
+ * - NONE：质感深灰渐变 + 顶部反光（无品牌色）
+ */
+@Composable
+private fun cardSurfaceBrush(
+    card: CreditCardEntity,
+    sourceType: ImageSourceType,
+    network: CardNetworkProvider?,
+): Brush {
+    val base: Color =
+        when (sourceType) {
+            ImageSourceType.PROVIDER -> Color(network?.brandColor ?: card.colorArgb)
+            ImageSourceType.USER -> Color(card.colorArgb)
+            ImageSourceType.NONE -> Color(DEFAULT_GREY_BASE)
+        }
+    return Brush.linearGradient(
+        colors =
+            listOf(
+                base.copy(alpha = 1f),
+                base.copy(alpha = 0.75f),
+                base.copy(alpha = 0.95f),
+            ),
+    )
 }
 
 // ── 卡面图片层 ────────────────────────────────────────────────────
@@ -315,7 +337,7 @@ private fun CardImageLayer(
     }
 }
 
-// ── 装饰 ──────────────────────────────────────────────────────────
+// ── 装饰：右上角斜条纹（锋锐风格） ───────────────────────────────
 
 @Composable
 private fun BoxScope.DecorationBlades() {
@@ -338,7 +360,7 @@ private fun BoxScope.DecorationBlades() {
     )
 }
 
-// ── 卡面文字 ──────────────────────────────────────────────────────
+// ── 卡面文字内容 ──────────────────────────────────────────────────
 
 @Composable
 private fun CardContent(
@@ -355,7 +377,7 @@ private fun CardContent(
             )
             Spacer(Modifier.width(8.dp))
             Text(
-                text = card.bank.ifBlank { "—" },
+                card.bank.ifBlank { "—" },
                 style = MaterialTheme.typography.labelLarge,
                 color = Color.White.copy(alpha = 0.85f),
                 maxLines = 1,
@@ -372,7 +394,7 @@ private fun CardContent(
                             ).padding(horizontal = 6.dp, vertical = 2.dp),
                 ) {
                     Text(
-                        text = network.displayName,
+                        network.displayName,
                         style = MaterialTheme.typography.labelSmall,
                         color = Color.White,
                         maxLines = 1,
@@ -383,7 +405,7 @@ private fun CardContent(
         }
         Spacer(Modifier.height(8.dp))
         Text(
-            text = card.name.ifBlank { "未命名卡片" },
+            card.name.ifBlank { "未命名卡片" },
             style = MaterialTheme.typography.headlineMedium,
             color = Color.White,
             fontWeight = FontWeight.ExtraBold,
@@ -393,7 +415,7 @@ private fun CardContent(
         if (card.cardNumberMasked.isNotBlank()) {
             Spacer(Modifier.height(2.dp))
             Text(
-                text = card.cardNumberMasked,
+                card.cardNumberMasked,
                 style = MaterialTheme.typography.titleMedium,
                 color = Color.White.copy(alpha = 0.85f),
                 maxLines = 1,

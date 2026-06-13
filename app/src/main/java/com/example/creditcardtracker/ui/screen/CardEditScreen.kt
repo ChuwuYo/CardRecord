@@ -184,7 +184,7 @@ fun CardEditScreen(
                             it.copy(
                                 imageProviderKey = network.key,
                                 colorArgb = network.brandColor,
-                                cardOrientation = network.defaultOrientation,
+                                // 横/竖朝向不再按卡组织自动预判，完全由用户决定
                             )
                         }
                     },
@@ -559,8 +559,11 @@ private fun CardNetworkPicker(
     ) {
         items(CardNetworkProvider.entries) { network ->
             val selected = selectedKey == network.key
+            val isUnionPay = network.key == "unionpay"
             Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
+                // 银联左对齐、其他英文名居中
+                horizontalAlignment =
+                    if (isUnionPay) Alignment.Start else Alignment.CenterHorizontally,
                 modifier =
                     Modifier
                         .width(96.dp)
@@ -583,7 +586,7 @@ private fun CardNetworkPicker(
                         ).clickable { onSelect(network) }
                         .padding(8.dp),
             ) {
-                // 关键改动：白底 + 品牌色 logo（simple-icons 是单色，已自带品牌色）
+                // 白底 logo 框（确保 simple-icons 单色 logo 在白底上清晰可见）
                 Box(
                     modifier =
                         Modifier
@@ -601,8 +604,9 @@ private fun CardNetworkPicker(
                     )
                 }
                 Spacer(Modifier.height(4.dp))
+                // 名称：银联左对齐、其他居中
                 Text(
-                    network.displayName,
+                    text = network.displayName,
                     style = MaterialTheme.typography.labelSmall,
                     color =
                         if (selected) {
@@ -611,6 +615,12 @@ private fun CardNetworkPicker(
                             MaterialTheme.colorScheme.onSurfaceVariant
                         },
                     maxLines = 1,
+                    modifier =
+                        if (isUnionPay) {
+                            Modifier.fillMaxWidth()
+                        } else {
+                            Modifier
+                        },
                 )
             }
         }
