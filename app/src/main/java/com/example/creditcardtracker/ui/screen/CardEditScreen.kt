@@ -68,6 +68,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -458,12 +459,6 @@ fun CardEditScreen(
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold,
                 )
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    "支持 HSV 色环 + 亮度滑块",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
                 Spacer(Modifier.height(16.dp))
                 ModernColorPicker(
                     initialColor = Color(state.colorArgb),
@@ -521,8 +516,8 @@ private fun OrientationSelector(
 ) {
     val options =
         listOf(
-            CardOrientation.LANDSCAPE to "横版（标准卡）",
-            CardOrientation.PORTRAIT to "竖版（运通 / 大来）",
+            CardOrientation.LANDSCAPE to "横版",
+            CardOrientation.PORTRAIT to "竖版",
         )
     SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
         options.forEachIndexed { index, (o, label) ->
@@ -559,14 +554,12 @@ private fun CardNetworkPicker(
     ) {
         items(CardNetworkProvider.entries) { network ->
             val selected = selectedKey == network.key
-            val isUnionPay = network.key == "unionpay"
             Column(
-                // 银联左对齐、其他英文名居中
-                horizontalAlignment =
-                    if (isUnionPay) Alignment.Start else Alignment.CenterHorizontally,
+                // 名字统一居中（American Express 2 行；其余 1 行居中显示在 2 行区域中部）
+                horizontalAlignment = Alignment.CenterHorizontally,
                 modifier =
                     Modifier
-                        .width(96.dp)
+                        .width(110.dp)
                         .clip(MaterialTheme.shapes.medium)
                         .background(
                             if (selected) {
@@ -603,25 +596,28 @@ private fun CardNetworkPicker(
                         modifier = Modifier.padding(6.dp),
                     )
                 }
-                Spacer(Modifier.height(4.dp))
-                // 名称：银联左对齐、其他居中
-                Text(
-                    text = network.displayName,
-                    style = MaterialTheme.typography.labelSmall,
-                    color =
-                        if (selected) {
-                            MaterialTheme.colorScheme.onPrimaryContainer
-                        } else {
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                        },
-                    maxLines = 1,
+                Spacer(Modifier.height(6.dp))
+                // 名字区域：固定容纳 2 行（≈ 40.dp），单行名字上下居中、American Express 上下两行铺满
+                Box(
                     modifier =
-                        if (isUnionPay) {
-                            Modifier.fillMaxWidth()
-                        } else {
-                            Modifier
-                        },
-                )
+                        Modifier
+                            .fillMaxWidth()
+                            .height(40.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = network.displayName,
+                        style = MaterialTheme.typography.labelSmall,
+                        color =
+                            if (selected) {
+                                MaterialTheme.colorScheme.onPrimaryContainer
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            },
+                        textAlign = TextAlign.Center,
+                        maxLines = 2,
+                    )
+                }
             }
         }
     }
