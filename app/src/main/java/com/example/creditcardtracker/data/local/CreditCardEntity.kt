@@ -5,7 +5,7 @@ import androidx.room.Entity
 import androidx.room.PrimaryKey
 
 /**
- * 信用卡实体。
+ * 卡片实体。
  *
  * - [requiredCount] 是年免年费所需消费笔数
  * - [currentCount] 当前已完成笔数
@@ -19,7 +19,7 @@ import androidx.room.PrimaryKey
  * - [imageSourceType] = "USER"     → 使用用户自定义图片（imageUri 存相册 URI）
  *
  * 朝向：
- * - [cardOrientation] = "LANDSCAPE"（横版 1.586:1，标准信用卡） / "PORTRAIT"（竖版）
+ * - [cardOrientation] = "LANDSCAPE"（横版 1.586:1，标准卡片） / "PORTRAIT"（竖版）
  */
 @Entity(tableName = "credit_cards")
 data class CreditCardEntity(

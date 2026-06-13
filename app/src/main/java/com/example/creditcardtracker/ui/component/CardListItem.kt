@@ -83,7 +83,7 @@ fun CardListItem(
                     onClick = onClick,
                     onLongClick = onLongClick,
                 ),
-        shape = MaterialTheme.shapes.extraLarge,
+        shape = MaterialTheme.shapes.medium,
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
         tonalElevation = 1.dp,
     ) {
