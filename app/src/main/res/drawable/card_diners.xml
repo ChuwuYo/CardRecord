@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Diners Club 大来卡风格：深蓝 + 椭圆蓝白标（竖版构图） -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="200dp"
+    android:height="320dp"
+    android:viewportWidth="200"
+    android:viewportHeight="320">
+
+    <!-- 背景 -->
+    <path android:pathData="M0,0 L200,0 L200,320 L0,320 Z">
+        <aapt:attr name="android:fillColor" xmlns:aapt="http://schemas.android.com/aapt">
+            <gradient
+                android:type="linear"
+                android:startX="0" android:startY="0"
+                android:endX="200" android:endY="320">
+                <item android:color="#0079BE" android:offset="0.0"/>
+                <item android:color="#004B83" android:offset="1.0"/>
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- 顶部装饰 -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:fillAlpha="0.15"
+        android:pathData="M0,30 L200,30 L200,50 L0,50 Z" />
+
+    <!-- 中央 Diners Club 椭圆蓝白标 -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M100,120 m-58,0 a58,30 0 1,0 116,0 a58,30 0 1,0 -116,0" />
+    <path
+        android:fillColor="#0079BE"
+        android:pathData="M100,120 m-52,0 a52,24 0 1,0 104,0 a52,24 0 1,0 -104,0" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M100,120 m-10,0 a10,16 0 1,0 20,0 a10,16 0 1,0 -20,0" />
+
+    <!-- DINERS 文字 -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M50,180 L62,180 L62,200 L72,200 L72,180 L84,180 L84,210 L50,210 Z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M90,180 L102,180 L102,210 L90,210 L90,200 L96,200 L96,190 L90,190 Z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M108,180 L120,180 L120,200 L114,200 L114,190 L110,190 L110,210 L108,210 Z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M126,180 L138,180 L138,200 L132,200 L132,190 L128,190 L128,210 L126,210 Z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M144,180 L156,180 L156,210 L144,210 L144,200 L150,200 L150,190 L144,190 Z" />
+
+    <!-- CLUB 文字 -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M70,240 L82,240 L82,250 L76,250 L76,260 L82,260 L82,270 L70,270 Z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M88,240 L100,240 L100,270 L88,270 L88,260 L94,260 L94,250 L88,250 Z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M106,240 L118,240 L118,270 L106,270 L106,260 L112,260 L112,250 L106,250 Z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M124,240 L136,240 L136,270 L124,270 L124,260 L130,260 L130,250 L124,250 Z" />
+</vector>

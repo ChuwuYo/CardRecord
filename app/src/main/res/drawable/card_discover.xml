@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Discover 卡风格：白底 + 橙色圆球 + 文字 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="320dp"
+    android:height="200dp"
+    android:viewportWidth="320"
+    android:viewportHeight="200">
+
+    <!-- 背景：白底 + 渐变 -->
+    <path android:pathData="M0,0 L320,0 L320,200 L0,200 Z">
+        <aapt:attr name="android:fillColor" xmlns:aapt="http://schemas.android.com/aapt">
+            <gradient
+                android:type="linear"
+                android:startX="0" android:startY="0"
+                android:endX="320" android:endY="200">
+                <item android:color="#F4F4F4" android:offset="0.0"/>
+                <item android:color="#D8D8D8" android:offset="1.0"/>
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- 装饰斜条纹 -->
+    <path
+        android:fillColor="#FF6000"
+        android:fillAlpha="0.08"
+        android:pathData="M-20,160 L120,40 L160,40 L-20,200 Z" />
+
+    <!-- Discover 橙色圆球 -->
+    <path
+        android:fillColor="#FF6000"
+        android:pathData="M88,108 m-32,0 a32,32 0 1,0 64,0 a32,32 0 1,0 -64,0" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M88,108 m-24,0 a24,24 0 1,0 48,0 a24,24 0 1,0 -48,0" />
+    <path
+        android:fillColor="#FF6000"
+        android:pathData="M88,108 m-16,0 a16,16 0 1,0 32,0 a16,16 0 1,0 -32,0" />
+
+    <!-- DISCOVER 文字 -->
+    <path
+        android:fillColor="#231F20"
+        android:pathData="M140,98 L156,98 L156,108 L148,108 L148,116 L156,116 L156,124 L148,124 L148,132 L156,132 L156,142 L140,142 Z" />
+    <path
+        android:fillColor="#231F20"
+        android:pathData="M162,98 L178,98 L178,142 L168,142 L168,108 L164,108 L164,142 L162,142 Z" />
+    <path
+        android:fillColor="#231F20"
+        android:pathData="M184,98 L200,98 L200,108 L192,108 L192,142 L184,142 Z" />
+    <path
+        android:fillColor="#231F20"
+        android:pathData="M206,98 L222,98 L222,142 L206,142 L206,124 L214,124 L214,116 L206,116 Z" />
+    <path
+        android:fillColor="#231F20"
+        android:pathData="M228,98 L244,98 L244,108 L236,108 L236,116 L244,116 L244,124 L236,124 L236,132 L244,132 L244,142 L228,142 Z" />
+    <path
+        android:fillColor="#231F20"
+        android:pathData="M250,98 L264,98 L264,142 L250,142 L250,124 L258,124 L258,116 L250,116 Z" />
+    <path
+        android:fillColor="#231F20"
+        android:pathData="M270,98 L286,98 L286,108 L278,108 L278,116 L286,116 L286,124 L278,124 L278,132 L286,132 L286,142 L270,142 Z" />
+</vector>

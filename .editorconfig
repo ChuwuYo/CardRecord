@@ -1,0 +1,8 @@
+[*.kt]
+# Compose 函数以大写开头是惯例，不检查
+ktlint_standard_function-naming = disabled
+# 允许 IDE 生成的 import 通配符
+ktlint_standard_no-wildcard-imports = disabled
+# 允许尾随逗号（与 IDE 默认一致）
+ktlint_standard_trailing-comma-on-call-site = enabled
+ktlint_standard_trailing-comma-on-declaration-site = enabled
