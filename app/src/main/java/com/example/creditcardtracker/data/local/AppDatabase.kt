@@ -26,7 +26,7 @@ abstract class AppDatabase : RoomDatabase() {
         /**
          * v1 → v2：新增卡面来源、卡组织、朝向三列。
          * 旧数据的 image_source_type 默认为 USER（兼容以前的上传图片卡面），
-         * card_orientation 默认为 LANDSCAPE（标准横版信用卡）。
+         * card_orientation 默认为 LANDSCAPE（标准横版卡片）。
          */
         private val MIGRATION_1_2 =
             object : Migration(1, 2) {

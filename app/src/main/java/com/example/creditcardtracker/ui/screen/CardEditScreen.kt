@@ -119,7 +119,7 @@ fun CardEditScreen(
             TopAppBar(
                 title = {
                     Text(
-                        text = if (cardId == null) "添加信用卡" else "编辑信用卡",
+                        text = if (cardId == null) "添加卡片" else "编辑卡片",
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
                     )

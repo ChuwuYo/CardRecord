@@ -119,7 +119,7 @@ fun CardListScreen(
             ExtendedFloatingActionButton(
                 onClick = onAdd,
                 icon = { Icon(Icons.Default.Add, contentDescription = null) },
-                text = { Text("添加信用卡") },
+                text = { Text("添加卡片") },
             )
         },
     ) { padding ->
@@ -507,7 +507,7 @@ private fun EmptyState() {
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Text(
-            text = "还没有信用卡",
+            text = "还没有卡片",
             style = MaterialTheme.typography.titleLarge,
             fontWeight = FontWeight.Bold,
         )

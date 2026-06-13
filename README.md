@@ -1,13 +1,13 @@
 # 刷记 (CreditRecord)
 
-一款原生 Android 应用，用于追踪信用卡消费次数——某些信用卡要求刷满一定笔数才能免次年年费，银行 APP 通常不显示这个数据，本应用帮你手动追踪。
+一款原生 Android 应用，用于追踪卡片消费次数——某些卡要求刷满一定笔数才能免次年年费，银行 APP 通常不显示这个数据，本应用帮你手动追踪。
 
 ## 功能
 
 - **多张卡片管理**：卡片名称、发卡行、卡号（脱敏）、主题色
 - **消费记录**：每张卡可记录每笔消费（商户、金额、备注），自动同步笔数
 - **笔数进度**：`x / y` 直观显示，还差几笔自动提示
-- **横/竖两种卡面**：支持标准横版信用卡（Visa / MasterCard / JCB / UnionPay / Discover / QuickPass）和竖版（American Express / Diners Club）
+- **横/竖两种卡面**：支持标准横版卡片（Visa / MasterCard / JCB / UnionPay / Discover / QuickPass）和竖版（American Express / Diners Club）
 - **8 个全球卡组织预设卡面**：可一键选用，亦可上传自定义卡图
 - **现代化调色板**：HSV 色环 + 亮度滑块 + HEX 实时显示
 - **下次年费结算日提醒**、卡片有效期记录

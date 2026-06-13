@@ -4,7 +4,7 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <!-- 信用卡图标：锋锐角度 Material Design 3 风格 -->
+    <!-- 卡片图标：锋锐角度 Material Design 3 风格 -->
     <path
         android:fillColor="#9CD7FF"
         android:pathData="M30,42 L78,42 L78,46 L30,46 Z" />

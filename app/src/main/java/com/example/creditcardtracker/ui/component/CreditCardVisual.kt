@@ -46,7 +46,7 @@ import java.util.Date
 import java.util.Locale
 
 /**
- * ISO/IEC 7810 ID-1 标准信用卡比例：85.60 mm × 53.98 mm ⇒ 长宽比 1.586:1。
+ * ISO/IEC 7810 ID-1 标准卡片比例：85.60 mm × 53.98 mm ⇒ 长宽比 1.586:1。
  * 横版（LANDSCAPE）= 宽度/高度 ≈ 1.586。
  * 竖版（PORTRAIT）= 高度/宽度 ≈ 1.586（同一物理卡片旋转 90°）。
  *
@@ -68,18 +68,20 @@ private const val CARD_MIN_HEIGHT_DP = 96f
 private val DEFAULT_GREY_BASE = 0xFF8A8E96.toInt()
 
 /**
- * 信用卡视觉组件：渐变 + 反光 + 卡面图片。
+ * 卡片视觉组件：渐变 + 反光 + 卡面图片。
  *
  * 简化为「只画卡面」，不再附带进度条 / 笔数 / 日期——
  * 那些由列表项 [CardListItem] 在卡外侧的信息区展示。
  *
  * 横版 LANDSCAPE：宽高比 ≈ 1.586 : 1
- * 竖版 PORTRAIT：高宽比 ≈ 1.6 : 1，宽度自动取父级 60% 居中
+ * 竖版 PORTRAIT：高宽比 ≈ 1.586 : 1，宽度自动取父级 60% 居中
  *
  * 三种卡面来源：
  * - USER：用户上传图片
  * - PROVIDER：simple-icons 官方品牌 logo
  * - NONE：质感深灰卡（带反光高光）
+ *
+ * 圆角：12.dp（与真实卡片 ID-1 圆角半径 3.18mm 保持一致）。
  */
 @Composable
 fun CreditCardVisual(
@@ -99,7 +101,7 @@ fun CreditCardVisual(
 
     Card(
         modifier = modifier.fillMaxWidth(),
-        shape = MaterialTheme.shapes.extraLarge,
+        shape = MaterialTheme.shapes.medium,
         colors = CardDefaults.cardColors(containerColor = Color.Transparent),
         elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
     ) {
@@ -142,7 +144,7 @@ private fun LandscapeCardBody(
             Modifier
                 .fillMaxWidth()
                 .heightIn(min = CARD_MIN_HEIGHT_DP.dp)
-                .clip(MaterialTheme.shapes.extraLarge),
+                .clip(MaterialTheme.shapes.medium),
     ) {
         // 严格按 ISO 7810 ID-1 (1.586:1) 计算高度
         val height: Dp = (maxWidth / LANDSCAPE_RATIO).coerceAtLeast(CARD_MIN_HEIGHT_DP.dp)
@@ -200,7 +202,7 @@ private fun PortraitCardBody(
                 Modifier
                     .width(width)
                     .height(height)
-                    .clip(MaterialTheme.shapes.extraLarge)
+                    .clip(MaterialTheme.shapes.medium)
                     .background(cardSurfaceBrush(card, sourceType, network)),
         ) {
             CardImageLayer(
@@ -271,7 +273,7 @@ private fun CardImageLayer(
                 AsyncImage(
                     model = card.imageUri,
                     contentDescription = "卡面",
-                    modifier = modifier.clip(MaterialTheme.shapes.extraLarge),
+                    modifier = modifier.clip(MaterialTheme.shapes.medium),
                     contentScale = ContentScale.Crop,
                     alpha = 0.35f,
                 )
