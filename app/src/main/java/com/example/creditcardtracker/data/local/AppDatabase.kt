@@ -79,6 +79,44 @@ abstract class AppDatabase : RoomDatabase() {
                 }
             }
 
+        /**
+         * v3 → v4：修复 v1.3.0 留下的坏 schema。
+         *
+         * v1.3.0 的 MIGRATION_2_3 写错了：在 `card_folders` 上加了
+         * `DEFAULT 'folder'` / `DEFAULT 0`、在 `credit_cards.folder_id` 上
+         * 多建了一个 Room 不期望的索引。Room kapt 生成的 schema 跟它对不上，
+         * v1.3.0 启动时 fallbackToDestructiveMigration 触发，把全表清空重建。
+         *
+         * 这一次：
+         * - DROP 坏 schema 的 `card_folders` 表（v1.3.0 留下的，里面没数据）
+         * - 用正确 schema 重建
+         * - DROP Room 不期望的多余索引
+         * - **`credit_cards` 表本身完全不动**，里面历史卡片保留
+         */
+        private val MIGRATION_3_4 =
+            object : Migration(3, 4) {
+                override fun migrate(db: SupportSQLiteDatabase) {
+                    // 1. 删多余索引（如果存在）
+                    db.execSQL("DROP INDEX IF EXISTS `index_credit_cards_folder_id`")
+                    // 2. 删坏 schema 的 card_folders 表
+                    db.execSQL("DROP TABLE IF EXISTS `card_folders`")
+                    // 3. 用正确 schema 重建 card_folders
+                    db.execSQL(
+                        """
+                        CREATE TABLE IF NOT EXISTS `card_folders` (
+                            `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                            `name` TEXT NOT NULL,
+                            `color_argb` INTEGER NOT NULL,
+                            `icon_key` TEXT NOT NULL,
+                            `sort_order` INTEGER NOT NULL,
+                            `created_at_millis` INTEGER NOT NULL
+                        )
+                        """.trimIndent(),
+                    )
+                    // 注意：完全不碰 credit_cards 表，历史卡数据保留
+                }
+            }
+
         fun get(context: Context): AppDatabase =
             instance ?: synchronized(this) {
                 instance ?: Room
@@ -86,8 +124,9 @@ abstract class AppDatabase : RoomDatabase() {
                         context.applicationContext,
                         AppDatabase::class.java,
                         "credit_card_tracker.db",
-                    ).addMigrations(MIGRATION_1_2, MIGRATION_2_3)
-                    .fallbackToDestructiveMigration(true) // 兜底：迁移失败时清库
+                    ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+                    // 兜底仍然保留，但写对迁移后这个分支永远走不到
+                    .fallbackToDestructiveMigration(true)
                     .build()
                     .also { instance = it }
             }
