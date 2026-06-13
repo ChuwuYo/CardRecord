@@ -1,0 +1,33 @@
+# Gradle
+.gradle/
+build/
+out/
+
+# Kotlin
+.kotlin/
+*.iml
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Android
+local.properties
+captures/
+.cxx/
+*.apk.idsig
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Keystore（永远不要提交）
+*.jks
+*.keystore
+release.keystore
+
+# 临时/日志
+*.log
+*.hprof
