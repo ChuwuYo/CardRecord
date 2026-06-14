@@ -33,9 +33,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.shuaji.cards.R
 import com.shuaji.cards.data.local.CardEntity
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -92,9 +94,6 @@ fun CardListItem(
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             // 1. 卡面
-            // - 列表模式（compact=false）：横版卡 88% 宽居中、竖版卡 60% 宽居中
-            //   给两侧留点呼吸空间，整体不显挤
-            // - 网格模式（compact=true）：撑满 cell 宽
             Box(
                 modifier = Modifier.fillMaxWidth(),
                 contentAlignment = Alignment.Center,
@@ -144,13 +143,13 @@ private fun CompactInfoArea(
             modifier = Modifier.fillMaxWidth(),
         ) {
             Text(
-                text = "${card.currentCount} / ${card.requiredCount} 笔",
+                text = stringResource(R.string.card_count_compact_format, card.currentCount, card.requiredCount),
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurface,
             )
             Text(
-                text = "${(animatedProgress * 100).toInt()}%",
+                text = stringResource(R.string.card_percent_format, (animatedProgress * 100).toInt()),
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -167,8 +166,8 @@ private fun CompactInfoArea(
             strokeCap = ProgressIndicatorDefaults.LinearStrokeCap,
         )
         val dateText =
-            card.nextDueDateMillis?.let { "下次结算 ${formatDate(it)}" }
-                ?: card.validUntilMillis?.let { "有效期至 ${formatDate(it)}" }
+            card.nextDueDateMillis?.let { stringResource(R.string.card_date_next_due, formatDate(it)) }
+                ?: card.validUntilMillis?.let { stringResource(R.string.card_date_valid_until, formatDate(it)) }
         if (dateText != null) {
             Text(
                 dateText,
@@ -198,20 +197,25 @@ private fun FullInfoArea(
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    text = "${card.currentCount} / ${card.requiredCount}",
+                    text = stringResource(R.string.card_count_format, card.currentCount, card.requiredCount),
                     style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.ExtraBold,
                     color = MaterialTheme.colorScheme.onSurface,
                 )
                 Spacer(Modifier.width(6.dp))
                 Text(
-                    "笔",
+                    text = stringResource(R.string.card_count_unit),
                     style = MaterialTheme.typography.labelLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
             Text(
-                if (isDone) "已达标" else "还需 ${card.requiredCount - card.currentCount} 笔",
+                text =
+                    if (isDone) {
+                        stringResource(R.string.card_status_done)
+                    } else {
+                        stringResource(R.string.card_status_remaining, card.requiredCount - card.currentCount)
+                    },
                 style = MaterialTheme.typography.labelMedium,
                 color = if (isDone) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.onSurfaceVariant,
                 fontWeight = FontWeight.SemiBold,
@@ -233,10 +237,18 @@ private fun FullInfoArea(
         if (card.validUntilMillis != null || card.nextDueDateMillis != null) {
             Spacer(Modifier.height(2.dp))
             if (card.validUntilMillis != null) {
-                DateRow(icon = Icons.Default.CreditCard, label = "有效期", value = formatDate(card.validUntilMillis))
+                DateRow(
+                    icon = Icons.Default.CreditCard,
+                    label = stringResource(R.string.card_label_valid_until),
+                    value = formatDate(card.validUntilMillis),
+                )
             }
             if (card.nextDueDateMillis != null) {
-                DateRow(icon = Icons.Default.Event, label = "下次结算", value = formatDate(card.nextDueDateMillis))
+                DateRow(
+                    icon = Icons.Default.Event,
+                    label = stringResource(R.string.card_label_next_due),
+                    value = formatDate(card.nextDueDateMillis),
+                )
             }
         }
 
@@ -249,18 +261,18 @@ private fun FullInfoArea(
             modifier = Modifier.fillMaxWidth(),
         ) {
             Text(
-                "长按可删除",
+                text = stringResource(R.string.card_long_press_hint),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 TextButton(onClick = onIncrement) {
-                    Text("+1 笔", fontWeight = FontWeight.SemiBold)
+                    Text(text = stringResource(R.string.card_increment_one), fontWeight = FontWeight.SemiBold)
                 }
                 TextButton(onClick = onDetail) {
                     Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(16.dp))
                     Spacer(Modifier.width(4.dp))
-                    Text("详情")
+                    Text(text = stringResource(R.string.card_detail))
                 }
             }
         }
@@ -284,12 +296,12 @@ private fun DateRow(
             modifier = Modifier.size(14.dp),
         )
         Text(
-            "$label  ",
+            text = label,
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Text(
-            value,
+            text = value,
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurface,
             fontWeight = FontWeight.Medium,

@@ -73,6 +73,21 @@ class CardFolderViewModel(
         }
     }
 
+    /**
+     * 一次性更新文件夹的名称和颜色。优先用这个而不是 rename + recolor，
+     * 避免在快速连点保存时出现两条中间状态把 Flow 触发两次重组。
+     */
+    fun update(
+        folder: CardFolderEntity,
+        newName: String,
+        newColor: Int,
+    ) {
+        if (newName.isBlank()) return
+        viewModelScope.launch {
+            repository.updateFolder(folder.copy(name = newName.trim(), colorArgb = newColor))
+        }
+    }
+
     fun delete(folder: CardFolderEntity) {
         viewModelScope.launch {
             repository.deleteFolder(folder)

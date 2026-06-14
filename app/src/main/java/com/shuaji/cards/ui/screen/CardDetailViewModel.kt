@@ -54,8 +54,4 @@ class CardDetailViewModel(
     fun resetCycle() {
         viewModelScope.launch { repository.resetCycle(cardId) }
     }
-
-    fun syncFromTransactions() {
-        viewModelScope.launch { repository.syncCountFromTransactions(cardId) }
-    }
 }

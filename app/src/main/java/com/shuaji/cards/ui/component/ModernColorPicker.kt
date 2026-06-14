@@ -23,11 +23,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.github.skydoves.colorpicker.compose.BrightnessSlider
 import com.github.skydoves.colorpicker.compose.ColorEnvelope
 import com.github.skydoves.colorpicker.compose.HsvColorPicker
 import com.github.skydoves.colorpicker.compose.rememberColorPickerController
+import com.shuaji.cards.R
 
 /**
  * 现代化调色板：HSV 圆形色环 + 下方 Brightness 滑动条 + 当前色预览 + HEX 实时显示。
@@ -82,7 +84,7 @@ fun ModernColorPicker(
             )
             Column {
                 Text(
-                    "HEX",
+                    stringResource(R.string.edit_color_hex_label),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

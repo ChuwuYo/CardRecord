@@ -29,9 +29,9 @@ fun ShuajiApp() {
     NavHost(navController = navController, startDestination = Routes.LIST) {
         composable(Routes.LIST) {
             CardListScreen(
-                onAdd = { navController.navigate(Routes.CREATE) },
-                onOpen = { id -> navController.navigate(Routes.detail(id)) },
-                onOpenFolders = { navController.navigate(Routes.FOLDERS) },
+                onAddCard = { navController.navigate(Routes.CREATE) },
+                onCardClick = { id -> navController.navigate(Routes.detail(id)) },
+                onManageFolders = { navController.navigate(Routes.FOLDERS) },
             )
         }
         composable(Routes.CREATE) {
