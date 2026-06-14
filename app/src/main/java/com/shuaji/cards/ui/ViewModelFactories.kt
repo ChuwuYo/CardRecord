@@ -1,10 +1,7 @@
 package com.shuaji.cards.ui
 
-import androidx.compose.runtime.Composable
-import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.CreationExtras
-import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.shuaji.cards.ShuajiApplication
@@ -36,7 +33,3 @@ object ViewModelFactories {
         return application as ShuajiApplication
     }
 }
-
-@Composable
-inline fun <reified VM : ViewModel> appViewModel(crossinline factoryProducer: () -> ViewModelProvider.Factory): VM =
-    viewModel(factory = factoryProducer())

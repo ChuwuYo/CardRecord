@@ -1,6 +1,7 @@
 package com.shuaji.cards.data
 
 import androidx.annotation.DrawableRes
+import androidx.annotation.StringRes
 import com.shuaji.cards.R
 
 /**
@@ -10,59 +11,61 @@ import com.shuaji.cards.R
  * 完全免授权），银联 simple-icons 未收录，使用自绘替代。
  *
  * 朝向（横/竖）由用户手动选择，不在卡组织枚举中预判。
+ *
+ * 显示名通过 [displayNameRes] 走字符串资源，方便后续接 i18n。
  */
 enum class CardNetworkProvider(
     val key: String,
-    val displayName: String,
+    @StringRes val displayNameRes: Int,
     @DrawableRes val logoRes: Int,
     val brandColor: Int,
     val sourceAttribution: String,
 ) {
     VISA(
         "visa",
-        "Visa",
+        R.string.network_visa,
         R.drawable.visa,
         0xFF1A1F71.toInt(),
         "simple-icons (CC0 1.0)",
     ),
     MASTERCARD(
         "mastercard",
-        "MasterCard",
+        R.string.network_mastercard,
         R.drawable.mastercard,
         0xFFEB001B.toInt(),
         "simple-icons (CC0 1.0)",
     ),
     UNIONPAY(
         "unionpay",
-        "银联",
+        R.string.network_unionpay,
         R.drawable.unionpay,
         0xFFE21836.toInt(),
-        "自绘（simple-icons 未收录）",
+        "self-drawn (simple-icons missing)",
     ),
     JCB(
         "jcb",
-        "JCB",
+        R.string.network_jcb,
         R.drawable.jcb,
         0xFF0B4EA2.toInt(),
         "simple-icons (CC0 1.0)",
     ),
     AMEX(
         "amex",
-        "American Express",
+        R.string.network_amex,
         R.drawable.americanexpress,
         0xFF2E77BC.toInt(),
         "simple-icons (CC0 1.0)",
     ),
     DINERS(
         "diners",
-        "Diners Club",
+        R.string.network_diners,
         R.drawable.dinersclub,
         0xFF004C97.toInt(),
         "simple-icons (CC0 1.0)",
     ),
     DISCOVER(
         "discover",
-        "Discover",
+        R.string.network_discover,
         R.drawable.discover,
         0xFFFF6000.toInt(),
         "simple-icons (CC0 1.0)",

@@ -5,6 +5,7 @@ import com.shuaji.cards.data.local.AppDatabase
 
 interface AppContainer {
     val repository: CardRepository
+    val settings: SettingsRepository
 }
 
 class DefaultAppContainer(
@@ -17,4 +18,5 @@ class DefaultAppContainer(
             transactionDao = database.transactionDao(),
             folderDao = database.cardFolderDao(),
         )
+    override val settings: SettingsRepository = SettingsRepository(context.appDataStore)
 }

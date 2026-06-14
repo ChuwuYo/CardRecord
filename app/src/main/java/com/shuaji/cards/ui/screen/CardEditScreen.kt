@@ -66,12 +66,14 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.shuaji.cards.R
 import com.shuaji.cards.data.CardNetworkProvider
 import com.shuaji.cards.data.local.CardOrientation
 import com.shuaji.cards.data.local.ImageSourceType
@@ -113,24 +115,64 @@ fun CardEditScreen(
             }
         }
 
+    // 集中预解析字符串，避免在 Composable 子作用域里重复调用 stringResource
+    val titleText =
+        stringResource(if (cardId == null) R.string.edit_title_new else R.string.edit_title_edit)
+    val backCd = stringResource(R.string.common_back)
+    val saveText = stringResource(R.string.common_save)
+    val imageSection = stringResource(R.string.edit_section_image)
+    val networkSection = stringResource(R.string.edit_section_choose_network)
+    val imagePickHint = stringResource(R.string.edit_image_pick_hint)
+    val clearImageCd = stringResource(R.string.edit_image_clear)
+    val imageCd = stringResource(R.string.card_image_content_description)
+    val orientationSection = stringResource(R.string.edit_section_orientation)
+    val folderSection = stringResource(R.string.edit_section_folder)
+    val colorSection = stringResource(R.string.edit_section_theme_color)
+    val unfiledText = stringResource(R.string.edit_folder_unfiled)
+    val unsetText = stringResource(R.string.edit_date_unset)
+    val clearText = stringResource(R.string.common_clear)
+    val selectText = stringResource(R.string.common_select)
+    val colorPickerTitle = stringResource(R.string.edit_color_picker_title)
+    val doneText = stringResource(R.string.common_done)
+    val saveBtnText =
+        stringResource(if (cardId == null) R.string.edit_save_new else R.string.edit_save_existing)
+    val confirmText = stringResource(R.string.common_confirm)
+    val cancelText = stringResource(R.string.common_cancel)
+    val nameLabel = stringResource(R.string.edit_field_name)
+    val nameHint = stringResource(R.string.edit_field_name_hint)
+    val bankLabel = stringResource(R.string.edit_field_bank)
+    val bankHint = stringResource(R.string.edit_field_bank_hint)
+    val numberLabel = stringResource(R.string.edit_field_number)
+    val numberHint = stringResource(R.string.edit_field_number_hint)
+    val requiredLabel = stringResource(R.string.edit_field_required)
+    val currentLabel = stringResource(R.string.edit_field_current)
+    val noteLabel = stringResource(R.string.edit_field_note)
+    val validUntilLabel = stringResource(R.string.edit_date_valid_until)
+    val nextDueLabel = stringResource(R.string.edit_date_next_due)
+    val providerLabel = stringResource(R.string.edit_image_provider)
+    val userLabel = stringResource(R.string.edit_image_user)
+    val noneLabel = stringResource(R.string.edit_image_none)
+    val landscapeLabel = stringResource(R.string.edit_orientation_landscape)
+    val portraitLabel = stringResource(R.string.edit_orientation_portrait)
+
     Scaffold(
         topBar = {
             TopAppBar(
                 title = {
                     Text(
-                        text = if (cardId == null) "添加卡片" else "编辑卡片",
+                        text = titleText,
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
                     )
                 },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = backCd)
                     }
                 },
                 actions = {
                     TextButton(onClick = { viewModel.save() }, enabled = state.canSave) {
-                        Text("保存")
+                        Text(saveText)
                     }
                 },
                 colors =
@@ -151,12 +193,15 @@ fun CardEditScreen(
         ) {
             // ── 卡面来源 ──
             Text(
-                "卡面",
+                imageSection,
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             ImageSourceSelector(
                 current = state.imageSourceType,
+                providerLabel = providerLabel,
+                userLabel = userLabel,
+                noneLabel = noneLabel,
                 onSelect = { type ->
                     viewModel.update { s ->
                         s.copy(
@@ -175,7 +220,7 @@ fun CardEditScreen(
 
             if (state.imageSourceType == ImageSourceType.PROVIDER) {
                 Text(
-                    "选择卡组织",
+                    networkSection,
                     style = MaterialTheme.typography.labelLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -207,7 +252,7 @@ fun CardEditScreen(
                         if (state.imageUri != null) {
                             coil3.compose.AsyncImage(
                                 model = state.imageUri,
-                                contentDescription = "卡面",
+                                contentDescription = imageCd,
                                 modifier =
                                     Modifier
                                         .fillMaxSize()
@@ -223,7 +268,7 @@ fun CardEditScreen(
                             ) {
                                 Icon(
                                     Icons.Default.LayersClear,
-                                    contentDescription = "清除图片",
+                                    contentDescription = clearImageCd,
                                     tint = Color.White,
                                     modifier =
                                         Modifier
@@ -241,7 +286,7 @@ fun CardEditScreen(
                                 )
                                 Spacer(Modifier.height(4.dp))
                                 Text(
-                                    "点击选择卡面图片",
+                                    imagePickHint,
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
@@ -253,32 +298,35 @@ fun CardEditScreen(
 
             // ── 朝向选择 ──
             Text(
-                "卡面朝向",
+                orientationSection,
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             OrientationSelector(
                 current = state.cardOrientation,
+                landscapeLabel = landscapeLabel,
+                portraitLabel = portraitLabel,
                 onSelect = { o -> viewModel.update { it.copy(cardOrientation = o) } },
             )
 
             // ── 文件夹 ──
             if (folders.isNotEmpty()) {
                 Text(
-                    "文件夹",
+                    folderSection,
                     style = MaterialTheme.typography.labelLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 FolderPicker(
                     folders = folders,
                     currentId = state.folderId,
+                    unfiledLabel = unfiledText,
                     onSelect = { id -> viewModel.update { it.copy(folderId = id) } },
                 )
             }
 
             // ── 主题色（自定义调色板） ──
             Text(
-                "主题色",
+                colorSection,
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -331,8 +379,8 @@ fun CardEditScreen(
             OutlinedTextField(
                 value = state.name,
                 onValueChange = { v -> viewModel.update { it.copy(name = v) } },
-                label = { Text("卡片名称 *") },
-                placeholder = { Text("例如：商旅白金卡") },
+                label = { Text(nameLabel) },
+                placeholder = { Text(nameHint) },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
             )
@@ -340,8 +388,8 @@ fun CardEditScreen(
             OutlinedTextField(
                 value = state.bank,
                 onValueChange = { v -> viewModel.update { it.copy(bank = v) } },
-                label = { Text("发卡行（手动输入）") },
-                placeholder = { Text("例如：招商银行 / HSBC / Chase") },
+                label = { Text(bankLabel) },
+                placeholder = { Text(bankHint) },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
             )
@@ -349,8 +397,8 @@ fun CardEditScreen(
             OutlinedTextField(
                 value = state.cardNumberMasked,
                 onValueChange = { v -> viewModel.update { it.copy(cardNumberMasked = v) } },
-                label = { Text("卡号（建议脱敏后四位）") },
-                placeholder = { Text("****  ****  ****  1234") },
+                label = { Text(numberLabel) },
+                placeholder = { Text(numberHint) },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
             )
@@ -364,7 +412,7 @@ fun CardEditScreen(
                     onValueChange = { v ->
                         viewModel.update { it.copy(requiredCount = v.filter(Char::isDigit)) }
                     },
-                    label = { Text("所需笔数 *") },
+                    label = { Text(requiredLabel) },
                     modifier = Modifier.weight(1f),
                     singleLine = true,
                     keyboardOptions =
@@ -377,7 +425,7 @@ fun CardEditScreen(
                     onValueChange = { v ->
                         viewModel.update { it.copy(currentCount = v.filter(Char::isDigit)) }
                     },
-                    label = { Text("当前笔数") },
+                    label = { Text(currentLabel) },
                     modifier = Modifier.weight(1f),
                     singleLine = true,
                     keyboardOptions =
@@ -388,13 +436,19 @@ fun CardEditScreen(
             }
 
             DateRow(
-                label = "卡片有效期",
+                label = validUntilLabel,
+                unsetLabel = unsetText,
+                clearLabel = clearText,
+                selectLabel = selectText,
                 millis = state.validUntilMillis,
                 onClick = { dateDialogTarget = DateField.VALID_UNTIL },
                 onClear = { viewModel.update { it.copy(validUntilMillis = null) } },
             )
             DateRow(
-                label = "下次年费结算日",
+                label = nextDueLabel,
+                unsetLabel = unsetText,
+                clearLabel = clearText,
+                selectLabel = selectText,
                 millis = state.nextDueDateMillis,
                 onClick = { dateDialogTarget = DateField.NEXT_DUE },
                 onClear = { viewModel.update { it.copy(nextDueDateMillis = null) } },
@@ -403,7 +457,7 @@ fun CardEditScreen(
             OutlinedTextField(
                 value = state.note,
                 onValueChange = { v -> viewModel.update { it.copy(note = v) } },
-                label = { Text("备注") },
+                label = { Text(noteLabel) },
                 modifier = Modifier.fillMaxWidth().height(120.dp),
                 maxLines = 4,
             )
@@ -420,7 +474,7 @@ fun CardEditScreen(
                     ),
             ) {
                 Text(
-                    if (cardId == null) "保存并添加到列表" else "保存修改",
+                    saveBtnText,
                     modifier = Modifier.padding(vertical = 6.dp),
                     style = MaterialTheme.typography.titleMedium,
                 )
@@ -452,10 +506,10 @@ fun CardEditScreen(
                         }
                     }
                     dateDialogTarget = null
-                }) { Text("确定") }
+                }) { Text(confirmText) }
             },
             dismissButton = {
-                TextButton(onClick = { dateDialogTarget = null }) { Text("取消") }
+                TextButton(onClick = { dateDialogTarget = null }) { Text(cancelText) }
             },
         ) {
             DatePicker(state = pickerState)
@@ -470,7 +524,7 @@ fun CardEditScreen(
         ) {
             Column(modifier = Modifier.padding(20.dp)) {
                 Text(
-                    "选择主题色",
+                    colorPickerTitle,
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold,
                 )
@@ -486,7 +540,7 @@ fun CardEditScreen(
                     onClick = { showColorPicker = false },
                     modifier = Modifier.fillMaxWidth(),
                     shape = MaterialTheme.shapes.large,
-                ) { Text("完成") }
+                ) { Text(doneText) }
                 Spacer(Modifier.height(8.dp))
             }
         }
@@ -501,13 +555,16 @@ private enum class DateField { VALID_UNTIL, NEXT_DUE }
 @Composable
 private fun ImageSourceSelector(
     current: ImageSourceType,
+    providerLabel: String,
+    userLabel: String,
+    noneLabel: String,
     onSelect: (ImageSourceType) -> Unit,
 ) {
     val options =
         listOf(
-            Triple(ImageSourceType.PROVIDER, "预设卡组织", Icons.Default.AccountBox),
-            Triple(ImageSourceType.USER, "自定义上传", Icons.Default.Image),
-            Triple(ImageSourceType.NONE, "纯色卡", Icons.Default.LayersClear),
+            Triple(ImageSourceType.PROVIDER, providerLabel, Icons.Default.AccountBox),
+            Triple(ImageSourceType.USER, userLabel, Icons.Default.Image),
+            Triple(ImageSourceType.NONE, noneLabel, Icons.Default.LayersClear),
         )
     SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
         options.forEachIndexed { index, (type, label, icon) ->
@@ -527,12 +584,14 @@ private fun ImageSourceSelector(
 @Composable
 private fun OrientationSelector(
     current: CardOrientation,
+    landscapeLabel: String,
+    portraitLabel: String,
     onSelect: (CardOrientation) -> Unit,
 ) {
     val options =
         listOf(
-            CardOrientation.LANDSCAPE to "横版",
-            CardOrientation.PORTRAIT to "竖版",
+            CardOrientation.LANDSCAPE to landscapeLabel,
+            CardOrientation.PORTRAIT to portraitLabel,
         )
     SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
         options.forEachIndexed { index, (o, label) ->
@@ -563,6 +622,7 @@ private fun OrientationSelector(
 private fun FolderPicker(
     folders: List<com.shuaji.cards.data.local.CardFolderEntity>,
     currentId: Long?,
+    unfiledLabel: String,
     onSelect: (Long?) -> Unit,
 ) {
     val allOptions =
@@ -596,7 +656,7 @@ private fun FolderPicker(
                 },
             ) {
                 Text(
-                    folder?.name ?: "未分类",
+                    folder?.name ?: unfiledLabel,
                     style = MaterialTheme.typography.labelMedium,
                     maxLines = 1,
                 )
@@ -657,7 +717,7 @@ private fun CardNetworkPicker(
                 ) {
                     Image(
                         painter = painterResource(network.logoRes),
-                        contentDescription = network.displayName,
+                        contentDescription = stringResource(network.displayNameRes),
                         contentScale = ContentScale.Fit,
                         modifier = Modifier.padding(6.dp),
                     )
@@ -672,7 +732,7 @@ private fun CardNetworkPicker(
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(
-                        text = network.displayName,
+                        text = stringResource(network.displayNameRes),
                         style = MaterialTheme.typography.labelSmall,
                         color =
                             if (selected) {
@@ -692,6 +752,9 @@ private fun CardNetworkPicker(
 @Composable
 private fun DateRow(
     label: String,
+    unsetLabel: String,
+    clearLabel: String,
+    selectLabel: String,
     millis: Long?,
     onClick: () -> Unit,
     onClear: () -> Unit,
@@ -717,16 +780,16 @@ private fun DateRow(
                 )
                 Spacer(Modifier.height(2.dp))
                 Text(
-                    if (millis != null) formatDate(millis) else "未设置",
+                    if (millis != null) formatDate(millis) else unsetLabel,
                     style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.onSurface,
                 )
             }
             Row {
                 if (millis != null) {
-                    TextButton(onClick = onClear) { Text("清除") }
+                    TextButton(onClick = onClear) { Text(clearLabel) }
                 }
-                TextButton(onClick = onClick) { Text("选择") }
+                TextButton(onClick = onClick) { Text(selectLabel) }
             }
         }
     }

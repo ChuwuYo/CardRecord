@@ -40,11 +40,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.shuaji.cards.R
 import com.shuaji.cards.ShuajiApplication
 import com.shuaji.cards.data.local.TransactionEntity
 import com.shuaji.cards.ui.component.CardVisual
@@ -72,24 +74,32 @@ fun CardDetailScreen(
     var showResetDialog by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf(false) }
 
+    val titleLoading = stringResource(R.string.detail_title_loading)
+    val backCd = stringResource(R.string.common_back)
+    val deleteCardCd = stringResource(R.string.detail_action_delete)
+    val resetCd = stringResource(R.string.detail_action_reset)
+    val editCd = stringResource(R.string.detail_action_edit)
+    val loadingText = stringResource(R.string.detail_loading)
+    val defaultMerchant = stringResource(R.string.detail_tx_default_merchant)
+
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(text = card?.name ?: "卡片详情", fontWeight = FontWeight.Bold) },
+                title = { Text(text = card?.name ?: titleLoading, fontWeight = FontWeight.Bold) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = backCd)
                     }
                 },
                 actions = {
                     IconButton(onClick = { showDeleteDialog = true }) {
-                        Icon(Icons.Default.Delete, contentDescription = "删除卡片")
+                        Icon(Icons.Default.Delete, contentDescription = deleteCardCd)
                     }
                     IconButton(onClick = { showResetDialog = true }) {
-                        Icon(Icons.Default.Refresh, contentDescription = "重置周期")
+                        Icon(Icons.Default.Refresh, contentDescription = resetCd)
                     }
                     IconButton(onClick = onEdit) {
-                        Icon(Icons.Default.Edit, contentDescription = "编辑")
+                        Icon(Icons.Default.Edit, contentDescription = editCd)
                     }
                 },
                 colors =
@@ -102,7 +112,7 @@ fun CardDetailScreen(
             ExtendedFloatingActionButton(
                 onClick = { showAddDialog = true },
                 icon = { Icon(Icons.Default.Add, contentDescription = null) },
-                text = { Text("记一笔") },
+                text = { Text(stringResource(R.string.detail_action_record)) },
             )
         },
     ) { padding ->
@@ -115,7 +125,7 @@ fun CardDetailScreen(
                         .padding(padding),
                 contentAlignment = Alignment.Center,
             ) {
-                Text("正在加载…", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(loadingText, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             return@Scaffold
         }
@@ -132,7 +142,7 @@ fun CardDetailScreen(
             }
             item {
                 Text(
-                    text = "消费记录（${transactions.size}）",
+                    text = stringResource(R.string.detail_transactions_title, transactions.size),
                     style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -152,7 +162,7 @@ fun CardDetailScreen(
                             contentAlignment = Alignment.Center,
                         ) {
                             Text(
-                                text = "还没有消费记录，点击右下角「记一笔」",
+                                text = stringResource(R.string.detail_empty_transactions),
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
@@ -163,21 +173,24 @@ fun CardDetailScreen(
                     var confirmDelete by remember { mutableStateOf(false) }
                     TransactionRow(
                         transaction = t,
+                        defaultMerchant = defaultMerchant,
                         onDelete = { confirmDelete = true },
                     )
                     if (confirmDelete) {
                         AlertDialog(
                             onDismissRequest = { confirmDelete = false },
-                            title = { Text("删除此消费记录？") },
-                            text = { Text("删除后笔数将自动减 1，操作不可撤销。") },
+                            title = { Text(stringResource(R.string.detail_delete_tx_dialog_title)) },
+                            text = { Text(stringResource(R.string.detail_delete_tx_dialog_message)) },
                             confirmButton = {
                                 TextButton(onClick = {
                                     viewModel.deleteTransaction(t)
                                     confirmDelete = false
-                                }) { Text("删除") }
+                                }) { Text(stringResource(R.string.common_delete)) }
                             },
                             dismissButton = {
-                                TextButton(onClick = { confirmDelete = false }) { Text("取消") }
+                                TextButton(onClick = { confirmDelete = false }) {
+                                    Text(stringResource(R.string.common_cancel))
+                                }
                             },
                         )
                     }
@@ -199,16 +212,16 @@ fun CardDetailScreen(
     if (showResetDialog) {
         AlertDialog(
             onDismissRequest = { showResetDialog = false },
-            title = { Text("重置本周期？") },
-            text = { Text("将清零当前笔数并刷新周年日起点，已有的消费记录将保留。") },
+            title = { Text(stringResource(R.string.detail_reset_dialog_title)) },
+            text = { Text(stringResource(R.string.detail_reset_dialog_message)) },
             confirmButton = {
                 TextButton(onClick = {
                     viewModel.resetCycle()
                     showResetDialog = false
-                }) { Text("重置") }
+                }) { Text(stringResource(R.string.detail_reset_dialog_confirm)) }
             },
             dismissButton = {
-                TextButton(onClick = { showResetDialog = false }) { Text("取消") }
+                TextButton(onClick = { showResetDialog = false }) { Text(stringResource(R.string.common_cancel)) }
             },
         )
     }
@@ -216,17 +229,17 @@ fun CardDetailScreen(
     if (showDeleteDialog) {
         AlertDialog(
             onDismissRequest = { showDeleteDialog = false },
-            title = { Text("删除此卡片？") },
-            text = { Text("将同时删除这张卡的全部消费记录，操作不可撤销。") },
+            title = { Text(stringResource(R.string.detail_delete_dialog_title)) },
+            text = { Text(stringResource(R.string.detail_delete_dialog_message)) },
             confirmButton = {
                 TextButton(onClick = {
                     viewModel.deleteCard()
                     showDeleteDialog = false
                     onBack()
-                }) { Text("删除") }
+                }) { Text(stringResource(R.string.common_delete)) }
             },
             dismissButton = {
-                TextButton(onClick = { showDeleteDialog = false }) { Text("取消") }
+                TextButton(onClick = { showDeleteDialog = false }) { Text(stringResource(R.string.common_cancel)) }
             },
         )
     }
@@ -235,6 +248,7 @@ fun CardDetailScreen(
 @Composable
 private fun TransactionRow(
     transaction: TransactionEntity,
+    defaultMerchant: String,
     onDelete: () -> Unit,
 ) {
     Card(
@@ -252,7 +266,7 @@ private fun TransactionRow(
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = transaction.merchant.ifBlank { "未命名消费" },
+                    text = transaction.merchant.ifBlank { defaultMerchant },
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
                 )
@@ -260,7 +274,14 @@ private fun TransactionRow(
                 Text(
                     text =
                         formatDateTime(transaction.occurredAtMillis) +
-                            if (transaction.amountCents != null) "  ·  ¥" + "%.2f".format(transaction.amountCents / 100.0) else "",
+                            if (transaction.amountCents != null) {
+                                stringResource(
+                                    R.string.detail_tx_amount_separator,
+                                    "%.2f".format(transaction.amountCents / 100.0),
+                                )
+                            } else {
+                                ""
+                            },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -273,7 +294,7 @@ private fun TransactionRow(
                 }
             }
             IconButton(onClick = onDelete) {
-                Icon(Icons.Default.Delete, contentDescription = "删除")
+                Icon(Icons.Default.Delete, contentDescription = stringResource(R.string.common_delete))
             }
         }
     }
@@ -289,19 +310,19 @@ private fun AddTransactionDialog(
     var note by remember { mutableStateOf("") }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("新增一笔消费") },
+        title = { Text(stringResource(R.string.detail_add_tx_dialog_title)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(
                     value = merchant,
                     onValueChange = { merchant = it },
-                    label = { Text("商户 / 用途") },
+                    label = { Text(stringResource(R.string.detail_add_tx_merchant_label)) },
                     singleLine = true,
                 )
                 OutlinedTextField(
                     value = amount,
                     onValueChange = { amount = it.filter { ch -> ch.isDigit() || ch == '.' } },
-                    label = { Text("金额（可选）") },
+                    label = { Text(stringResource(R.string.detail_add_tx_amount_label)) },
                     singleLine = true,
                     keyboardOptions =
                         androidx.compose.foundation.text
@@ -310,7 +331,7 @@ private fun AddTransactionDialog(
                 OutlinedTextField(
                     value = note,
                     onValueChange = { note = it },
-                    label = { Text("备注（可选）") },
+                    label = { Text(stringResource(R.string.detail_add_tx_note_label)) },
                     singleLine = false,
                     maxLines = 3,
                 )
@@ -320,10 +341,10 @@ private fun AddTransactionDialog(
             TextButton(onClick = {
                 val cents = amount.toDoubleOrNull()?.let { (it * 100).toLong() }
                 onConfirm(merchant.trim(), cents, note.trim())
-            }) { Text("保存") }
+            }) { Text(stringResource(R.string.common_save)) }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("取消") }
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) }
         },
     )
 }

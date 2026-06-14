@@ -32,18 +32,17 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
+import com.shuaji.cards.R
 import com.shuaji.cards.data.CardNetworkProvider
 import com.shuaji.cards.data.local.CardEntity
 import com.shuaji.cards.data.local.CardOrientation
 import com.shuaji.cards.data.local.ImageSourceType
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
 /**
  * ISO/IEC 7810 ID-1 标准卡片比例：85.60 mm × 53.98 mm ⇒ 长宽比 1.586:1。
@@ -272,7 +271,7 @@ private fun CardImageLayer(
             if (!card.imageUri.isNullOrBlank()) {
                 AsyncImage(
                     model = card.imageUri,
-                    contentDescription = "卡面",
+                    contentDescription = stringResource(R.string.card_image_content_description),
                     modifier = modifier.clip(MaterialTheme.shapes.medium),
                     contentScale = ContentScale.Crop,
                     alpha = 0.35f,
@@ -283,7 +282,7 @@ private fun CardImageLayer(
             if (network != null) {
                 Image(
                     painter = painterResource(network.logoRes),
-                    contentDescription = network.displayName,
+                    contentDescription = stringResource(network.displayNameRes),
                     contentScale = ContentScale.Crop,
                     modifier = modifier,
                     alpha = 0.45f,
@@ -339,7 +338,7 @@ private fun CardContent(
                 )
                 Spacer(Modifier.width(6.dp))
                 Text(
-                    card.bank.ifBlank { "—" },
+                    text = card.bank.ifBlank { stringResource(R.string.card_default_bank) },
                     style = MaterialTheme.typography.labelMedium,
                     color = Color.White.copy(alpha = 0.85f),
                     maxLines = 1,
@@ -356,7 +355,7 @@ private fun CardContent(
                                 ).padding(horizontal = 5.dp, vertical = 1.dp),
                     ) {
                         Text(
-                            network.displayName,
+                            text = stringResource(network.displayNameRes),
                             style = MaterialTheme.typography.labelSmall,
                             color = Color.White,
                             maxLines = 1,
@@ -369,7 +368,7 @@ private fun CardContent(
         }
         if (showName) {
             Text(
-                card.name.ifBlank { "未命名卡片" },
+                text = card.name.ifBlank { stringResource(R.string.card_default_name) },
                 style = MaterialTheme.typography.titleLarge,
                 color = Color.White,
                 fontWeight = FontWeight.ExtraBold,
@@ -390,13 +389,9 @@ private fun CardContent(
     }
 }
 
-/** 仅提取卡号后四位（脱敏显示） */
+/** 仅提取卡号后四位（脱敏显示）。当前文件未使用，保留以备未来 Activity 直接调用。 */
+@Suppress("unused")
 internal fun lastFourDigits(masked: String): String {
     val digits = masked.filter(Char::isDigit)
     return if (digits.length >= 4) digits.takeLast(4) else digits.ifBlank { "****" }
-}
-
-private fun formatDate(millis: Long): String {
-    val fmt = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
-    return fmt.format(Date(millis))
 }

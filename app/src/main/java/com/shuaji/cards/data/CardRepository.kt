@@ -17,6 +17,8 @@ class CardRepository(
 
     fun observeCard(id: Long): Flow<CardEntity?> = cardDao.observeById(id)
 
+    suspend fun getCard(id: Long): CardEntity? = cardDao.getById(id)
+
     fun observeTransactions(cardId: Long): Flow<List<TransactionEntity>> = transactionDao.observeForCard(cardId)
 
     suspend fun upsertCard(card: CardEntity): Long = cardDao.upsert(card)

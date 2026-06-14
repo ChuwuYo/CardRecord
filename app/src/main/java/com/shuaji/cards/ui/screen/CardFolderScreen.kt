@@ -1,7 +1,6 @@
 package com.shuaji.cards.ui.screen
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -48,12 +47,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.shuaji.cards.R
 import com.shuaji.cards.data.local.CardFolderEntity
 import com.shuaji.cards.ui.ViewModelFactories
+import com.shuaji.cards.ui.component.ModernColorPicker
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -69,26 +71,33 @@ fun CardFolderScreen(onBack: () -> Unit) {
     var dialogTarget by remember { mutableStateOf<DialogTarget?>(null) }
     var folderToDelete by remember { mutableStateOf<CardFolderEntity?>(null) }
 
+    val titleText = stringResource(R.string.folder_title)
+    val backCd = stringResource(R.string.common_back)
+    val createText = stringResource(R.string.common_create)
+    val editCd = stringResource(R.string.common_edit)
+    val deleteCd = stringResource(R.string.common_delete)
+    val cancelText = stringResource(R.string.common_cancel)
+
     Scaffold(
         topBar = {
             TopAppBar(
                 title = {
                     Text(
-                        "文件夹",
+                        titleText,
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
                     )
                 },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = backCd)
                     }
                 },
                 actions = {
                     TextButton(onClick = { dialogTarget = DialogTarget.Create }) {
                         Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.size(4.dp))
-                        Text("新建")
+                        Text(createText)
                     }
                 },
                 colors =
@@ -113,6 +122,8 @@ fun CardFolderScreen(onBack: () -> Unit) {
                     FolderRow(
                         folder = folder,
                         cardCount = counts[folder.id] ?: 0,
+                        editCd = editCd,
+                        deleteCd = deleteCd,
                         onClick = { dialogTarget = DialogTarget.Edit(folder) },
                         onDelete = { folderToDelete = folder },
                     )
@@ -137,8 +148,7 @@ fun CardFolderScreen(onBack: () -> Unit) {
                 initial = target.folder,
                 onDismiss = { dialogTarget = null },
                 onConfirm = { name, color ->
-                    viewModel.rename(target.folder, name)
-                    viewModel.recolor(target.folder, color)
+                    viewModel.update(target.folder, name, color)
                     dialogTarget = null
                 },
             )
@@ -149,16 +159,16 @@ fun CardFolderScreen(onBack: () -> Unit) {
     folderToDelete?.let { folder ->
         AlertDialog(
             onDismissRequest = { folderToDelete = null },
-            title = { Text("删除「${folder.name}」？") },
-            text = { Text("文件夹下的卡片不会被删除，会被移到「未分类」。") },
+            title = { Text(stringResource(R.string.folder_delete_title, folder.name)) },
+            text = { Text(stringResource(R.string.folder_delete_message)) },
             confirmButton = {
                 TextButton(onClick = {
                     viewModel.delete(folder)
                     folderToDelete = null
-                }) { Text("删除") }
+                }) { Text(deleteCd) }
             },
             dismissButton = {
-                TextButton(onClick = { folderToDelete = null }) { Text("取消") }
+                TextButton(onClick = { folderToDelete = null }) { Text(cancelText) }
             },
         )
     }
@@ -176,6 +186,8 @@ private sealed interface DialogTarget {
 private fun FolderRow(
     folder: CardFolderEntity,
     cardCount: Int,
+    editCd: String,
+    deleteCd: String,
     onClick: () -> Unit,
     onDelete: () -> Unit,
 ) {
@@ -217,16 +229,16 @@ private fun FolderRow(
                     fontWeight = FontWeight.SemiBold,
                 )
                 Text(
-                    "$cardCount 张卡",
+                    stringResource(R.string.folder_count_label, cardCount),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
             IconButton(onClick = onClick) {
-                Icon(Icons.Default.Edit, contentDescription = "编辑", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                Icon(Icons.Default.Edit, contentDescription = editCd, tint = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             IconButton(onClick = onDelete) {
-                Icon(Icons.Default.Delete, contentDescription = "删除", tint = MaterialTheme.colorScheme.error)
+                Icon(Icons.Default.Delete, contentDescription = deleteCd, tint = MaterialTheme.colorScheme.error)
             }
         }
     }
@@ -250,13 +262,13 @@ private fun EmptyFolderState(onCreate: () -> Unit) {
         )
         Spacer(Modifier.height(12.dp))
         Text(
-            "还没有文件夹",
+            stringResource(R.string.folder_empty_title),
             style = MaterialTheme.typography.titleLarge,
             fontWeight = FontWeight.Bold,
         )
         Spacer(Modifier.height(4.dp))
         Text(
-            "为卡片创建分组，比如「商旅」「日常」",
+            stringResource(R.string.folder_empty_subtitle),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -264,24 +276,10 @@ private fun EmptyFolderState(onCreate: () -> Unit) {
         FilledTonalButton(onClick = onCreate) {
             Icon(Icons.Default.Add, contentDescription = null)
             Spacer(Modifier.size(6.dp))
-            Text("新建文件夹")
+            Text(stringResource(R.string.folder_create))
         }
     }
 }
-
-private val PRESET_COLORS =
-    listOf(
-        0xFFEF5350.toInt(), // 番茄红
-        0xFFEC407A.toInt(), // 粉红
-        0xFFAB47BC.toInt(), // 紫
-        0xFF7E57C2.toInt(), // 深紫
-        0xFF5C6BC0.toInt(), // 靛
-        0xFF42A5F5.toInt(), // 蓝
-        0xFF26A69A.toInt(), // 青
-        0xFF66BB6A.toInt(), // 绿
-        0xFFFFA726.toInt(), // 橙
-        0xFF8D6E63.toInt(), // 棕
-    )
 
 @Composable
 private fun FolderEditDialog(
@@ -290,46 +288,41 @@ private fun FolderEditDialog(
     onConfirm: (name: String, color: Int) -> Unit,
 ) {
     var name by remember { mutableStateOf(initial?.name ?: "") }
-    var color by remember { mutableStateOf(initial?.colorArgb ?: PRESET_COLORS.first()) }
+    var color by remember { mutableStateOf(initial?.colorArgb ?: 0xFF42A5F5.toInt()) }
+
+    val titleText =
+        stringResource(
+            if (initial == null) R.string.folder_dialog_create_title else R.string.folder_dialog_edit_title,
+        )
+    val nameLabel = stringResource(R.string.folder_dialog_field_name)
+    val colorLabel = stringResource(R.string.folder_dialog_field_color)
+    val saveText = stringResource(R.string.common_save)
+    val cancelText = stringResource(R.string.common_cancel)
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(if (initial == null) "新建文件夹" else "编辑文件夹") },
+        title = { Text(titleText) },
         text = {
             Column {
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
-                    label = { Text("名称") },
+                    label = { Text(nameLabel) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
                 Spacer(Modifier.height(12.dp))
                 Text(
-                    "颜色",
+                    colorLabel,
                     style = MaterialTheme.typography.labelLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Spacer(Modifier.height(8.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    PRESET_COLORS.forEach { c ->
-                        Box(
-                            modifier =
-                                Modifier
-                                    .size(28.dp)
-                                    .clip(CircleShape)
-                                    .background(Color(c))
-                                    .border(
-                                        width = if (c == color) 2.5.dp else 0.dp,
-                                        color = MaterialTheme.colorScheme.onSurface,
-                                        shape = CircleShape,
-                                    ).clickable { color = c },
-                        )
-                    }
-                }
+                // 复用卡片编辑页的 ModernColorPicker：和卡片主题色取色器视觉一致
+                ModernColorPicker(
+                    initialColor = Color(color),
+                    onColorSelected = { c -> color = c.toComposeArgb() },
+                )
             }
         },
         confirmButton = {
@@ -340,10 +333,18 @@ private fun FolderEditDialog(
                     ButtonDefaults.buttonColors(
                         containerColor = MaterialTheme.colorScheme.primary,
                     ),
-            ) { Text("保存") }
+            ) { Text(saveText) }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("取消") }
+            TextButton(onClick = onDismiss) { Text(cancelText) }
         },
     )
 }
+
+private fun Color.toComposeArgb(): Int =
+    android.graphics.Color.argb(
+        (alpha * 255).toInt(),
+        (red * 255).toInt(),
+        (green * 255).toInt(),
+        (blue * 255).toInt(),
+    )
