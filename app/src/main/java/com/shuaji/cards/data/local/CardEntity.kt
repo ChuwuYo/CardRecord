@@ -61,4 +61,34 @@ data class CardEntity(
 
 enum class ImageSourceType { NONE, PROVIDER, USER }
 
-enum class CardOrientation { LANDSCAPE, PORTRAIT }
+/**
+ * CardEntity 的辅助属性：把数据库存的 [CardEntity.cardOrientation] (String)
+ * 安全转成 [CardOrientation] enum。**所有读卡面朝向的 UI 代码都走这个**，
+ * 不要在调用点再写 `runCatching { CardOrientation.valueOf(...) }.getOrDefault(...)`。
+ *
+ * 历史数据里如果出现异常字符串（手动改过 db、外部导入），回退到 LANDSCAPE——
+ * 因为 PORTRAIT 是后期加的字段，老数据不可能是 PORTRAIT，fallback 安全。
+ */
+val CardEntity.cardOrientationEnum: CardOrientation
+    get() = runCatching { CardOrientation.valueOf(cardOrientation) }.getOrDefault(CardOrientation.LANDSCAPE)
+
+/**
+ * 卡片朝向（与卡面物理方向一致）。
+ *
+ * **aspectRatio 走这里、不走组件里**——把"标准卡比例"作为领域知识挂在
+ * 数据模型上，UI 组件只是消费方。这样做的好处：
+ * 1) 任何新加的预览/列表/详情渲染位置，都从 `cardOrientation.aspectRatio`
+ *    读，不会再写出一份 1.586f 散落各处；
+ * 2) 哪天接 Apple Wallet、Google Wallet 等比例不同的卡规格，
+ *    改一处即可（甚至可以按 orientation 套不同比例）；
+ * 3) 测试可以断言 enum 上的比例而不是去测量像素。
+ *
+ * ISO/IEC 7810 ID-1 标准卡（CR80）：85.60 mm × 53.98 mm ⇒ 1.586:1。
+ * PORTRAIT 旋转 90°，宽高比变 1:1.586 = 0.631。
+ */
+enum class CardOrientation(
+    val aspectRatio: Float,
+) {
+    LANDSCAPE(1.586f),
+    PORTRAIT(0.631f),
+}
