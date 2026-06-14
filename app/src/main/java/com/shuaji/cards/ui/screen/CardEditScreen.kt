@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -239,11 +240,16 @@ fun CardEditScreen(
             }
 
             if (state.imageSourceType == ImageSourceType.USER) {
+                // ISO/IEC 7810 ID-1 标准卡比例 1.586:1；竖版 = 1:1.586。
+                // 之前用 height(160.dp) + ContentScale.Crop 强行 2:1 容器，
+                // 导致用户上传的标准卡图片被横向裁切（左右两端"INDUSTRIAL BANK" / "出 国 金 融"看不到）。
+                // 改用 aspectRatio 跟随朝向，ContentScale.Fit 保证图片完整显示。
+                val cardAspect = if (state.cardOrientation == CardOrientation.LANDSCAPE) 1.586f else 0.631f
                 Surface(
                     modifier =
                         Modifier
                             .fillMaxWidth()
-                            .height(160.dp)
+                            .aspectRatio(cardAspect)
                             .clickable { imagePicker.launch("image/*") },
                     shape = MaterialTheme.shapes.medium,
                     color = MaterialTheme.colorScheme.surfaceVariant,
@@ -257,7 +263,7 @@ fun CardEditScreen(
                                     Modifier
                                         .fillMaxSize()
                                         .clip(MaterialTheme.shapes.medium),
-                                contentScale = ContentScale.Crop,
+                                contentScale = ContentScale.Fit,
                             )
                             IconButton(
                                 onClick = { viewModel.update { it.copy(imageUri = null) } },
