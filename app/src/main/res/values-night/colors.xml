@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+        暗色主题下的窗口背景色，与 Theme.kt 中 darkColorScheme().background (#0A121C) 一致。
+        没有这个文件，亮色资源会被复用，暗色启动会从亮白过渡到深色。
+    -->
+    <color name="window_background">#0A121C</color>
+</resources>

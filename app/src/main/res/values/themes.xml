@@ -1,9 +1,26 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources xmlns:tools="http://schemas.android.com/tools">
-    <!-- Material 3 dynamic color theme -->
+    <!--
+        主题：edge-to-edge + Material 3。
+
+        1) statusBarColor / navigationBarColor = transparent：
+           让 enableEdgeToEdge() 完全接管 system bars 颜色（浅/深自动跟随 darkTheme）。
+        2) windowBackground = @color/window_background：
+           **根治"页面切换白闪"**。Activity 启动到 Compose 接管绘制之间，
+           窗口背景就是这个颜色，跟 Compose 内的 background 完全一致，
+           Navigation crossfade 过渡中用户看不到任何突兀的色差。
+           配套资源：values/colors.xml、values-night/colors.xml。
+        3) windowAnimationStyle：
+           关掉系统默认的 enter/exit slide 动画。
+           Compose Navigation 自带 crossfade，叠两层动画会让切换有"先闪后淡"的视觉噪声。
+        4) 不写 android:windowLightStatusBar：
+           旧版本是 true，但 enableEdgeToEdge() 会运行时按 darkTheme 覆盖；
+           静态写死反而在暗色模式下短暂错乱。
+    -->
     <style name="Theme.Shuaji" parent="android:Theme.Material.Light.NoActionBar">
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
-        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowBackground">@color/window_background</item>
+        <item name="android:windowAnimationStyle">@null</item>
     </style>
 </resources>
