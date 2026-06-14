@@ -39,6 +39,8 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -240,11 +242,10 @@ fun CardEditScreen(
             }
 
             if (state.imageSourceType == ImageSourceType.USER) {
-                // ISO/IEC 7810 ID-1 标准卡比例 1.586:1；竖版 = 1:1.586。
-                // 之前用 height(160.dp) + ContentScale.Crop 强行 2:1 容器，
-                // 导致用户上传的标准卡图片被横向裁切（左右两端"INDUSTRIAL BANK" / "出 国 金 融"看不到）。
-                // 改用 aspectRatio 跟随朝向，ContentScale.Fit 保证图片完整显示。
-                val cardAspect = if (state.cardOrientation == CardOrientation.LANDSCAPE) 1.586f else 0.631f
+                // 容器比例走 CardOrientation.aspectRatio（单一来源）；
+                // 之前是硬编码 height(160.dp) + ContentScale.Crop 导致上传的
+                // 标准卡图片被左右裁切。
+                val cardAspect = state.cardOrientation.aspectRatio
                 Surface(
                     modifier =
                         Modifier
@@ -623,7 +624,6 @@ private fun OrientationSelector(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun FolderPicker(
     folders: List<com.shuaji.cards.data.local.CardFolderEntity>,
@@ -631,42 +631,56 @@ private fun FolderPicker(
     unfiledLabel: String,
     onSelect: (Long?) -> Unit,
 ) {
+    // 之前用 SingleChoiceSegmentedButtonRow 平分一行：
+    // - 文件夹 >3 个时每个 chip 宽度被压扁，文字被截断
+    // - 文件夹 >6 个直接溢出看不到全
+    // 改用 LazyRow + FilterChip：每个 chip 自适应文字宽度，
+    // 多了自然横滑，少了就全部展开不浪费空间。FilterChip 是 MD3 单选场景的官方组件。
     val allOptions =
         remember(folders) {
             listOf<Pair<Long?, com.shuaji.cards.data.local.CardFolderEntity?>>(
                 null to null,
             ) + folders.map { it.id to it }
         }
-    SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-        allOptions.forEachIndexed { index, (id, folder) ->
+    LazyRow(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        contentPadding = PaddingValues(horizontal = 2.dp, vertical = 2.dp),
+    ) {
+        items(allOptions, key = { it.first ?: 0L }) { (id, folder) ->
             val selected = currentId == id
-            SegmentedButton(
+            val leadingIcon: @Composable () -> Unit = {
+                if (id == null) {
+                    Icon(
+                        Icons.Default.LayersClear,
+                        contentDescription = null,
+                        modifier = Modifier.size(FilterChipDefaults.IconSize),
+                    )
+                } else {
+                    Box(
+                        modifier =
+                            Modifier
+                                .size(FilterChipDefaults.IconSize)
+                                .clip(CircleShape)
+                                .background(
+                                    androidx.compose.ui.graphics
+                                        .Color(folder!!.colorArgb),
+                                ),
+                    )
+                }
+            }
+            FilterChip(
                 selected = selected,
                 onClick = { onSelect(id) },
-                shape = SegmentedButtonDefaults.itemShape(index = index, count = allOptions.size),
-                icon = {
-                    if (id == null) {
-                        Icon(Icons.Default.LayersClear, contentDescription = null, modifier = Modifier.size(16.dp))
-                    } else {
-                        Box(
-                            modifier =
-                                Modifier
-                                    .size(14.dp)
-                                    .clip(CircleShape)
-                                    .background(
-                                        androidx.compose.ui.graphics
-                                            .Color(folder!!.colorArgb),
-                                    ),
-                        )
-                    }
+                label = {
+                    Text(
+                        folder?.name ?: unfiledLabel,
+                        style = MaterialTheme.typography.labelMedium,
+                        maxLines = 1,
+                    )
                 },
-            ) {
-                Text(
-                    folder?.name ?: unfiledLabel,
-                    style = MaterialTheme.typography.labelMedium,
-                    maxLines = 1,
-                )
-            }
+                leadingIcon = leadingIcon,
+            )
         }
     }
 }
