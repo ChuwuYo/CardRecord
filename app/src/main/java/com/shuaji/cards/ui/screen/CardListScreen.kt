@@ -45,8 +45,9 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -179,49 +180,46 @@ private fun ListTopBar(
     onLayoutToggle: () -> Unit,
     layoutMode: ListLayoutMode,
 ) {
-    Surface(
-        color = MaterialTheme.colorScheme.surface,
-        tonalElevation = 0.dp,
-        shadowElevation = 0.dp,
-    ) {
-        Column(
-            modifier =
-                Modifier
-                    .fillMaxWidth()
-                    .padding(start = 20.dp, end = 8.dp, top = 12.dp, bottom = 8.dp),
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = stringResource(R.string.list_title),
-                        style = MaterialTheme.typography.headlineSmall,
-                        fontWeight = FontWeight.Black,
+    // 用 MD3 TopAppBar 替代自定义 Surface：它会自动应用 WindowInsets.statusBars，
+    // 避免标题被状态栏遮挡（之前自定义 Surface 没读 inset，标题直接画到 (0,0)）。
+    TopAppBar(
+        title = {
+            Column {
+                Text(
+                    text = stringResource(R.string.list_title),
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Black,
+                )
+                Text(
+                    text = stringResource(R.string.list_subtitle),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        },
+        actions = {
+            IconButton(onClick = onSearch) {
+                Icon(Icons.Default.Search, contentDescription = null)
+            }
+            IconButton(onClick = onLayoutToggle) {
+                if (layoutMode == ListLayoutMode.LIST) {
+                    Icon(
+                        Icons.Default.GridView,
+                        contentDescription = stringResource(R.string.list_toggle_to_grid),
                     )
-                    Text(
-                        text = stringResource(R.string.list_subtitle),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                } else {
+                    Icon(
+                        Icons.AutoMirrored.Filled.ViewList,
+                        contentDescription = stringResource(R.string.list_toggle_to_list),
                     )
-                }
-                IconButton(onClick = onSearch) {
-                    Icon(Icons.Default.Search, contentDescription = null)
-                }
-                IconButton(onClick = onLayoutToggle) {
-                    if (layoutMode == ListLayoutMode.LIST) {
-                        Icon(
-                            Icons.Default.GridView,
-                            contentDescription = stringResource(R.string.list_toggle_to_grid),
-                        )
-                    } else {
-                        Icon(
-                            Icons.AutoMirrored.Filled.ViewList,
-                            contentDescription = stringResource(R.string.list_toggle_to_list),
-                        )
-                    }
                 }
             }
-        }
-    }
+        },
+        colors =
+            TopAppBarDefaults.topAppBarColors(
+                containerColor = MaterialTheme.colorScheme.background,
+            ),
+    )
 }
 
 @Composable
