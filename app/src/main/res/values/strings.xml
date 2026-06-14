@@ -48,6 +48,7 @@
     <string name="card_label_next_due">下次结算</string>
     <string name="card_status_done">已达标</string>
     <string name="card_status_remaining">还需 %1$d 笔</string>
+    <string name="card_status_expired">已过期</string>
     <string name="card_long_press_hint">长按可删除</string>
     <string name="card_increment_one">+1 笔</string>
     <string name="card_detail">详情</string>
@@ -63,21 +64,15 @@
     <string name="detail_action_reset">重置周期</string>
     <string name="detail_action_edit">编辑</string>
     <string name="detail_action_record">记一笔</string>
-    <string name="detail_transactions_title">消费记录（%1$d）</string>
-    <string name="detail_empty_transactions">还没有消费记录，点击右下角「记一笔」</string>
-    <string name="detail_tx_default_merchant">未命名消费</string>
-    <string name="detail_tx_amount_separator">  ·  ¥%1$s</string>
+    <string name="detail_label_bank">发卡行</string>
+    <string name="detail_label_card_number">卡号</string>
+    <string name="detail_label_note">备注</string>
+    <string name="detail_label_last_swipe">最近一笔</string>
     <string name="detail_reset_dialog_title">重置本周期？</string>
-    <string name="detail_reset_dialog_message">将清零当前笔数并刷新周年日起点，已有的消费记录将保留。</string>
+    <string name="detail_reset_dialog_message">将清零当前笔数，操作不可撤销。</string>
     <string name="detail_reset_dialog_confirm">重置</string>
     <string name="detail_delete_dialog_title">删除此卡片？</string>
     <string name="detail_delete_dialog_message">将同时删除这张卡的全部消费记录，操作不可撤销。</string>
-    <string name="detail_delete_tx_dialog_title">删除此消费记录？</string>
-    <string name="detail_delete_tx_dialog_message">删除后笔数将自动减 1，操作不可撤销。</string>
-    <string name="detail_add_tx_dialog_title">新增一笔消费</string>
-    <string name="detail_add_tx_merchant_label">商户 / 用途</string>
-    <string name="detail_add_tx_amount_label">金额（可选）</string>
-    <string name="detail_add_tx_note_label">备注（可选）</string>
 
     <!-- ────── 编辑页 ────── -->
     <string name="edit_title_new">添加卡片</string>
@@ -102,7 +97,6 @@
     <string name="edit_field_number">卡号（建议脱敏后四位）</string>
     <string name="edit_field_number_hint">****  ****  ****  1234</string>
     <string name="edit_field_required">所需笔数 *</string>
-    <string name="edit_field_current">当前笔数</string>
     <string name="edit_date_valid_until">卡片有效期</string>
     <string name="edit_date_next_due">下次年费结算日</string>
     <string name="edit_field_note">备注</string>

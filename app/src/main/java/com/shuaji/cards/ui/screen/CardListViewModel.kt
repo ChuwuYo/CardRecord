@@ -5,10 +5,12 @@ import androidx.lifecycle.viewModelScope
 import com.shuaji.cards.data.CardRepository
 import com.shuaji.cards.data.local.CardEntity
 import com.shuaji.cards.data.local.CardFolderEntity
+import com.shuaji.cards.data.local.CardWithCount
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -32,12 +34,25 @@ sealed interface FolderFilter {
     ) : FolderFilter
 }
 
+/**
+ * 主页 UI 用的卡片视图：实体 + 实时笔数 + 是否过期。
+ *
+ * 把 [currentCount] 和 [isExpired] 提前算好，UI 拿到的就是「显示需要的全部」，
+ * 不再需要从 ViewModel 外拿辅助数据。
+ */
+data class CardUi(
+    val card: CardEntity,
+    val currentCount: Int,
+    val isExpired: Boolean,
+    val lastSwipeAtMillis: Long?,
+)
+
 /** 主页 List 中的"分组"：一组卡片 + 标题（文件夹名 / "全部"） */
 data class CardListGroup(
     val key: String,
     val title: String,
     val colorArgb: Int,
-    val cards: List<CardEntity>,
+    val cards: List<CardUi>,
     val isAllGroup: Boolean,
 )
 
@@ -49,13 +64,13 @@ data class CardListGroup(
  * - [grouped] 始终按文件夹分组（filter=Unfiled 时只有一组"未分类"）
  */
 data class ListUiState(
-    val allCards: List<CardEntity> = emptyList(),
+    val allCards: List<CardUi> = emptyList(),
     val folders: List<CardFolderEntity> = emptyList(),
     val filter: FolderFilter = FolderFilter.All,
     val layoutMode: ListLayoutMode = ListLayoutMode.LIST,
     val grouped: List<CardListGroup> = emptyList(),
 ) {
-    val visibleCards: List<CardEntity> get() = grouped.flatMap { it.cards }
+    val visibleCards: List<CardUi> get() = grouped.flatMap { it.cards }
 }
 
 /**
@@ -78,9 +93,17 @@ class CardListViewModel(
     @Suppress("ktlint:standard:backing-property-naming")
     private val pendingRestore = MutableStateFlow<CardEntity?>(null)
 
+    private val nowProvider: () -> Long = { System.currentTimeMillis() }
+
+    /** Repository 流 → UI 流：包成 [CardUi]，把过期判定提前算好。 */
+    private fun observeCardUis() =
+        repository.observeCards().map { list ->
+            list.map { it.toCardUi(nowProvider()) }
+        }
+
     val uiState: StateFlow<ListUiState> =
         combine(
-            repository.observeCards(),
+            observeCardUis(),
             repository.observeFolders(),
             _filter,
             _layoutMode,
@@ -109,9 +132,9 @@ class CardListViewModel(
     }
 
     /** 长按删除：先复制一份存起来再删，给 [markDeleted] 触发 snackbar 留时间。 */
-    fun deleteCard(card: CardEntity) {
-        pendingRestore.value = card
-        viewModelScope.launch { repository.deleteCard(card) }
+    fun deleteCard(card: CardUi) {
+        pendingRestore.value = card.card
+        viewModelScope.launch { repository.deleteCard(card.card) }
     }
 
     fun markDeleted(name: String) {
@@ -132,18 +155,32 @@ class CardListViewModel(
     }
 
     /**
-     * 主页快捷记一笔：增加当前卡的 currentCount，不写 transaction 表（轻量）。
-     * 上限 = requiredCount。
+     * 主页快捷记一笔：写一条流水。currentCount 由 SQL COUNT 实时算，
+     * 写完 Flow 立刻把新的 CardUi 推给 UI 刷新。
+     *
+     * 上限检查：UI 也做了（按钮 disabled / 进度条满格时不可点），
+     * 这里兜底再 clamp 一次 —— 数据库不信任。
      */
-    fun incrementCount(cardId: Long) {
+    fun swipe(cardId: Long) {
         viewModelScope.launch {
-            val card = repository.getCard(cardId) ?: return@launch
-            val newCount = (card.currentCount + 1).coerceAtMost(card.requiredCount)
-            if (newCount == card.currentCount) return@launch
-            repository.upsertCard(card.copy(currentCount = newCount))
+            repository.recordSwipe(cardId)
         }
     }
 }
+
+/**
+ * 把 [CardWithCount] 包装成 UI 用的 [CardUi]。
+ *
+ * - [isExpired] = `validUntilMillis != null && now > validUntilMillis`
+ *   （设置了就该有"已过期"提示，存在即消费）
+ */
+private fun CardWithCount.toCardUi(now: Long): CardUi =
+    CardUi(
+        card = card,
+        currentCount = currentCount,
+        isExpired = card.validUntilMillis?.let { now > it } == true,
+        lastSwipeAtMillis = lastSwipeAtMillis,
+    )
 
 /**
  * 按当前 [flt] 把 [cards] 分成 [CardListGroup] 列表。
@@ -154,21 +191,21 @@ class CardListViewModel(
  * - 组内：filter=All 按 progress 升序（最接近达标的在最上面），其他按更新时间倒序
  */
 internal fun groupCardsForList(
-    cards: List<CardEntity>,
+    cards: List<CardUi>,
     folders: List<CardFolderEntity>,
     flt: FolderFilter,
 ): List<CardListGroup> {
-    fun progressOf(c: CardEntity): Float = if (c.requiredCount == 0) 100f else c.currentCount.toFloat() / c.requiredCount.toFloat()
+    fun progressOf(c: CardUi): Float = if (c.card.requiredCount == 0) 100f else c.currentCount.toFloat() / c.card.requiredCount.toFloat()
 
-    fun orderForAll(c: CardEntity): Float = -progressOf(c)
+    fun orderForAll(c: CardUi): Float = -progressOf(c)
 
-    fun orderForFolder(c: CardEntity): Long = -c.createdAtMillis
+    fun orderForFolder(c: CardUi): Long = -c.card.createdAtMillis
 
     return when (flt) {
         is FolderFilter.All -> {
             val groups = mutableListOf<CardListGroup>()
             folders.forEach { f ->
-                val inFolder = cards.filter { it.folderId == f.id }
+                val inFolder = cards.filter { it.card.folderId == f.id }
                 if (inFolder.isNotEmpty()) {
                     val sorted = inFolder.sortedBy { orderForAll(it) }
                     groups +=
@@ -181,7 +218,7 @@ internal fun groupCardsForList(
                         )
                 }
             }
-            val unfiled = cards.filter { it.folderId == null }
+            val unfiled = cards.filter { it.card.folderId == null }
             if (unfiled.isNotEmpty()) {
                 val sorted = unfiled.sortedBy { orderForAll(it) }
                 groups +=
@@ -201,7 +238,7 @@ internal fun groupCardsForList(
             val color = folder?.colorArgb ?: 0
             val inFolder =
                 cards
-                    .filter { it.folderId == flt.folderId }
+                    .filter { it.card.folderId == flt.folderId }
                     .sortedBy { orderForFolder(it) }
             listOf(
                 CardListGroup(
@@ -216,7 +253,7 @@ internal fun groupCardsForList(
         is FolderFilter.Unfiled -> {
             val unfiled =
                 cards
-                    .filter { it.folderId == null }
+                    .filter { it.card.folderId == null }
                     .sortedBy { orderForFolder(it) }
             listOf(
                 CardListGroup(

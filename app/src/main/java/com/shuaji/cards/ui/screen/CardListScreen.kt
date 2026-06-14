@@ -66,7 +66,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.shuaji.cards.R
-import com.shuaji.cards.data.local.CardEntity
 import com.shuaji.cards.ui.ViewModelFactories
 import com.shuaji.cards.ui.component.CardListItem
 
@@ -157,9 +156,9 @@ fun CardListScreen(
                             onCardClick = onCardClick,
                             onLongPress = { card ->
                                 viewModel.deleteCard(card)
-                                viewModel.markDeleted(card.name.ifBlank { defaultName })
+                                viewModel.markDeleted(card.card.name.ifBlank { defaultName })
                             },
-                            onIncrement = viewModel::incrementCount,
+                            onSwipe = viewModel::swipe,
                         )
                     ListLayoutMode.GRID ->
                         CardsGrid(
@@ -224,10 +223,10 @@ private fun ListTopBar(
 
 @Composable
 private fun OverallProgress(state: ListUiState) {
-    val totalRequired = state.allCards.sumOf { it.requiredCount }
+    val totalRequired = state.allCards.sumOf { it.card.requiredCount }
     val totalCurrent = state.allCards.sumOf { it.currentCount }
     val percent = if (totalRequired == 0) 100 else (totalCurrent * 100 / totalRequired).coerceIn(0, 100)
-    val allDone = state.allCards.isNotEmpty() && state.allCards.all { it.currentCount >= it.requiredCount }
+    val allDone = state.allCards.isNotEmpty() && state.allCards.all { it.currentCount >= it.card.requiredCount }
     Column(
         modifier =
             Modifier
@@ -396,8 +395,8 @@ private fun FilterBar(
 private fun CardsList(
     state: ListUiState,
     onCardClick: (Long) -> Unit,
-    onLongPress: (CardEntity) -> Unit,
-    onIncrement: (Long) -> Unit,
+    onLongPress: (CardUi) -> Unit,
+    onSwipe: (Long) -> Unit,
 ) {
     LazyColumn(
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 96.dp),
@@ -412,13 +411,13 @@ private fun CardsList(
                     isAllGroup = group.isAllGroup,
                 )
             }
-            items(group.cards, key = { it.id }) { card ->
+            items(group.cards, key = { it.card.id }) { card ->
                 CardListItem(
                     card = card,
-                    onClick = { onCardClick(card.id) },
+                    onClick = { onCardClick(card.card.id) },
                     onLongClick = { onLongPress(card) },
-                    onIncrement = { onIncrement(card.id) },
-                    onDetail = { onCardClick(card.id) },
+                    onSwipe = { onSwipe(card.card.id) },
+                    onDetail = { onCardClick(card.card.id) },
                 )
             }
         }
@@ -477,14 +476,14 @@ private fun CardsGrid(
             }
             item(key = "grid-${group.key}") {
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    itemsIndexed(group.cards, key = { _, c -> c.id }) { _, card ->
+                    itemsIndexed(group.cards, key = { _, c -> c.card.id }) { _, card ->
                         Box(modifier = Modifier.width(260.dp)) {
                             CardListItem(
                                 card = card,
-                                onClick = { onCardClick(card.id) },
+                                onClick = { onCardClick(card.card.id) },
                                 onLongClick = {},
-                                onIncrement = {},
-                                onDetail = { onCardClick(card.id) },
+                                onSwipe = {},
+                                onDetail = { onCardClick(card.card.id) },
                                 compact = true,
                             )
                         }

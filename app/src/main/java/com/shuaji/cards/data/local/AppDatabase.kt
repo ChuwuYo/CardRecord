@@ -9,7 +9,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [CardEntity::class, TransactionEntity::class, CardFolderEntity::class],
-    version = 4,
+    version = 6,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -131,11 +131,128 @@ abstract class AppDatabase : RoomDatabase() {
          * v1.3.4 改类名/包名/项目名时同步把 Room 主表 `credit_cards` 重命名为 `cards`。
          * 数据完全保留，只是 SQLite 内部对表名做 RENAME。
          * Foreign key 引用会自动跟随新表名（SQLite RENAME 会更新 sqlite_master 里的引用）。
+         *
+         * **历史 bug 修复**：v1.3.4 ~ v1.4.0 的代码里这版迁移的 version 一直误写为 4
+         * （没有真正升到 5），所以 v1.3.4+ 用户设备上 schema 仍是 v4、表名仍是
+         * `credit_cards`。本迁移在 v1.4.0 升到 version=6 后才**真正**被执行：
+         * 老用户从设备 v4 → v5 → v6，路径 v4→v5 跑这里 RENAME。
          */
         private val MIGRATION_4_5 =
             object : Migration(4, 5) {
                 override fun migrate(db: SupportSQLiteDatabase) {
                     db.execSQL("ALTER TABLE `credit_cards` RENAME TO `cards`")
+                }
+            }
+
+        /**
+         * v5 → v6：**data 层大瘦身**。
+         *
+         * 三件事：
+         * 1. transactions 表瘦化：删 `amount_cents` / `merchant` / `note`
+         *    只剩 `id` / `card_id` / `occurred_at_millis`
+         * 2. cards 表删 `current_count` / `cycle_start_millis`
+         *    —— currentCount 从 transactions COUNT 算，cycleStartMillis 是死字段
+         * 3. card_folders 表删 `icon_key` —— 历史从未被 UI 消费的写而不读字段
+         *
+         * 关键约束（**逐字符匹配 Room kapt 生成的 schema**）：
+         * - SQLite **不支持** `ALTER TABLE ... DROP COLUMN`（除非 SQLite ≥ 3.35 且启用）
+         *   ⇒ 必须**建新表 → 数据复制 → 删旧表 → 重命名**四步走。
+         * - 新表的列定义、NOT NULL、DEFAULT、PRAGMA foreign_keys=OFF 都要精确匹配 Room 期望。
+         * - 复制数据时只 SELECT 仍然存在的列，不 SELECT 已删列。
+         * - 重命名后再 `PRAGMA foreign_keys=ON` 让外键自检重新生效。
+         *
+         * PRAGMA foreign_keys=OFF/ON 包住：避免中间步骤触发外键约束。
+         * 删 cards 旧表时 transactions 里的 card_id 暂时是悬空引用，
+         * 但我们马上 RENAME 新 cards 表回来，引用恢复一致。
+         */
+        private val MIGRATION_5_6 =
+            object : Migration(5, 6) {
+                override fun migrate(db: SupportSQLiteDatabase) {
+                    // 0. 关外键自检 —— 中间表替换不允许被 FK 拦
+                    db.execSQL("PRAGMA foreign_keys=OFF")
+
+                    // 1. transactions 表瘦化
+                    db.execSQL(
+                        """
+                        CREATE TABLE IF NOT EXISTS `transactions_new` (
+                            `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                            `card_id` INTEGER NOT NULL,
+                            `occurred_at_millis` INTEGER NOT NULL,
+                            FOREIGN KEY(`card_id`) REFERENCES `cards`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE
+                        )
+                        """.trimIndent(),
+                    )
+                    db.execSQL(
+                        "INSERT INTO `transactions_new` (`id`, `card_id`, `occurred_at_millis`) " +
+                            "SELECT `id`, `card_id`, `occurred_at_millis` FROM `transactions`",
+                    )
+                    db.execSQL("DROP TABLE `transactions`")
+                    db.execSQL("ALTER TABLE `transactions_new` RENAME TO `transactions`")
+                    db.execSQL("CREATE INDEX `index_transactions_card_id` ON `transactions` (`card_id`)")
+
+                    // 2. cards 表删 current_count / cycle_start_millis / archived
+                    //    - archived 字段从未在 UI 上提供过"归档"入口，是死字段
+                    db.execSQL(
+                        """
+                        CREATE TABLE IF NOT EXISTS `cards_new` (
+                            `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                            `name` TEXT NOT NULL,
+                            `bank` TEXT NOT NULL,
+                            `card_number_masked` TEXT NOT NULL,
+                            `valid_until_millis` INTEGER,
+                            `next_due_date_millis` INTEGER,
+                            `required_count` INTEGER NOT NULL,
+                            `color_argb` INTEGER NOT NULL,
+                            `note` TEXT NOT NULL,
+                            `image_uri` TEXT,
+                            `image_source_type` TEXT NOT NULL DEFAULT 'USER',
+                            `image_provider_key` TEXT,
+                            `card_orientation` TEXT NOT NULL DEFAULT 'LANDSCAPE',
+                            `folder_id` INTEGER,
+                            `created_at_millis` INTEGER NOT NULL,
+                            FOREIGN KEY(`folder_id`) REFERENCES `card_folders`(`id`) ON UPDATE NO ACTION ON DELETE SET NULL
+                        )
+                        """.trimIndent(),
+                    )
+                    db.execSQL(
+                        "INSERT INTO `cards_new` (" +
+                            "`id`, `name`, `bank`, `card_number_masked`, `valid_until_millis`, " +
+                            "`next_due_date_millis`, `required_count`, `color_argb`, `note`, " +
+                            "`image_uri`, `image_source_type`, `image_provider_key`, " +
+                            "`card_orientation`, `folder_id`, `created_at_millis`" +
+                            ") SELECT " +
+                            "`id`, `name`, `bank`, `card_number_masked`, `valid_until_millis`, " +
+                            "`next_due_date_millis`, `required_count`, `color_argb`, `note`, " +
+                            "`image_uri`, `image_source_type`, `image_provider_key`, " +
+                            "`card_orientation`, `folder_id`, `created_at_millis` " +
+                            "FROM `cards`",
+                    )
+                    db.execSQL("DROP TABLE `cards`")
+                    db.execSQL("ALTER TABLE `cards_new` RENAME TO `cards`")
+
+                    // 3. card_folders 表删 icon_key
+                    db.execSQL(
+                        """
+                        CREATE TABLE IF NOT EXISTS `card_folders_new` (
+                            `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                            `name` TEXT NOT NULL,
+                            `color_argb` INTEGER NOT NULL,
+                            `sort_order` INTEGER NOT NULL,
+                            `created_at_millis` INTEGER NOT NULL
+                        )
+                        """.trimIndent(),
+                    )
+                    db.execSQL(
+                        "INSERT INTO `card_folders_new` " +
+                            "(`id`, `name`, `color_argb`, `sort_order`, `created_at_millis`) " +
+                            "SELECT `id`, `name`, `color_argb`, `sort_order`, `created_at_millis` " +
+                            "FROM `card_folders`",
+                    )
+                    db.execSQL("DROP TABLE `card_folders`")
+                    db.execSQL("ALTER TABLE `card_folders_new` RENAME TO `card_folders`")
+
+                    // 4. 重新打开外键自检
+                    db.execSQL("PRAGMA foreign_keys=ON")
                 }
             }
 
@@ -146,7 +263,13 @@ abstract class AppDatabase : RoomDatabase() {
                         context.applicationContext,
                         AppDatabase::class.java,
                         "shuaji.db",
-                    ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+                    ).addMigrations(
+                        MIGRATION_1_2,
+                        MIGRATION_2_3,
+                        MIGRATION_3_4,
+                        MIGRATION_4_5,
+                        MIGRATION_5_6,
+                    )
                     // 兜底仍然保留，但写对迁移后这个分支永远走不到
                     .fallbackToDestructiveMigration(true)
                     .build()

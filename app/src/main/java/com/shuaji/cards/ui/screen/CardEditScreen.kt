@@ -146,7 +146,6 @@ fun CardEditScreen(
     val numberLabel = stringResource(R.string.edit_field_number)
     val numberHint = stringResource(R.string.edit_field_number_hint)
     val requiredLabel = stringResource(R.string.edit_field_required)
-    val currentLabel = stringResource(R.string.edit_field_current)
     val noteLabel = stringResource(R.string.edit_field_note)
     val validUntilLabel = stringResource(R.string.edit_date_valid_until)
     val nextDueLabel = stringResource(R.string.edit_date_next_due)
@@ -409,37 +408,19 @@ fun CardEditScreen(
                 singleLine = true,
             )
 
-            Row(
+            OutlinedTextField(
+                value = state.requiredCount,
+                onValueChange = { v ->
+                    viewModel.update { it.copy(requiredCount = v.filter(Char::isDigit)) }
+                },
+                label = { Text(requiredLabel) },
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                OutlinedTextField(
-                    value = state.requiredCount,
-                    onValueChange = { v ->
-                        viewModel.update { it.copy(requiredCount = v.filter(Char::isDigit)) }
-                    },
-                    label = { Text(requiredLabel) },
-                    modifier = Modifier.weight(1f),
-                    singleLine = true,
-                    keyboardOptions =
-                        androidx.compose.foundation.text.KeyboardOptions(
-                            keyboardType = KeyboardType.Number,
-                        ),
-                )
-                OutlinedTextField(
-                    value = state.currentCount,
-                    onValueChange = { v ->
-                        viewModel.update { it.copy(currentCount = v.filter(Char::isDigit)) }
-                    },
-                    label = { Text(currentLabel) },
-                    modifier = Modifier.weight(1f),
-                    singleLine = true,
-                    keyboardOptions =
-                        androidx.compose.foundation.text.KeyboardOptions(
-                            keyboardType = KeyboardType.Number,
-                        ),
-                )
-            }
+                singleLine = true,
+                keyboardOptions =
+                    androidx.compose.foundation.text.KeyboardOptions(
+                        keyboardType = KeyboardType.Number,
+                    ),
+            )
 
             DateRow(
                 label = validUntilLabel,

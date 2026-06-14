@@ -16,7 +16,7 @@ interface CardFolderDao {
     @Query("SELECT * FROM card_folders WHERE id = :id")
     suspend fun getById(id: Long): CardFolderEntity?
 
-    @Query("SELECT COUNT(*) FROM cards WHERE folder_id = :folderId AND archived = 0")
+    @Query("SELECT COUNT(*) FROM cards WHERE folder_id = :folderId")
     suspend fun countCardsInFolder(folderId: Long): Int
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
