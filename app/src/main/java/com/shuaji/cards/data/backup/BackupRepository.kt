@@ -118,9 +118,18 @@ class BackupRepository(
             if (job != null) activeJob = job
             try {
                 val text =
-                    context.contentResolver.openInputStream(uri)?.use { input ->
-                        BufferedReader(InputStreamReader(input, Charsets.UTF_8)).readText()
-                    } ?: throw BackupException("无法打开源 URI 用于读取")
+                    try {
+                        context.contentResolver.openInputStream(uri)?.use { input ->
+                            BufferedReader(InputStreamReader(input, Charsets.UTF_8)).readText()
+                        } ?: throw BackupException("无法打开源 URI 用于读取")
+                    } catch (e: BackupException) {
+                        throw e
+                    } catch (e: java.io.FileNotFoundException) {
+                        // SAF 临时权限过期 / 用户选的文件被删了——常有的事
+                        throw BackupException("源文件不存在或已失效：${e.message}", e)
+                    } catch (e: java.io.IOException) {
+                        throw BackupException("读取备份文件失败：${e.message}", e)
+                    }
                 ensureActive()
                 if (text.isBlank()) throw BackupException("备份文件为空")
 
@@ -139,12 +148,23 @@ class BackupRepository(
 
                 // 关键：整个写库动作包在一个 Room 事务里。
                 // 任何 DAO 抛异常 / 协程被取消 → SQLite ROLLBACK，DB 不会半成品。
-                database.withTransaction {
-                    when (mode) {
-                        ImportMode.REPLACE -> doReplace(bundle)
-                        ImportMode.MERGE -> doMerge(bundle)
+                // 内部异常统一包成 BackupException，让 UI 只关心业务错误 / 取消两类。
+                val result =
+                    try {
+                        database.withTransaction {
+                            when (mode) {
+                                ImportMode.REPLACE -> doReplace(bundle)
+                                ImportMode.MERGE -> doMerge(bundle)
+                            }
+                        }
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: BackupException) {
+                        throw e
+                    } catch (e: Exception) {
+                        throw BackupException("数据库写入失败：${e.message ?: "未知错误"}", e)
                     }
-                }
+                result
             } finally {
                 if (job != null && activeJob === job) activeJob = null
             }
@@ -201,24 +221,27 @@ class BackupRepository(
      * **MERGE 永远走 INSERT 路径**（`id = 0L` + AUTOINCREMENT），**不**会覆盖现库同 id 的 folder / card。
      */
     private suspend fun doMerge(bundle: BackupBundle): ImportResult {
-        val folderRemap = mutableMapOf<Long, Long>()
-        val cardRemap = mutableMapOf<Long, Long>()
+        // 1) **写之前**先抓现有 name 集合——重名检测不能包含本次刚追加的，否则"自己跟自己"也算重名
+        val existingFolderNames = cardFolderDao.listAll().map { it.name }.toSet()
+        val existingCardNames = cardDao.listAll().map { it.name }.toSet()
 
-        // 1) 写 folders：id 清零
+        // 2) 写 folders：id 清零让 SQLite 重新分配，记 oldFolderId → newFolderId 映射
+        val folderRemap = mutableMapOf<Long, Long>()
         bundle.folders.forEach { folder ->
             val newId = folderDao.upsert(folder.copy(id = 0L))
             folderRemap[folder.id] = newId
         }
 
-        // 2) 写 cards：id 清零，folderId 用映射后的新 id；
+        // 3) 写 cards：id 清零，folderId 用映射后的新 id；
         //    如果旧 folderId 不在备份里（指向现库 folder），保留原值——不能误清空。
+        val cardRemap = mutableMapOf<Long, Long>()
         bundle.cards.forEach { card ->
             val mappedFolderId = card.folderId?.let { folderRemap[it] ?: it }
             val newId = cardDao.upsert(card.copy(id = 0L, folderId = mappedFolderId))
             cardRemap[card.id] = newId
         }
 
-        // 3) 写 transactions：id 清零，cardId 用映射后的新 id（必须找到映射；找不到的跳过）
+        // 4) 写 transactions：id 清零，cardId 用映射后的新 id（必须找到映射；找不到的跳过）
         var txCount = 0
         var txSkipped = 0
         bundle.transactions.forEach { txn ->
@@ -231,9 +254,7 @@ class BackupRepository(
             txCount++
         }
 
-        // 4) 重名检测：扫描现库 + 备份 + 备份里新增的 name，统计重名对
-        val existingFolderNames = cardFolderDao.listAll().map { it.name }.toSet()
-        val existingCardNames = cardDao.listAll().map { it.name }.toSet()
+        // 5) 重名检测：跟"写之前"抓的现库 name 集合对比，**不包含本次刚追加的**
         val duplicateFolders = bundle.folders.count { it.name in existingFolderNames }
         val duplicateCards = bundle.cards.count { it.name in existingCardNames }
 
@@ -244,7 +265,9 @@ class BackupRepository(
             transactionsSkipped = txSkipped,
             duplicateFolderNames = duplicateFolders,
             duplicateCardNames = duplicateCards,
-            idRemap = cardRemap,
+            // folder + card 映射都放一起；客户端按需要查找（注意 folder / card id 可能重叠，
+            // 但客户端不靠这个做业务判断——只是参考）
+            idRemap = folderRemap + cardRemap,
         )
     }
 }
