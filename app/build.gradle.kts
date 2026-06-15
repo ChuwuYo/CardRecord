@@ -15,10 +15,37 @@ android {
         applicationId = "com.shuaji.cards"
         minSdk = 26
         targetSdk = 36
-        versionCode = 14
-        versionName = "1.3.10"
+        versionCode = 18
+        versionName = "1.5.1"
 
         vectorDrawables { useSupportLibrary = true }
+    }
+
+    // 单测里 Robolectric 要读 Android 资源 / Manifest，得打开 includeAndroidResources
+    testOptions {
+        unitTests {
+            isIncludeAndroidResources = true
+            isReturnDefaultValues = true
+            all {
+                // Robolectric 的 plugins-maven-dependency-resolver 不读 Gradle 代理配置，
+                // 走默认 Sonatype 直连会卡超时。本地开发环境：
+                //   提前用 `curl --proxy 127.0.0.1:18080` 把
+                //   android-all-instrumented-13-robolectric-9030017-i6.jar（**注意是 i6 不是 i7**）下到
+                //   `~/.m2/repository/org/robolectric/android-all-instrumented/13-robolectric-9030017-i6/`
+                //   沙箱里 Robolectric 会先扫本地仓库命中，不会去网络下
+                //   本地能直连 Maven Central 时可删掉这一段
+                val mirror = System.getenv("ROBOLECTRIC_MIRROR")
+                if (mirror != null) {
+                    it.systemProperty("robolectric.dependency.repo.url", mirror)
+                }
+                if (System.getenv("ROBOLECTRIC_OFFLINE") == "true") {
+                    it.systemProperty("robolectric.offline", "true")
+                    System.getenv("ROBOLECTRIC_SDK_DIR")?.let { sdkDir ->
+                        it.systemProperty("robolectric.dependency.dir", sdkDir)
+                    }
+                }
+            }
+        }
     }
 
     signingConfigs {
@@ -90,6 +117,17 @@ dependencies {
     implementation("com.github.skydoves:colorpicker-compose:1.1.2")
     debugImplementation("androidx.compose.ui:ui-tooling")
     kapt("androidx.room:room-compiler:2.7.2")
+
+    // ── 单测 ────────────────────────────────────────────────────────
+    // JUnit 4 + Robolectric（Android Context / ContentResolver / Resources）
+    // + Room in-memory + kotlinx-coroutines-test（runTest / TestScope）
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.robolectric:robolectric:4.13")
+    testImplementation("androidx.test:core-ktx:1.6.1")
+    testImplementation("androidx.test.ext:junit-ktx:1.2.1")
+    testImplementation("androidx.room:room-testing:2.7.2")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.1")
+    testImplementation("org.mockito.kotlin:mockito-kotlin:5.4.0")
 }
 
 configurations.all {

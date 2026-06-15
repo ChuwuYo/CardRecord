@@ -18,9 +18,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ViewList
@@ -28,7 +30,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
@@ -66,7 +68,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.shuaji.cards.R
-import com.shuaji.cards.data.local.CardEntity
 import com.shuaji.cards.ui.ViewModelFactories
 import com.shuaji.cards.ui.component.CardListItem
 
@@ -83,6 +84,7 @@ fun CardListScreen(
     onAddCard: () -> Unit = {},
     onCardClick: (Long) -> Unit = {},
     onManageFolders: () -> Unit = {},
+    onOpenSettings: () -> Unit = {},
 ) {
     val state by viewModel.uiState.collectAsState()
     val deletedCardName by viewModel.deletedCardName.collectAsState()
@@ -113,8 +115,8 @@ fun CardListScreen(
         topBar = {
             ListTopBar(
                 cardCount = state.visibleCards.size,
-                onSearch = {},
                 onLayoutToggle = viewModel::toggleLayoutMode,
+                onOpenSettings = onOpenSettings,
                 layoutMode = state.layoutMode,
             )
         },
@@ -157,9 +159,9 @@ fun CardListScreen(
                             onCardClick = onCardClick,
                             onLongPress = { card ->
                                 viewModel.deleteCard(card)
-                                viewModel.markDeleted(card.name.ifBlank { defaultName })
+                                viewModel.markDeleted(card.card.name.ifBlank { defaultName })
                             },
-                            onIncrement = viewModel::incrementCount,
+                            onSwipe = viewModel::swipe,
                         )
                     ListLayoutMode.GRID ->
                         CardsGrid(
@@ -176,8 +178,8 @@ fun CardListScreen(
 @Composable
 private fun ListTopBar(
     cardCount: Int,
-    onSearch: () -> Unit,
     onLayoutToggle: () -> Unit,
+    onOpenSettings: () -> Unit,
     layoutMode: ListLayoutMode,
 ) {
     // 用 MD3 TopAppBar 替代自定义 Surface：它会自动应用 WindowInsets.statusBars，
@@ -198,9 +200,6 @@ private fun ListTopBar(
             }
         },
         actions = {
-            IconButton(onClick = onSearch) {
-                Icon(Icons.Default.Search, contentDescription = null)
-            }
             IconButton(onClick = onLayoutToggle) {
                 if (layoutMode == ListLayoutMode.LIST) {
                     Icon(
@@ -214,6 +213,13 @@ private fun ListTopBar(
                     )
                 }
             }
+            // 设置入口——按用户要求放在右上角最右边
+            IconButton(onClick = onOpenSettings) {
+                Icon(
+                    Icons.Default.Settings,
+                    contentDescription = stringResource(R.string.settings_title),
+                )
+            }
         },
         colors =
             TopAppBarDefaults.topAppBarColors(
@@ -224,10 +230,10 @@ private fun ListTopBar(
 
 @Composable
 private fun OverallProgress(state: ListUiState) {
-    val totalRequired = state.allCards.sumOf { it.requiredCount }
+    val totalRequired = state.allCards.sumOf { it.card.requiredCount }
     val totalCurrent = state.allCards.sumOf { it.currentCount }
     val percent = if (totalRequired == 0) 100 else (totalCurrent * 100 / totalRequired).coerceIn(0, 100)
-    val allDone = state.allCards.isNotEmpty() && state.allCards.all { it.currentCount >= it.requiredCount }
+    val allDone = state.allCards.isNotEmpty() && state.allCards.all { it.currentCount >= it.card.requiredCount }
     Column(
         modifier =
             Modifier
@@ -396,8 +402,8 @@ private fun FilterBar(
 private fun CardsList(
     state: ListUiState,
     onCardClick: (Long) -> Unit,
-    onLongPress: (CardEntity) -> Unit,
-    onIncrement: (Long) -> Unit,
+    onLongPress: (CardUi) -> Unit,
+    onSwipe: (Long) -> Unit,
 ) {
     LazyColumn(
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 96.dp),
@@ -412,13 +418,13 @@ private fun CardsList(
                     isAllGroup = group.isAllGroup,
                 )
             }
-            items(group.cards, key = { it.id }) { card ->
+            items(group.cards, key = { it.card.id }) { card ->
                 CardListItem(
                     card = card,
-                    onClick = { onCardClick(card.id) },
+                    onClick = { onCardClick(card.card.id) },
                     onLongClick = { onLongPress(card) },
-                    onIncrement = { onIncrement(card.id) },
-                    onDetail = { onCardClick(card.id) },
+                    onSwipe = { onSwipe(card.card.id) },
+                    onDetail = { onCardClick(card.card.id) },
                 )
             }
         }
@@ -457,39 +463,81 @@ private fun FolderHeader(
     }
 }
 
+/**
+ * grid 模式 cell 类型：把 grouped 摊平到一个 grid 流里。
+ *
+ * 之前 v1.3.10 用 `LazyRow + 260dp` 实现 grid，本质是「横向滚动的固定宽列」，
+ * 手机屏宽 360-420dp 下 260dp 占 2/3 屏宽，看起来只放得下 1.5 张卡——这就是
+ * 你说的"2/3~3/4 大小"。这里改用 `LazyVerticalGrid(GridCells.Adaptive(160dp))`：
+ * 屏宽 360dp → 2 列；420dp → 2 列；600dp+ → 3+ 列自适应。
+ */
+private sealed interface CardGridCell {
+    val key: String
+
+    data class Header(
+        val title: String,
+        val colorArgb: Int,
+        val isAllGroup: Boolean,
+    ) : CardGridCell {
+        override val key: String get() = "h-$title"
+    }
+
+    data class Item(
+        val card: CardUi,
+    ) : CardGridCell {
+        override val key: String get() = "i-${card.card.id}"
+    }
+}
+
 @Composable
 private fun CardsGrid(
     state: ListUiState,
     onCardClick: (Long) -> Unit,
 ) {
-    LazyColumn(
+    // 摊平 grouped → cell 流（header + cards）
+    val cells =
+        remember(state.grouped) {
+            state.grouped.flatMap { group ->
+                listOf(
+                    CardGridCell.Header(
+                        title = group.title,
+                        colorArgb = group.colorArgb,
+                        isAllGroup = group.isAllGroup,
+                    ),
+                ) + group.cards.map { CardGridCell.Item(it) }
+            }
+        }
+    LazyVerticalGrid(
+        columns = GridCells.Adaptive(minSize = 160.dp),
         contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 96.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
         modifier = Modifier.fillMaxSize(),
     ) {
-        state.grouped.forEach { group ->
-            item(key = "header-${group.key}") {
-                FolderHeader(
-                    title = group.title,
-                    colorArgb = group.colorArgb,
-                    isAllGroup = group.isAllGroup,
-                )
-            }
-            item(key = "grid-${group.key}") {
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    itemsIndexed(group.cards, key = { _, c -> c.id }) { _, card ->
-                        Box(modifier = Modifier.width(260.dp)) {
-                            CardListItem(
-                                card = card,
-                                onClick = { onCardClick(card.id) },
-                                onLongClick = {},
-                                onIncrement = {},
-                                onDetail = { onCardClick(card.id) },
-                                compact = true,
-                            )
-                        }
-                    }
-                }
+        // Header 跨满整行（不是 grid cell），Item 占 1 格
+        items(
+            items = cells,
+            key = { it.key },
+            span = { cell ->
+                if (cell is CardGridCell.Header) GridItemSpan(maxLineSpan) else GridItemSpan(1)
+            },
+        ) { cell ->
+            when (cell) {
+                is CardGridCell.Header ->
+                    FolderHeader(
+                        title = cell.title,
+                        colorArgb = cell.colorArgb,
+                        isAllGroup = cell.isAllGroup,
+                    )
+                is CardGridCell.Item ->
+                    CardListItem(
+                        card = cell.card,
+                        onClick = { onCardClick(cell.card.card.id) },
+                        onLongClick = {},
+                        onSwipe = {},
+                        onDetail = { onCardClick(cell.card.card.id) },
+                        compact = true,
+                    )
             }
         }
     }

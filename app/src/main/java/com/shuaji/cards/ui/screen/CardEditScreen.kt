@@ -68,6 +68,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -95,6 +96,7 @@ fun CardEditScreen(
     val viewModel: CardEditViewModel = viewModel(factory = ViewModelFactories.Edit)
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val folders by viewModel.folders.collectAsStateWithLifecycle()
+    val context = LocalContext.current
 
     LaunchedEffect(cardId) {
         if (cardId == null) viewModel.reset() else viewModel.load(cardId)
@@ -107,11 +109,74 @@ fun CardEditScreen(
     var showColorPicker by remember { mutableStateOf(false) }
     val colorSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
+    // P2 修：把 `GetContent` 换成 `OpenDocument(arrayOf("image/*"))`。
+    //
+    // 原因：ActivityResultContracts.GetContent() 拿到的 URI **没有**
+    // FLAG_GRANT_PERSISTABLE_URI_PERMISSION 标记 → `contentResolver.takePersistableUriPermission()`
+    // 会抛 `SecurityException`。
+    // OpenDocument 是 SAF 入口，返回的 URI 携带可持久化标记，调 takePersistableUriPermission
+    // 就能跨进程 / 设备重启后继续读这张图片（前提是用户没在系统设置里把权限吊销）。
+    //
+    // 历史：v1.4.x 我用了 GetContent，结果"卡面图片过几天就失效"，得用户重新上传
+    // ——因为 URI 的临时读权限只在 Activity 生命周期内有效。这是用户对"我上传的图片
+    // 为什么不见了"的吐槽源头。
     val imagePicker =
         rememberLauncherForActivityResult(
-            contract = ActivityResultContracts.GetContent(),
+            contract = ActivityResultContracts.OpenDocument(),
         ) { uri: Uri? ->
             if (uri != null) {
+                // P1-3 修：pick 新图前先释放旧图——避免 grant slot 永久占用。
+                //
+                // 每次 takePersistableUriPermission() 都会消耗 DocumentsProvider 的一个
+                // grant slot（系统对一个 app 持有的 grant 是有限额的，旧 Android 上
+                // 大约 128 / 进程）。替换图片时旧 URI 不再被 Coil / 直接读流用到，
+                // 必须 release；否则用户上传/替换图片 N 次后，DocumentsProvider 会
+                // 默默丢弃最早的几个 grant → 旧图变成"OpenInputStream: permission
+                // denied" 烂图。
+                //
+                // 顺序：先 release 旧 → 再 take 新 —— 避免短暂"两个 grant 同时持有"
+                // 撞到限额上限。
+                val oldUriStr = state.imageUri
+                if (oldUriStr != null && oldUriStr != uri.toString()) {
+                    runCatching {
+                        context.contentResolver.releasePersistableUriPermission(
+                            Uri.parse(oldUriStr),
+                            android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION,
+                        )
+                    }
+                }
+                // 拿持久化读权限——后续 Coil / 直接读流都靠这个
+                val tookPersistable =
+                    runCatching {
+                        context.contentResolver.takePersistableUriPermission(
+                            uri,
+                            android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION,
+                        )
+                        true
+                    }.getOrElse { e ->
+                        // P1-5 修：take 失败时**显式**记录原因（之前只 runCatching 不处理，
+                        // 失败被静默吞掉，bug 难以复现）。常见原因：
+                        // 1) 用户在 SAF 里选了第三方云盘（Google Drive / OneDrive）的
+                        //    URI，云盘没声明 FLAG_GRANT_PERSISTABLE_URI_PERMISSION
+                        // 2) 系统 grant slot 已满
+                        // 3) 跨进程恢复时 grant 被 OS 吊销
+                        // 这里**不**弹 Snackbar——用户在 picker 完成后已经回到编辑页，
+                        // 再弹"图片 URI 持久化失败"会造成视觉混乱。Log.w 留痕，
+                        // 下次进程被杀后再访问会暴露问题，用户可以重新上传。
+                        android.util.Log.w(
+                            "CardEditScreen",
+                            "takePersistableUriPermission 失败，URI ${uri} 在进程重启后可能失效：${e.message}",
+                        )
+                        false
+                    }
+                // imagePersistable 状态仅记在 log 里，state 不背这个字段（避免 schema
+                // 噪声）。如果未来要做"持久化失败时给 UI 一个 icon 提示"再开字段。
+                if (!tookPersistable) {
+                    android.util.Log.d(
+                        "CardEditScreen",
+                        "imagePersistable=false; uri=$uri; 用户下次重启 app 需重新上传卡面",
+                    )
+                }
                 viewModel.update {
                     it.copy(imageUri = uri.toString(), imageSourceType = ImageSourceType.USER)
                 }
@@ -148,7 +213,6 @@ fun CardEditScreen(
     val numberLabel = stringResource(R.string.edit_field_number)
     val numberHint = stringResource(R.string.edit_field_number_hint)
     val requiredLabel = stringResource(R.string.edit_field_required)
-    val currentLabel = stringResource(R.string.edit_field_current)
     val noteLabel = stringResource(R.string.edit_field_note)
     val validUntilLabel = stringResource(R.string.edit_date_valid_until)
     val nextDueLabel = stringResource(R.string.edit_date_next_due)
@@ -206,6 +270,26 @@ fun CardEditScreen(
                 userLabel = userLabel,
                 noneLabel = noneLabel,
                 onSelect = { type ->
+                    // P1-3 修：从 USER 切到 PROVIDER/NONE 时释放图片 URI 的 grant。
+                    //
+                    // 之前 ImageSourceSelector 的 onSelect 只在 type == NONE 时把
+                    // imageUri 置 null，但**不**调 releasePersistableUriPermission。
+                    // 切到 PROVIDER 时 imageUri 还留在 state 里（虽然 UI 不显示），
+                    // grant slot 永久占用。换 URI 时再 take 一次，slot 就溢出了。
+                    //
+                    // 释放条件：当前是 USER 类型 + 有 imageUri + 切到非 USER 类型。
+                    if (state.imageSourceType == ImageSourceType.USER &&
+                        type != ImageSourceType.USER
+                    ) {
+                        state.imageUri?.let { oldUriStr ->
+                            runCatching {
+                                context.contentResolver.releasePersistableUriPermission(
+                                    Uri.parse(oldUriStr),
+                                    android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION,
+                                )
+                            }
+                        }
+                    }
                     viewModel.update { s ->
                         s.copy(
                             imageSourceType = type,
@@ -251,7 +335,7 @@ fun CardEditScreen(
                         Modifier
                             .fillMaxWidth()
                             .aspectRatio(cardAspect)
-                            .clickable { imagePicker.launch("image/*") },
+                            .clickable { imagePicker.launch(arrayOf("image/*")) },
                     shape = MaterialTheme.shapes.medium,
                     color = MaterialTheme.colorScheme.surfaceVariant,
                 ) {
@@ -267,7 +351,20 @@ fun CardEditScreen(
                                 contentScale = ContentScale.Fit,
                             )
                             IconButton(
-                                onClick = { viewModel.update { it.copy(imageUri = null) } },
+                                onClick = {
+                                    // P2 修：清除图片时也要释放持久化权限——避免长期占用
+                                    // DocumentsProvider 的 grant slot（一个 app 持有的 grant 是有限额的）
+                                    val oldUri = state.imageUri
+                                    if (oldUri != null) {
+                                        runCatching {
+                                            context.contentResolver.releasePersistableUriPermission(
+                                                Uri.parse(oldUri),
+                                                android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION,
+                                            )
+                                        }
+                                    }
+                                    viewModel.update { it.copy(imageUri = null) }
+                                },
                                 modifier =
                                     Modifier
                                         .align(Alignment.TopEnd)
@@ -410,37 +507,19 @@ fun CardEditScreen(
                 singleLine = true,
             )
 
-            Row(
+            OutlinedTextField(
+                value = state.requiredCount,
+                onValueChange = { v ->
+                    viewModel.update { it.copy(requiredCount = v.filter(Char::isDigit)) }
+                },
+                label = { Text(requiredLabel) },
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                OutlinedTextField(
-                    value = state.requiredCount,
-                    onValueChange = { v ->
-                        viewModel.update { it.copy(requiredCount = v.filter(Char::isDigit)) }
-                    },
-                    label = { Text(requiredLabel) },
-                    modifier = Modifier.weight(1f),
-                    singleLine = true,
-                    keyboardOptions =
-                        androidx.compose.foundation.text.KeyboardOptions(
-                            keyboardType = KeyboardType.Number,
-                        ),
-                )
-                OutlinedTextField(
-                    value = state.currentCount,
-                    onValueChange = { v ->
-                        viewModel.update { it.copy(currentCount = v.filter(Char::isDigit)) }
-                    },
-                    label = { Text(currentLabel) },
-                    modifier = Modifier.weight(1f),
-                    singleLine = true,
-                    keyboardOptions =
-                        androidx.compose.foundation.text.KeyboardOptions(
-                            keyboardType = KeyboardType.Number,
-                        ),
-                )
-            }
+                singleLine = true,
+                keyboardOptions =
+                    androidx.compose.foundation.text.KeyboardOptions(
+                        keyboardType = KeyboardType.Number,
+                    ),
+            )
 
             DateRow(
                 label = validUntilLabel,

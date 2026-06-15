@@ -15,10 +15,12 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CreditCard
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Event
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
@@ -38,7 +40,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.shuaji.cards.R
-import com.shuaji.cards.data.local.CardEntity
+import com.shuaji.cards.data.local.CardOrientation
+import com.shuaji.cards.data.local.cardOrientationEnum
+import com.shuaji.cards.ui.screen.CardUi
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -47,25 +51,26 @@ import java.util.Locale
  * 列表单卡项。
  *
  * 布局（自上而下）：
- *  1. 卡面（由 [CardVisual] 绘制）
- *  2. 信息区：进度条 + 笔数 + 有效期 + 下次结算 + 操作行
+ *  1. 过期提示条（仅当 [CardUi.isExpired] = true 时显示 —— "凡存在必消费" 兜底）
+ *  2. 卡面（由 [CardVisual] 绘制）
+ *  3. 信息区：进度条 + 笔数 + 有效期 + 下次结算 + 操作行
  *
  * 整张卡片使用一个 [Surface] 容器，提供明确的层级区分。
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun CardListItem(
-    card: CardEntity,
+    card: CardUi,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
-    onIncrement: () -> Unit,
+    onSwipe: () -> Unit,
     onDetail: () -> Unit,
     modifier: Modifier = Modifier,
     compact: Boolean = false,
 ) {
     val progress =
-        if (card.requiredCount > 0) {
-            card.currentCount.toFloat() / card.requiredCount.toFloat()
+        if (card.card.requiredCount > 0) {
+            card.currentCount.toFloat() / card.card.requiredCount.toFloat()
         } else {
             0f
         }
@@ -74,8 +79,8 @@ fun CardListItem(
         animationSpec = spring(dampingRatio = Spring.DampingRatioLowBouncy),
         label = "progress",
     )
-    val isDone = card.currentCount >= card.requiredCount
-    val isPortrait = card.cardOrientation == "PORTRAIT"
+    val isDone = card.currentCount >= card.card.requiredCount
+    val isPortrait = card.card.cardOrientationEnum == CardOrientation.PORTRAIT
 
     Surface(
         modifier =
@@ -93,6 +98,11 @@ fun CardListItem(
             modifier = Modifier.padding(12.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
+            // 0. 过期提示条 —— 设了 validUntil 就该有提示，否则字段白存在
+            if (card.isExpired) {
+                ExpiredBanner()
+            }
+
             // 1. 卡面
             Box(
                 modifier = Modifier.fillMaxWidth(),
@@ -105,7 +115,7 @@ fun CardListItem(
                         else -> 0.88f
                     }
                 CardVisual(
-                    card = card,
+                    card = card.card,
                     modifier = Modifier.fillMaxWidth(cardWidthFraction),
                 )
             }
@@ -122,7 +132,7 @@ fun CardListItem(
                     card = card,
                     animatedProgress = animatedProgress,
                     isDone = isDone,
-                    onIncrement = onIncrement,
+                    onSwipe = onSwipe,
                     onDetail = onDetail,
                 )
             }
@@ -130,9 +140,47 @@ fun CardListItem(
     }
 }
 
+/**
+ * 已过期红色提示条。复用于 list / grid 两种模式。
+ *
+ * 红色背景 + 白字 + 感叹号 icon：层级高，眼睛一扫就看见。
+ */
+@Composable
+private fun ExpiredBanner() {
+    val expiredColor = MaterialTheme.colorScheme.errorContainer
+    val onExpiredColor = MaterialTheme.colorScheme.onErrorContainer
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(8.dp),
+        color = expiredColor,
+    ) {
+        Row(
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Icon(
+                imageVector = Icons.Default.Warning,
+                contentDescription = null,
+                tint = onExpiredColor,
+                modifier = Modifier.size(16.dp),
+            )
+            Text(
+                text = stringResource(R.string.card_status_expired),
+                style = MaterialTheme.typography.labelLarge,
+                color = onExpiredColor,
+                fontWeight = FontWeight.SemiBold,
+            )
+        }
+    }
+}
+
 @Composable
 private fun CompactInfoArea(
-    card: CardEntity,
+    card: CardUi,
     animatedProgress: Float,
     isDone: Boolean,
 ) {
@@ -143,7 +191,7 @@ private fun CompactInfoArea(
             modifier = Modifier.fillMaxWidth(),
         ) {
             Text(
-                text = stringResource(R.string.card_count_compact_format, card.currentCount, card.requiredCount),
+                text = stringResource(R.string.card_count_compact_format, card.currentCount, card.card.requiredCount),
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurface,
@@ -166,8 +214,8 @@ private fun CompactInfoArea(
             strokeCap = ProgressIndicatorDefaults.LinearStrokeCap,
         )
         val dateText =
-            card.nextDueDateMillis?.let { stringResource(R.string.card_date_next_due, formatDate(it)) }
-                ?: card.validUntilMillis?.let { stringResource(R.string.card_date_valid_until, formatDate(it)) }
+            card.card.nextDueDateMillis?.let { stringResource(R.string.card_date_next_due, formatDate(it)) }
+                ?: card.card.validUntilMillis?.let { stringResource(R.string.card_date_valid_until, formatDate(it)) }
         if (dateText != null) {
             Text(
                 dateText,
@@ -182,10 +230,10 @@ private fun CompactInfoArea(
 
 @Composable
 private fun FullInfoArea(
-    card: CardEntity,
+    card: CardUi,
     animatedProgress: Float,
     isDone: Boolean,
-    onIncrement: () -> Unit,
+    onSwipe: () -> Unit,
     onDetail: () -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -197,7 +245,7 @@ private fun FullInfoArea(
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    text = stringResource(R.string.card_count_format, card.currentCount, card.requiredCount),
+                    text = stringResource(R.string.card_count_format, card.currentCount, card.card.requiredCount),
                     style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.ExtraBold,
                     color = MaterialTheme.colorScheme.onSurface,
@@ -214,7 +262,7 @@ private fun FullInfoArea(
                     if (isDone) {
                         stringResource(R.string.card_status_done)
                     } else {
-                        stringResource(R.string.card_status_remaining, card.requiredCount - card.currentCount)
+                        stringResource(R.string.card_status_remaining, card.card.requiredCount - card.currentCount)
                     },
                 style = MaterialTheme.typography.labelMedium,
                 color = if (isDone) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.onSurfaceVariant,
@@ -234,20 +282,22 @@ private fun FullInfoArea(
         )
 
         // 日期行
-        if (card.validUntilMillis != null || card.nextDueDateMillis != null) {
+        if (card.card.validUntilMillis != null || card.card.nextDueDateMillis != null) {
             Spacer(Modifier.height(2.dp))
-            if (card.validUntilMillis != null) {
+            if (card.card.validUntilMillis != null) {
                 DateRow(
                     icon = Icons.Default.CreditCard,
                     label = stringResource(R.string.card_label_valid_until),
-                    value = formatDate(card.validUntilMillis),
+                    value = formatDate(card.card.validUntilMillis),
+                    isWarning = card.isExpired,
                 )
             }
-            if (card.nextDueDateMillis != null) {
+            if (card.card.nextDueDateMillis != null) {
                 DateRow(
                     icon = Icons.Default.Event,
                     label = stringResource(R.string.card_label_next_due),
-                    value = formatDate(card.nextDueDateMillis),
+                    value = formatDate(card.card.nextDueDateMillis),
+                    isWarning = false,
                 )
             }
         }
@@ -266,7 +316,7 @@ private fun FullInfoArea(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                TextButton(onClick = onIncrement) {
+                TextButton(onClick = onSwipe) {
                     Text(text = stringResource(R.string.card_increment_one), fontWeight = FontWeight.SemiBold)
                 }
                 TextButton(onClick = onDetail) {
@@ -284,7 +334,9 @@ private fun DateRow(
     icon: ImageVector,
     label: String,
     value: String,
+    isWarning: Boolean,
 ) {
+    val valueColor = if (isWarning) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -303,8 +355,8 @@ private fun DateRow(
         Text(
             text = value,
             style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurface,
-            fontWeight = FontWeight.Medium,
+            color = valueColor,
+            fontWeight = if (isWarning) FontWeight.SemiBold else FontWeight.Medium,
         )
     }
 }
