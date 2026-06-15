@@ -122,6 +122,10 @@ fun SettingsScreen(onBack: () -> Unit) {
         saver = BackupFileInfoStateSaver,
     ) { mutableStateOf<BackupFileInfo?>(null) }
 
+    // P1-5 修：记录 takePersistableUriPermission 是否成功，传给 ImportModeDialog
+    // 做 UI 警告。用 rememberSaveable 保证旋转屏幕后状态不丢。
+    var tookPersistable by rememberSaveable { mutableStateOf(true) }
+
     // 导出：弹 SAF 文件创建器（application/json）
     val exportLauncher =
         rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
@@ -133,7 +137,7 @@ fun SettingsScreen(onBack: () -> Unit) {
             if (uri != null) {
                 // P1-4 修：持久化读权限——OpenDocument 拿到的 URI 进程级读权限在
                 // 进程被 LMK 杀掉后会失效。持久化后 LMK 杀进程后用户回来仍能导入
-                val tookPersistable =
+                val tookOk =
                     runCatching {
                         context.contentResolver.takePersistableUriPermission(
                             uri,
@@ -141,6 +145,7 @@ fun SettingsScreen(onBack: () -> Unit) {
                         )
                         true
                     }.getOrDefault(false)
+                tookPersistable = tookOk // P1-5 修：把状态写进 rememberSaveable，传给对话框
                 pendingImportUriString = uri.toString()
                 pendingImportInfo = null // 清掉旧的（如果有）
                 // P1-2 修：后台 IO 线程解析；只读顶层 metadata，不反序列化整棵 JSON 树
@@ -150,10 +155,8 @@ fun SettingsScreen(onBack: () -> Unit) {
                             readBackupFileInfo(context.contentResolver, uri)
                         }
                     pendingImportInfo = info
-                    // P1-5 修：take 失败时给用户提示（持久化失败 → 图恢复后失效）
-                    if (!tookPersistable) {
-                        // 不弹错误 Snackbar（如果用全局 push，会被 cancel 误吞）——这里
-                        // 只写 log，用户在二次确认框里能看出「卡面需重新上传」警告
+                    // P1-5 修：take 失败时写 log（UI 警告在 ImportModeDialog 里显示）
+                    if (!tookOk) {
                         android.util.Log.w(
                             "SettingsScreen",
                             "takePersistableUriPermission 失败，导入 URI ${uri} 在进程重启后将不可访问",
@@ -171,9 +174,12 @@ fun SettingsScreen(onBack: () -> Unit) {
     }
 
     // 导入模式选择 + 二次确认
+    // P1-5 修：把 tookPersistable 状态传进对话框，让用户在二次确认时能看到
+    // 「⚠️ 文件访问权限未持久化」警告——之前只写 log，用户完全无感知。
     pendingImportUri?.let { uri ->
         ImportModeDialog(
             info = pendingImportInfo,
+            tookPersistable = tookPersistable,
             onDismiss = {
                 // P1-4 修：用户取消时释放持久化读权限——避免 grant slot 永久占用
                 pendingImportUriString?.let { uriStr ->
@@ -407,6 +413,7 @@ private val BackupFileInfoJson =
 @Composable
 private fun ImportModeDialog(
     info: BackupFileInfo?,
+    tookPersistable: Boolean,
     onDismiss: () -> Unit,
     onConfirm: (ImportMode) -> Unit,
 ) {
@@ -435,7 +442,7 @@ private fun ImportModeDialog(
             AlertDialog(
                 onDismissRequest = { step = ImportModeStep.SELECT },
                 title = { Text(stringResource(R.string.settings_import_replace_confirm_title)) },
-                text = { Text(confirmMessage(R.string.settings_import_replace_confirm_message_with_count, info)) },
+                text = { Text(confirmMessage(R.string.settings_import_replace_confirm_message_with_count, info, tookPersistable)) },
                 confirmButton = {
                     TextButton(onClick = { onConfirm(ImportMode.REPLACE) }) {
                         Text(stringResource(R.string.common_confirm))
@@ -451,7 +458,7 @@ private fun ImportModeDialog(
             AlertDialog(
                 onDismissRequest = { step = ImportModeStep.SELECT },
                 title = { Text(stringResource(R.string.settings_import_merge_confirm_title)) },
-                text = { Text(confirmMessage(R.string.settings_import_merge_confirm_message_with_count, info)) },
+                text = { Text(confirmMessage(R.string.settings_import_merge_confirm_message_with_count, info, tookPersistable)) },
                 confirmButton = {
                     TextButton(onClick = { onConfirm(ImportMode.MERGE) }) {
                         Text(stringResource(R.string.common_confirm))
@@ -478,13 +485,14 @@ private val ImportModeStepStateSaver: Saver<MutableState<ImportModeStep>, Int> =
 
 /**
  * 把「此备份包含 N 张卡 / M 个文件夹 / K 笔流水」+ 「其中 N 张卡需重新上传」+
- * 「备份时间：xxx」拼起来。
+ * 「备份时间：xxx」+ 「⚠️ 文件访问权限未持久化」拼起来。
  * 解析失败时 [info] = null，UI 显示「未知」降级。
  */
 @Composable
 private fun confirmMessage(
     @androidx.annotation.StringRes templateRes: Int,
     info: BackupFileInfo?,
+    tookPersistable: Boolean,
 ): String {
     val template =
         if (info != null) {
@@ -508,7 +516,11 @@ private fun confirmMessage(
         info?.takeIf { it.imageUriUserCount > 0 }?.let {
             stringResource(R.string.settings_dialog_image_warning, it.imageUriUserCount)
         } ?: ""
-    return listOf(template, timeLine, imageWarningLine)
+    // P1-5 修：takePersistableUriPermission 失败时给用户显式警告——之前只写 log，
+    // 当 imageUriUserCount=0 时用户完全不知道持久化失败了。
+    val persistWarningLine =
+        if (tookPersistable) "" else stringResource(R.string.settings_import_persist_warning)
+    return listOf(template, timeLine, imageWarningLine, persistWarningLine)
         .filter { it.isNotEmpty() }
         .joinToString(separator = "\n")
 }
