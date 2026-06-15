@@ -57,6 +57,12 @@
     <string name="settings_theme_mode_dark">深色</string>
     <string name="settings_dynamic_color">动态颜色</string>
     <string name="settings_dynamic_color_subtitle">使用系统壁纸颜色（Android 12+）</string>
+    <string name="settings_color_source">颜色来源</string>
+    <string name="settings_color_source_system">系统动态</string>
+    <string name="settings_color_source_brand">品牌色</string>
+    <string name="settings_color_source_custom">自定义</string>
+    <string name="settings_custom_color">自定义颜色</string>
+    <string name="settings_custom_color_none">未选择，点击选取</string>
 
     <!-- ────── 主页 / 列表 ────── -->
     <string name="list_title">刷记</string>

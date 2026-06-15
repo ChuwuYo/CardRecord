@@ -69,8 +69,12 @@ class SettingsViewModel(
         viewModelScope.launch { settingsRepo.setThemeMode(mode) }
     }
 
-    fun setUseDynamicColor(enabled: Boolean) {
-        viewModelScope.launch { settingsRepo.setUseDynamicColor(enabled) }
+    fun setColorSource(source: com.shuaji.cards.data.ColorSource) {
+        viewModelScope.launch { settingsRepo.setColorSource(source) }
+    }
+
+    fun setSeedColorHex(hex: String?) {
+        viewModelScope.launch { settingsRepo.setSeedColorHex(hex) }
     }
 
     /**
