@@ -72,10 +72,16 @@ fun ShuajiApp() {
     // P1 修：订阅设置页 Done 事件 → 全局弹 Snackbar。
     // 用 Long 持续时间——导出 / 导入这种"操作结果回执"用户多看一眼更稳
     // （SnackbarDuration.Long = 10s，Short = 4s）。
+    //
+    // **P1-6 修**：原 Snackbar 完全不看 `SettingsDoneEvent.isError`，错误消息跟成功消息
+    // 同色同 prefix——用户分不清。现在 `isError = true` 时给文案加 `⚠️ ` 前缀，**消费**
+    // 这个字段（"凡是存在就要有存在的意义"）。
+    val errorPrefix = stringResource(R.string.settings_snackbar_error_prefix)
     LaunchedEffect(settingsEvents) {
         settingsEvents.collect { event: SettingsDoneEvent ->
+            val message = if (event.isError) "$errorPrefix${event.message}" else event.message
             snackbarHostState.showSnackbar(
-                message = event.message,
+                message = message,
                 duration = SnackbarDuration.Long,
             )
         }

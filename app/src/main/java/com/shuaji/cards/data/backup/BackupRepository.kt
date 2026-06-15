@@ -245,6 +245,17 @@ class BackupRepository(
      * **P1-5 修**：孤立 transaction（cardId 不在备份里也不在现库里）被跳过不写入，
      * 计入 [ImportResult.transactionsSkipped]，UI 提示用户「其中 N 笔因引用不存在的卡被跳过」。
      *
+     * **P1-7 修**：`Cards.folder_id` 是外键引用 `card_folders.id`，MERGE 写库时**必须**
+     * 保证 `card.folderId` 指向合法 folder：要么在 backup 自身的 `bundle.folders` 里
+     * （id 已被重新映射为新 id），要么在「写之前」的现库 folder 里（用户没导入这部分的
+     * folder，但希望引用原现库 folder）。原来 `folderRemap[it] ?: it` 的写法**没**做
+     * "在 validFolderIds / existingFolderIds 里"的校验——当 backup 里某 card 的
+     * `folderId` 既不在 backup 的 folders 里也不在现库时，会触发 `SQLiteConstraintException`，
+     * **整个事务 ROLLBACK**，备份里其他合法 card 一起被吞，用户体验是"导入失败但不知道为啥"。
+     *
+     * 校验语义跟 [doReplace] 对齐：folderId 不在合法集合里 → 置 null + 计入
+     * [ImportResult.cardsSkippedInvalidFolder]，不抛异常、不回滚。
+     *
      * **MERGE 永远走 INSERT 路径**（`id = 0L` + AUTOINCREMENT），**不**会覆盖现库同 id 的 folder / card。
      *
      * 内部用 `folderRemap` / `cardRemap` 维护 old → new 映射，仅供 doMerge 自己写
@@ -252,7 +263,10 @@ class BackupRepository(
      * 客户端从未消费过「导入前后 id 对应关系」）。
      */
     private suspend fun doMerge(bundle: BackupBundle): ImportResult {
-        // 1) **写之前**先抓现有 name 集合——重名检测不能包含本次刚追加的，否则"自己跟自己"也算重名
+        // 1) **写之前**先抓现有 id / name 集合——重名检测不能包含本次刚追加的，
+        //    校验 folderId 合法性时也要用"写之前"的现库 id 集合
+        val existingFolderIds = cardFolderDao.listAll().map { it.id }.toSet()
+        val validFolderIds: Set<Long> = existingFolderIds + bundle.folders.map { it.id }.toSet()
         val existingFolderNames = cardFolderDao.listAll().map { it.name }.toSet()
         val existingCardNames = cardDao.listAll().map { it.name }.toSet()
 
@@ -263,12 +277,21 @@ class BackupRepository(
             folderRemap[folder.id] = newId
         }
 
-        // 3) 写 cards：id 清零，folderId 用映射后的新 id；
-        //    如果旧 folderId 不在备份里（指向现库 folder），保留原值——不能误清空。
+        // 3) 写 cards：id 清零，folderId 用映射后的新 id。
+        //    候选 id 必须在 validFolderIds 里：原 folderId（不在 backup）指向现库合法 folder
+        //    也 OK；指向不存在的 folderId（既不在 backup 也不在现库）→ 置 null + 计入 invalidCount
         val cardRemap = mutableMapOf<Long, Long>()
+        var invalidCount = 0
         bundle.cards.forEach { card ->
-            val mappedFolderId = card.folderId?.let { folderRemap[it] ?: it }
-            val newId = cardDao.upsert(card.copy(id = 0L, folderId = mappedFolderId))
+            val candidateId = card.folderId?.let { folderRemap[it] ?: it }
+            val safeFolderId =
+                if (candidateId != null && candidateId !in validFolderIds) {
+                    invalidCount++
+                    null
+                } else {
+                    candidateId
+                }
+            val newId = cardDao.upsert(card.copy(id = 0L, folderId = safeFolderId))
             cardRemap[card.id] = newId
         }
 
@@ -294,6 +317,7 @@ class BackupRepository(
             foldersAdded = bundle.folders.size,
             transactionsAdded = txCount,
             transactionsSkipped = txSkipped,
+            cardsSkippedInvalidFolder = invalidCount,
             duplicateFolderNames = duplicateFolders,
             duplicateCardNames = duplicateCards,
             imageUriUserCount = countUserImageCards(bundle),

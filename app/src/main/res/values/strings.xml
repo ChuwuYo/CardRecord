@@ -44,8 +44,9 @@
     <string name="settings_result_image_uri_potentially_broken">%1$d 张卡的卡面需要重新上传（图片 URI 在当前设备上不可访问）</string>
     <string name="settings_result_export_failed">导出失败：%1$s</string>
     <string name="settings_result_import_failed">导入失败：%1$s</string>
-    <string name="settings_dialog_cancel_export">取消导出</string>
-    <string name="settings_dialog_cancel_import">取消导入</string>
+    <string name="settings_snackbar_error_prefix">⚠️ </string>
+    <string name="settings_result_extras_separator">；</string>
+    <string name="settings_dialog_image_warning">其中 %1$d 张卡的卡面在当前设备上不可访问，需要重新上传</string>
 
     <!-- ────── 主页 / 列表 ────── -->
     <string name="list_title">刷记</string>

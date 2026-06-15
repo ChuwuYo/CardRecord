@@ -109,7 +109,22 @@ class CardRepository(
         val overdue = cardDao.findOverdue(now)
         if (overdue.isEmpty()) return 0
         overdue.forEach { card ->
-            val currentNext = card.nextDueDateMillis ?: return@forEach
+            // P3-4 修：去掉防御性 `?: return@forEach`。
+            //
+            // 之前这里写 `val currentNext = card.nextDueDateMillis ?: return@forEach`，
+            // 是基于"card.nextDueDateMillis 可能是 null"的假设。但 SQL 端 [CardDao.findOverdue]
+            // 的 @Query 已经是 `WHERE next_due_date_millis IS NOT NULL AND next_due_date_millis < :now`——
+            // **SQL 层就保证非空**。这里再 elvis 一次只能让 Kotlin 编译器闭嘴（nullable type
+            // → non-null type 的窄化），**运行时永远走不到 `return@forEach` 分支**。
+            //
+            // 不可达的代码 = 死代码 = 给未来读者制造"这里可能 null 哦"的误解，让他们写出
+            // 防御性的 if 嵌套；越积越乱。
+            //
+            // Kotlin 的「platform type」在 Room 生成的 entity 上有时会标 `nextDueDateMillis: Long?`
+            // 是因为 SQLite 列本身 nullable；编译器**不知道** SQL 端已经 WHERE 滤过。
+            // 解决方案：用 `!!`（Kotlin 平台类型契约的「我保证非空」）配合注释，比 elvis 死代码
+            // 干净。
+            val currentNext = card.nextDueDateMillis!!
             // 一次性推 N 年：用户半年没开 app，nextDueDate 可能已经过 1+ 年
             var next = currentNext
             while (next <= now) {

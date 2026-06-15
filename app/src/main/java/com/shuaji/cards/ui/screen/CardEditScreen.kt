@@ -123,11 +123,56 @@ fun CardEditScreen(
             contract = ActivityResultContracts.OpenDocument(),
         ) { uri: Uri? ->
             if (uri != null) {
+                // P1-3 修：pick 新图前先释放旧图——避免 grant slot 永久占用。
+                //
+                // 每次 takePersistableUriPermission() 都会消耗 DocumentsProvider 的一个
+                // grant slot（系统对一个 app 持有的 grant 是有限额的，旧 Android 上
+                // 大约 128 / 进程）。替换图片时旧 URI 不再被 Coil / 直接读流用到，
+                // 必须 release；否则用户上传/替换图片 N 次后，DocumentsProvider 会
+                // 默默丢弃最早的几个 grant → 旧图变成"OpenInputStream: permission
+                // denied" 烂图。
+                //
+                // 顺序：先 release 旧 → 再 take 新 —— 避免短暂"两个 grant 同时持有"
+                // 撞到限额上限。
+                val oldUriStr = state.imageUri
+                if (oldUriStr != null && oldUriStr != uri.toString()) {
+                    runCatching {
+                        context.contentResolver.releasePersistableUriPermission(
+                            Uri.parse(oldUriStr),
+                            android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION,
+                        )
+                    }
+                }
                 // 拿持久化读权限——后续 Coil / 直接读流都靠这个
-                runCatching {
-                    context.contentResolver.takePersistableUriPermission(
-                        uri,
-                        android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION,
+                val tookPersistable =
+                    runCatching {
+                        context.contentResolver.takePersistableUriPermission(
+                            uri,
+                            android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION,
+                        )
+                        true
+                    }.getOrElse { e ->
+                        // P1-5 修：take 失败时**显式**记录原因（之前只 runCatching 不处理，
+                        // 失败被静默吞掉，bug 难以复现）。常见原因：
+                        // 1) 用户在 SAF 里选了第三方云盘（Google Drive / OneDrive）的
+                        //    URI，云盘没声明 FLAG_GRANT_PERSISTABLE_URI_PERMISSION
+                        // 2) 系统 grant slot 已满
+                        // 3) 跨进程恢复时 grant 被 OS 吊销
+                        // 这里**不**弹 Snackbar——用户在 picker 完成后已经回到编辑页，
+                        // 再弹"图片 URI 持久化失败"会造成视觉混乱。Log.w 留痕，
+                        // 下次进程被杀后再访问会暴露问题，用户可以重新上传。
+                        android.util.Log.w(
+                            "CardEditScreen",
+                            "takePersistableUriPermission 失败，URI ${uri} 在进程重启后可能失效：${e.message}",
+                        )
+                        false
+                    }
+                // imagePersistable 状态仅记在 log 里，state 不背这个字段（避免 schema
+                // 噪声）。如果未来要做"持久化失败时给 UI 一个 icon 提示"再开字段。
+                if (!tookPersistable) {
+                    android.util.Log.d(
+                        "CardEditScreen",
+                        "imagePersistable=false; uri=$uri; 用户下次重启 app 需重新上传卡面",
                     )
                 }
                 viewModel.update {
@@ -223,6 +268,26 @@ fun CardEditScreen(
                 userLabel = userLabel,
                 noneLabel = noneLabel,
                 onSelect = { type ->
+                    // P1-3 修：从 USER 切到 PROVIDER/NONE 时释放图片 URI 的 grant。
+                    //
+                    // 之前 ImageSourceSelector 的 onSelect 只在 type == NONE 时把
+                    // imageUri 置 null，但**不**调 releasePersistableUriPermission。
+                    // 切到 PROVIDER 时 imageUri 还留在 state 里（虽然 UI 不显示），
+                    // grant slot 永久占用。换 URI 时再 take 一次，slot 就溢出了。
+                    //
+                    // 释放条件：当前是 USER 类型 + 有 imageUri + 切到非 USER 类型。
+                    if (state.imageSourceType == ImageSourceType.USER &&
+                        type != ImageSourceType.USER
+                    ) {
+                        state.imageUri?.let { oldUriStr ->
+                            runCatching {
+                                context.contentResolver.releasePersistableUriPermission(
+                                    Uri.parse(oldUriStr),
+                                    android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION,
+                                )
+                            }
+                        }
+                    }
                     viewModel.update { s ->
                         s.copy(
                             imageSourceType = type,

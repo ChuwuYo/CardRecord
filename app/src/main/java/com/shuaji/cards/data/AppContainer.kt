@@ -3,6 +3,7 @@ package com.shuaji.cards.data
 import android.content.Context
 import com.shuaji.cards.data.backup.BackupRepository
 import com.shuaji.cards.data.local.AppDatabase
+import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
@@ -67,9 +68,31 @@ class DefaultAppContainer(
             transactionDao = database.transactionDao(),
         )
 
-    private val _cycleAutoResetEvents = MutableSharedFlow<Int>(extraBufferCapacity = 4)
+    /**
+     * P1-1 修：用 `replay = 1` + `BufferOverflow.DROP_OLDEST`。
+     *
+     * 启动期竞争：[ShuajiApplication.onCreate] 调 [CardRepository.resetOverdueCycles] →
+     * emit 到 `_cycleAutoResetEvents`；同时 `ShuajiApp` 的 `LaunchedEffect(cycleEvents)`
+     * 在 Compose 第一次组合后订阅。Application.onCreate → DB init → 查询 → emit 是一
+     * 串异步操作，**如果 emit 跑在 collector 订阅之前，无 `replay` 的话事件直接被丢**。
+     * 用户永远看不到「X 张卡已自动续期」提示。
+     *
+     * `replay = 1` 让新 collector 立即收到最近一次 emit；`DROP_OLDEST` 避免极小概率
+     * 的"两次重置"情况下 buffer 撑爆挂起。
+     */
+    private val _cycleAutoResetEvents =
+        MutableSharedFlow<Int>(
+            replay = 1,
+            extraBufferCapacity = 4,
+            onBufferOverflow = BufferOverflow.DROP_OLDEST,
+        )
     override val cycleAutoResetEvents: SharedFlow<Int> = _cycleAutoResetEvents.asSharedFlow()
 
+    /**
+     * 设置页 Done 事件流：`SettingsViewModel.emitSettings` 推，`ShuajiApp` 顶层
+     * SnackbarHost 订阅。**用 `replay = 0`**——用户从设置页跳走再跳回来，事件已弹过；
+     * 不再 replay 旧消息。
+     */
     private val _settingsEvents = MutableSharedFlow<SettingsDoneEvent>(extraBufferCapacity = 4)
     override val settingsEvents: SharedFlow<SettingsDoneEvent> = _settingsEvents.asSharedFlow()
 

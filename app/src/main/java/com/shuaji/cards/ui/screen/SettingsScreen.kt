@@ -1,5 +1,6 @@
 package com.shuaji.cards.ui.screen
 
+import android.content.Intent
 import android.net.Uri
 import android.provider.DocumentsContract
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -37,7 +38,7 @@ import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -49,9 +50,16 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.shuaji.cards.R
 import com.shuaji.cards.data.backup.ImportMode
+import com.shuaji.cards.data.local.ImageSourceType
 import com.shuaji.cards.ui.ViewModelFactories
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -82,19 +90,28 @@ import java.util.Locale
  * 现在改成 ViewModel emit 到 AppContainer.settingsEvents，顶层订阅，在任意
  * 页面 / 锁屏 / 通知都能消费。
  *
- * **P1 修**：所有用户可见的临时状态（[pendingImportUri]、[step]）都用
+ * **P1 修**：所有用户可见的临时状态（[pendingImportUriString]、[ImportModeStep]）都用
  * [rememberSaveable] 而非 [androidx.compose.runtime.remember]，旋转屏幕 /
  * 进程恢复后状态不会丢。
  *
- * **P2 修**：导入文件后立刻用 `OpenableColumns.LAST_MODIFIED` 拿文件最后修改时间，
- * 在二次确认对话框里显示给用户（「备份时间：2024-05-12 18:23」）——比 JSON 内的
- * `exportedAtMillis` 更权威（是文件实际写入时间，不是序列化时刻）。
+ * **P2 修**：导入文件后立刻用 `DocumentsContract.Document.COLUMN_LAST_MODIFIED` 拿文件
+ * 最后修改时间，在二次确认对话框里显示给用户（「备份时间：2024-05-12 18:23」）——
+ * 比 JSON 内的 `exportedAtMillis` 更权威（是文件实际写入时间，不是序列化时刻）。
+ *
+ * **P1-2 修**：`readBackupFileInfo` 是 suspend，必须在 `Dispatchers.IO` 跑（不能阻塞主线程），
+ * 只解析顶层 metadata（`cards.length` / `folders.length` / `transactions.length`）——
+ * 不反序列化整棵树。
+ *
+ * **P1-4 修**：导入文件 URI 调 `takePersistableUriPermission` 持久化；不导入时
+ * `releasePersistableUriPermission` 释放——避免 grant slot 永久占用。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(onBack: () -> Unit) {
     val viewModel: SettingsViewModel = viewModel(factory = ViewModelFactories.Settings)
     val state by viewModel.state.collectAsState()
+    val coroutineScope = rememberCoroutineScope()
+    val context = LocalContext.current
 
     // 选完文件后要二次确认的 URI（空 = 还没选 / 已被处理）；用 String 存比 Uri 简单
     var pendingImportUriString by rememberSaveable { mutableStateOf<String?>(null) }
@@ -104,7 +121,6 @@ fun SettingsScreen(onBack: () -> Unit) {
     var pendingImportInfo by rememberSaveable(
         saver = BackupFileInfoStateSaver,
     ) { mutableStateOf<BackupFileInfo?>(null) }
-    val context = LocalContext.current
 
     // 导出：弹 SAF 文件创建器（application/json）
     val exportLauncher =
@@ -115,9 +131,35 @@ fun SettingsScreen(onBack: () -> Unit) {
     val importLauncher =
         rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
             if (uri != null) {
+                // P1-4 修：持久化读权限——OpenDocument 拿到的 URI 进程级读权限在
+                // 进程被 LMK 杀掉后会失效。持久化后 LMK 杀进程后用户回来仍能导入
+                val tookPersistable =
+                    runCatching {
+                        context.contentResolver.takePersistableUriPermission(
+                            uri,
+                            Intent.FLAG_GRANT_READ_URI_PERMISSION,
+                        )
+                        true
+                    }.getOrDefault(false)
                 pendingImportUriString = uri.toString()
-                // 选完文件立刻解析 LAST_MODIFIED + 实际行数（用一次性 in-memory Json.parse）
-                pendingImportInfo = readBackupFileInfo(context.contentResolver, uri)
+                pendingImportInfo = null // 清掉旧的（如果有）
+                // P1-2 修：后台 IO 线程解析；只读顶层 metadata，不反序列化整棵 JSON 树
+                coroutineScope.launch {
+                    val info =
+                        withContext(Dispatchers.IO) {
+                            readBackupFileInfo(context.contentResolver, uri)
+                        }
+                    pendingImportInfo = info
+                    // P1-5 修：take 失败时给用户提示（持久化失败 → 图恢复后失效）
+                    if (!tookPersistable) {
+                        // 不弹错误 Snackbar（如果用全局 push，会被 cancel 误吞）——这里
+                        // 只写 log，用户在二次确认框里能看出「卡面需重新上传」警告
+                        android.util.Log.w(
+                            "SettingsScreen",
+                            "takePersistableUriPermission 失败，导入 URI ${uri} 在进程重启后将不可访问",
+                        )
+                    }
+                }
             }
         }
 
@@ -133,6 +175,15 @@ fun SettingsScreen(onBack: () -> Unit) {
         ImportModeDialog(
             info = pendingImportInfo,
             onDismiss = {
+                // P1-4 修：用户取消时释放持久化读权限——避免 grant slot 永久占用
+                pendingImportUriString?.let { uriStr ->
+                    runCatching {
+                        context.contentResolver.releasePersistableUriPermission(
+                            Uri.parse(uriStr),
+                            Intent.FLAG_GRANT_READ_URI_PERMISSION,
+                        )
+                    }
+                }
                 pendingImportUriString = null
                 pendingImportInfo = null
             },
@@ -242,11 +293,12 @@ fun SettingsScreen(onBack: () -> Unit) {
 }
 
 /**
- * 用 `OpenableColumns.LAST_MODIFIED` + 解析 JSON 顶层的「卡片/文件夹/流水数」
- * 算出来的备份文件元数据。
+ * 用 `DocumentsContract.Document.COLUMN_LAST_MODIFIED` + 解析 JSON 顶层的
+ * 「卡片/文件夹/流水数」算出来的备份文件元数据。
  *
  * - [cardCount] / [folderCount] / [transactionCount] 用于二次确认带计数
  * - [lastModifiedMillis] 用于「备份时间：xxx」展示
+ * - [imageUriUserCount] 跨设备恢复时给用户「N 张卡需重新上传」警告（P2-6 修）
  *
  * 任一字段缺失/解析失败就降级为 `null`，UI 显示「未知」。
  */
@@ -255,10 +307,9 @@ data class BackupFileInfo(
     val cardCount: Int,
     val folderCount: Int,
     val transactionCount: Int,
+    val imageUriUserCount: Int,
     val lastModifiedMillis: Long?,
-) {
-    val isEmpty: Boolean get() = cardCount == 0 && folderCount == 0 && transactionCount == 0
-}
+)
 
 private val BackupFileInfoStateSaver: Saver<MutableState<BackupFileInfo?>, String> =
     Saver(
@@ -274,19 +325,22 @@ private val BackupFileInfoStateSaver: Saver<MutableState<BackupFileInfo?>, Strin
 /**
  * 读 SAF 选中的备份文件元数据。
  *
- * 用 [android.content.ContentResolver.query] 拿 `OpenableColumns.LAST_MODIFIED` /
- * `OpenableColumns.SIZE`；同时用 in-memory `kotlinx.serialization.Json` 解析
- * 顶层 cards / folders / transactions 长度——只解析长度、**不**把整段 JSON
- * 走 dao 入库（那是用户点确认后的活）。
+ * 用 [android.content.ContentResolver.query] 拿 `DocumentsContract.Document.COLUMN_LAST_MODIFIED` /
+ * `DocumentsContract.Document.COLUMN_DISPLAY_NAME`；同时用 `Json.parseToJsonElement` **只**
+ * 读顶层 cards / folders / transactions 三个数组的 `size`——**不**反序列化整棵 JSON 树。
  *
- * 任何失败都返回 `null`——`pendingImportInfo` 是可空的，UI 会用「未知」降级文案。
+ * **P1-2 修**：原来 `decodeFromString<BackupBundle>(text)` 把整段 JSON 反序列化成完整对象
+ * 树（卡 / 文件夹 / 流水的每个字段全部构造），对 100k+ 张卡的备份会主线程卡顿 + 2× 内存。
+ * 改用 `parseToJsonElement` 只读顶层 → 不构造子树 → 内存稳定。
+ *
+ * **`runCatching` 兜底**：文件 IO / 解析失败都返回 `null`，UI 降级「未知」文案。
  */
-private fun readBackupFileInfo(
+private suspend fun readBackupFileInfo(
     resolver: android.content.ContentResolver,
     uri: Uri,
 ): BackupFileInfo? {
     var lastModified: Long? = null
-    // 用 DocumentsContract.Document.COLUMN_LAST_MODIFIED（API 19+）而不是
+    // DocumentsContract.Document.COLUMN_LAST_MODIFIED（API 19+）而不是
     // OpenableColumns.LAST_MODIFIED（API 29+）——minSdk=26，旧的常量在 API 26-28 查不到。
     resolver.query(uri, arrayOf(DocumentsContract.Document.COLUMN_LAST_MODIFIED, DocumentsContract.Document.COLUMN_DISPLAY_NAME), null, null, null)?.use { c ->
         if (c.moveToFirst()) {
@@ -299,14 +353,32 @@ private fun readBackupFileInfo(
     return runCatching {
         resolver.openInputStream(uri)?.use { input ->
             val text = input.readBytes().toString(Charsets.UTF_8)
-            val bundle = BackupFileInfoJson.decodeFromString(
-                com.shuaji.cards.data.backup.BackupBundle.serializer(),
-                text,
-            )
+            val root = BackupFileInfoJson.parseToJsonElement(text).jsonObject
+
+            fun arraySize(key: String): Int =
+                runCatching { root[key]?.jsonArray?.size ?: 0 }.getOrDefault(0)
+
+            val cardCount = arraySize("cards")
+            val folderCount = arraySize("folders")
+            val transactionCount = arraySize("transactions")
+
+            // imageUriUserCount = cards 里 imageSourceType == USER 的数量
+            // ——不用反序列化 CardEntity，直接读 jsonObject
+            var userCount = 0
+            runCatching {
+                val cardsArr = root["cards"]?.jsonArray
+                if (cardsArr != null) {
+                    for (cardEl in cardsArr) {
+                        val src = cardEl.jsonObject["imageSourceType"]?.jsonPrimitive?.content
+                        if (src == ImageSourceType.USER.name) userCount++
+                    }
+                }
+            }
             BackupFileInfo(
-                cardCount = bundle.cards.size,
-                folderCount = bundle.folders.size,
-                transactionCount = bundle.transactions.size,
+                cardCount = cardCount,
+                folderCount = folderCount,
+                transactionCount = transactionCount,
+                imageUriUserCount = userCount,
                 lastModifiedMillis = lastModified,
             )
         }
@@ -325,9 +397,10 @@ private val BackupFileInfoJson =
  * 2) "保留现在的，再把备份加进来" → MERGE
  * 这里把两种放一起给用户选，REPLACE 还弹一次二次确认（破坏性操作）。
  *
- * **P1 修**：REPLACE/MERGE 二次确认对话框都把 [BackupFileInfo]（行数 + 备份时间）拼进
- * 确认文案——「此备份包含 N 张卡 / M 个文件夹 / K 笔流水（备份时间：xxx）」，
- * 用户能看清要操作的数据规模再点确认。
+ * **P1 修**：REPLACE/MERGE 二次确认对话框都把 [BackupFileInfo]（行数 + 备份时间 +
+ * imageUriUserCount）拼进确认文案——「此备份包含 N 张卡 / M 个文件夹 / K 笔流水」+
+ * 「其中 N 张卡的卡面需要重新上传」（跨设备恢复时）+ 「备份时间：xxx」，
+ * 用户能看清要操作的数据规模 + 风险再点确认。
  *
  * **P1 修**：[step] 用 [rememberSaveable] + [Saver]，旋转屏幕不会丢。
  */
@@ -404,7 +477,8 @@ private val ImportModeStepStateSaver: Saver<MutableState<ImportModeStep>, Int> =
     )
 
 /**
- * 把「此备份包含 N 张卡 / M 个文件夹 / K 笔流水」+ 「备份时间：xxx」拼起来。
+ * 把「此备份包含 N 张卡 / M 个文件夹 / K 笔流水」+ 「其中 N 张卡需重新上传」+
+ * 「备份时间：xxx」拼起来。
  * 解析失败时 [info] = null，UI 显示「未知」降级。
  */
 @Composable
@@ -430,5 +504,11 @@ private fun confirmMessage(
             val fmt = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
             stringResource(R.string.settings_backup_time_label, fmt.format(Date(it)))
         } ?: ""
-    return if (timeLine.isNotEmpty()) "$template\n$timeLine" else template
+    val imageWarningLine =
+        info?.takeIf { it.imageUriUserCount > 0 }?.let {
+            stringResource(R.string.settings_dialog_image_warning, it.imageUriUserCount)
+        } ?: ""
+    return listOf(template, timeLine, imageWarningLine)
+        .filter { it.isNotEmpty() }
+        .joinToString(separator = "\n")
 }

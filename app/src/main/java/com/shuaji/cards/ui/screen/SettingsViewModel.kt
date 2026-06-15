@@ -13,11 +13,8 @@ import com.shuaji.cards.data.backup.ExportSummary
 import com.shuaji.cards.data.backup.ImportMode
 import com.shuaji.cards.data.backup.ImportResult
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
@@ -26,25 +23,23 @@ import kotlinx.coroutines.launch
  *
  * - [Idle] — 默认态，按钮可点
  * - [Working] — 导入 / 导出中，按钮 disable + 显示进度 + 可见「取消」按钮
- * - [Done] — 完成（带消息 / 错误），按钮可点
+ * - [Done] — 完成，**只是个标志位**——具体消息通过 [SettingsDoneEvent] 推到顶层全局 SnackbarHost
  *
- * 用 [StateFlow] 暴露给 Compose，[MutableStateFlow] 是单源，UI 只读。
+ * **P2-1 / P2-2 修**：原 `data class Done(kind, message)` 携带枚举 + 文本，但 SettingsScreen
+ * 只用 `state is Done`（`kind` 和 `message` 从来没被读）。死字段违反"凡是存在就要有存在意义"——
+ * 简化成 [Done] data object，标志位即可。
  *
- * **Done 事件**额外通过 [doneEvents] 推到 [com.shuaji.cards.data.AppContainer.settingsEvents]，
- * 让 `ShuajiApp` 顶层全局 SnackbarHost 也能消费——用户在 SettingsScreen 点完「导出」立刻跳到 Home
- * 也能看到「已导出 N 条」提示（P1 修：原 SettingsScreen 自带 SnackbarHost 跨页面即丢）。
+ * **P2-3 修**：原 `doneEvents: SharedFlow` 私有 MutableSharedFlow + 公开 read-only 视图，
+ * 注释说是"给组件内嵌的 SnackbarHost 兜底"——但 SettingsScreen 已经没有 SnackbarHost 了
+ * （P1-3 删过）。删除整条死流。
  */
 sealed interface SettingsUiState {
     data object Idle : SettingsUiState
 
     data object Working : SettingsUiState
 
-    data class Done(
-        val kind: ResultKind,
-        val message: String,
-    ) : SettingsUiState
-
-    enum class ResultKind { EXPORT_OK, IMPORT_OK, ERROR }
+    /** 完成态。Snackbar 消息走 [SettingsDoneEvent] 推到全局；state 只关心"是否忙完"。 */
+    data object Done : SettingsUiState
 }
 
 /**
@@ -55,31 +50,19 @@ sealed interface SettingsUiState {
  * Android 架构原则，但 [AndroidViewModel] 用 Application 是官方推荐豁免——Application
  * 跟进程同生命周期，不会泄露 Activity。
  *
- * **事件流**：[doneEvents] 推到 AppContainer，让顶层 SnackbarHost 接收；同时
- * [state] 仍是 [StateFlow]，给本页面 UI（`state is Working` 决定全屏遮罩）。
- * 两者不重复：state 走页面生命周期，events 走全 app 生命周期。
+ * **P3-5 修**：[settingsEventsSink] 不再 nullable——产线 [com.shuaji.cards.ui.ViewModelFactories.Settings]
+ * 必传，null 入口已经不存在，保留 `?` + `?.` 徒增分支。
  */
 class SettingsViewModel(
     application: Application,
     private val backup: BackupRepository,
-    private val settingsEventsSink: AppContainer? = null,
+    private val settingsEventsSink: AppContainer,
 ) : AndroidViewModel(application) {
     private val _state = MutableStateFlow<SettingsUiState>(SettingsUiState.Idle)
     val state: StateFlow<SettingsUiState> = _state.asStateFlow()
 
     /**
-     * 已经把消息拼好的 Done 事件流。
-     *
-     * 暴露给 SettingsScreen 本地用：组件内嵌的 SnackbarHost 也能直接订阅（兜底，万一
-     * settingsEventsSink 没接上，页面内仍能弹）。
-     *
-     * 顶层 Snackbar 在 [com.shuaji.cards.ui.ShuajiApp] 订阅 AppContainer.settingsEvents。
-     */
-    private val _doneEvents = MutableSharedFlow<SettingsDoneEvent>(extraBufferCapacity = 4)
-    val doneEvents: SharedFlow<SettingsDoneEvent> = _doneEvents.asSharedFlow()
-
-    /**
-     * 导出。失败弹 [SettingsUiState.Done(kind=ERROR)]，UI 转 Snackbar。
+     * 导出。失败弹全局 Snackbar（isError=true → ⚠️ 前缀），UI 转 Done 等用户 acknowledge。
      * 协程被取消（CancellationException）→ 静默回到 Idle，不弹错误 Snackbar。
      */
     fun export(uri: Uri) {
@@ -98,41 +81,23 @@ class SettingsViewModel(
                             summary.transactionCount,
                         )
                     }
-                val event = SettingsDoneEvent(message = message, isError = false)
-                _state.value =
-                    SettingsUiState.Done(
-                        kind = SettingsUiState.ResultKind.EXPORT_OK,
-                        message = message,
-                    )
-                emitDone(event)
+                finalize(message = message, isError = false)
             } catch (e: CancellationException) {
                 // 用户主动取消 → 静默回到 Idle
                 _state.value = SettingsUiState.Idle
                 throw e
             } catch (e: BackupException) {
                 val message = errorMessage(R.string.settings_result_export_failed, e.message ?: "未知原因")
-                val event = SettingsDoneEvent(message = message, isError = true)
-                _state.value =
-                    SettingsUiState.Done(
-                        kind = SettingsUiState.ResultKind.ERROR,
-                        message = message,
-                    )
-                emitDone(event)
+                finalize(message = message, isError = true)
             } catch (e: Exception) {
                 val message = errorMessage(R.string.settings_result_export_failed, e.message ?: "未知错误")
-                val event = SettingsDoneEvent(message = message, isError = true)
-                _state.value =
-                    SettingsUiState.Done(
-                        kind = SettingsUiState.ResultKind.ERROR,
-                        message = message,
-                    )
-                emitDone(event)
+                finalize(message = message, isError = true)
             }
         }
     }
 
     /**
-     * 导入。失败弹 [SettingsUiState.Done(kind=ERROR)]，UI 转 Snackbar。
+     * 导入。失败弹全局 Snackbar（isError=true → ⚠️ 前缀），UI 转 Done 等用户 acknowledge。
      * 协程被取消（CancellationException）→ 静默回到 Idle，不弹错误 Snackbar。
      */
     fun import(
@@ -144,34 +109,16 @@ class SettingsViewModel(
             try {
                 val result = backup.import(uri, mode)
                 val message = formatImportMessage(result, mode)
-                val event = SettingsDoneEvent(message = message, isError = false)
-                _state.value =
-                    SettingsUiState.Done(
-                        kind = SettingsUiState.ResultKind.IMPORT_OK,
-                        message = message,
-                    )
-                emitDone(event)
+                finalize(message = message, isError = false)
             } catch (e: CancellationException) {
                 _state.value = SettingsUiState.Idle
                 throw e
             } catch (e: BackupException) {
                 val message = errorMessage(R.string.settings_result_import_failed, e.message ?: "未知原因")
-                val event = SettingsDoneEvent(message = message, isError = true)
-                _state.value =
-                    SettingsUiState.Done(
-                        kind = SettingsUiState.ResultKind.ERROR,
-                        message = message,
-                    )
-                emitDone(event)
+                finalize(message = message, isError = true)
             } catch (e: Exception) {
                 val message = errorMessage(R.string.settings_result_import_failed, e.message ?: "未知错误")
-                val event = SettingsDoneEvent(message = message, isError = true)
-                _state.value =
-                    SettingsUiState.Done(
-                        kind = SettingsUiState.ResultKind.ERROR,
-                        message = message,
-                    )
-                emitDone(event)
+                finalize(message = message, isError = true)
             }
         }
     }
@@ -202,10 +149,17 @@ class SettingsViewModel(
         _state.value = SettingsUiState.Idle
     }
 
-    /** 把事件推给两个出口：本页面 UI 的 doneEvents（兜底）+ AppContainer.emitSettings（全局）。 */
-    private suspend fun emitDone(event: SettingsDoneEvent) {
-        _doneEvents.emit(event)
-        settingsEventsSink?.emitSettings(event)
+    /**
+     * 完成收尾：state 置 Done + emit 事件到全局 Snackbar。
+     *
+     * 集中一处避免每个 catch 块重复同样的 `_state.value = Done; emitDone(event)`。
+     */
+    private suspend fun finalize(
+        message: String,
+        isError: Boolean,
+    ) {
+        _state.value = SettingsUiState.Done
+        settingsEventsSink.emitSettings(SettingsDoneEvent(message = message, isError = isError))
     }
 
     /** 错误文案统一封装：「XXX 失败：<cause>」。 */
@@ -221,6 +175,9 @@ class SettingsViewModel(
      * 任何副提示为 0 就不出现对应字段，让消息保持简洁。
      *
      * **P2 国际化**：所有硬编码中文搬到 strings.xml，本函数用 `getString(resId, args)` 拼装。
+     *
+     * **P3-3 修**：分隔符「；」从硬编码搬到 `settings_result_extras_separator` 资源，多语言版
+     * 本可替换。
      */
     private fun formatImportMessage(
         result: ImportResult,
@@ -276,6 +233,7 @@ class SettingsViewModel(
                     )
                 }
             }
-        return if (extras.isEmpty()) main else "$main（${extras.joinToString("；")}）"
+        val separator = app.getString(R.string.settings_result_extras_separator)
+        return if (extras.isEmpty()) main else "$main（${extras.joinToString(separator)}）"
     }
 }
