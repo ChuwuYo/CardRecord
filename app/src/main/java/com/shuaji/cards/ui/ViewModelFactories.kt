@@ -38,6 +38,7 @@ object ViewModelFactories {
                     application = app(),
                     backup = container.backup,
                     settingsEventsSink = container,
+                    settingsRepo = container.settings,
                 )
             }
         }

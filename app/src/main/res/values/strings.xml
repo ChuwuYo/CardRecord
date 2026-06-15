@@ -49,6 +49,15 @@
     <string name="settings_dialog_image_warning">其中 %1$d 张卡的卡面在当前设备上不可访问，需要重新上传</string>
     <string name="settings_import_persist_warning">⚠️ 文件访问权限未持久化，切换应用或重启后可能无法访问该文件</string>
 
+    <!-- ────── 主题设置 ────── -->
+    <string name="settings_section_appearance">外观</string>
+    <string name="settings_theme_mode">主题模式</string>
+    <string name="settings_theme_mode_system">跟随系统</string>
+    <string name="settings_theme_mode_light">浅色</string>
+    <string name="settings_theme_mode_dark">深色</string>
+    <string name="settings_dynamic_color">动态颜色</string>
+    <string name="settings_dynamic_color_subtitle">使用系统壁纸颜色（Android 12+）</string>
+
     <!-- ────── 主页 / 列表 ────── -->
     <string name="list_title">刷记</string>
     <string name="list_subtitle">刷卡不再忘记，自动追踪免年费进度</string>

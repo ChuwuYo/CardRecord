@@ -29,6 +29,7 @@ import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -44,11 +45,11 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.shuaji.cards.R
+import com.shuaji.cards.data.ThemeMode
 import com.shuaji.cards.data.backup.ImportMode
 import com.shuaji.cards.data.local.ImageSourceType
 import com.shuaji.cards.ui.ViewModelFactories
@@ -272,6 +273,61 @@ fun SettingsScreen(onBack: () -> Unit) {
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 16.dp),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+
+                // ────── 外观设置 ──────
+                item {
+                    Text(
+                        text = stringResource(R.string.settings_section_appearance),
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
+                item {
+                    val themeSettings by viewModel.themeSettings.collectAsState(initial = null)
+                    val currentMode = themeSettings?.themeMode ?: ThemeMode.SYSTEM
+                    ListItem(
+                        headlineContent = { Text(stringResource(R.string.settings_theme_mode)) },
+                        supportingContent = {
+                            Text(
+                                when (currentMode) {
+                                    ThemeMode.SYSTEM -> stringResource(R.string.settings_theme_mode_system)
+                                    ThemeMode.LIGHT -> stringResource(R.string.settings_theme_mode_light)
+                                    ThemeMode.DARK -> stringResource(R.string.settings_theme_mode_dark)
+                                }
+                            )
+                        },
+                        modifier = Modifier.clickable(enabled = enabled) {
+                            // 循环切换：SYSTEM → LIGHT → DARK → SYSTEM
+                            val next =
+                                when (currentMode) {
+                                    ThemeMode.SYSTEM -> ThemeMode.LIGHT
+                                    ThemeMode.LIGHT -> ThemeMode.DARK
+                                    ThemeMode.DARK -> ThemeMode.SYSTEM
+                                }
+                            viewModel.setThemeMode(next)
+                        },
+                    )
+                }
+                item {
+                    val themeSettings by viewModel.themeSettings.collectAsState(initial = null)
+                    val dynamicEnabled = themeSettings?.useDynamicColor ?: true
+                    val sdkOk = android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S
+                    ListItem(
+                        headlineContent = { Text(stringResource(R.string.settings_dynamic_color)) },
+                        supportingContent = { Text(stringResource(R.string.settings_dynamic_color_subtitle)) },
+                        trailingContent = {
+                            Switch(
+                                checked = dynamicEnabled,
+                                onCheckedChange = { viewModel.setUseDynamicColor(it) },
+                                enabled = sdkOk && enabled,
+                            )
+                        },
+                        modifier = Modifier.clickable(enabled = sdkOk && enabled) {
+                            viewModel.setUseDynamicColor(!dynamicEnabled)
+                        },
                     )
                 }
             }

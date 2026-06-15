@@ -57,9 +57,21 @@ class SettingsViewModel(
     application: Application,
     private val backup: BackupRepository,
     private val settingsEventsSink: AppContainer,
+    private val settingsRepo: com.shuaji.cards.data.SettingsRepository,
 ) : AndroidViewModel(application) {
     private val _state = MutableStateFlow<SettingsUiState>(SettingsUiState.Idle)
     val state: StateFlow<SettingsUiState> = _state.asStateFlow()
+
+    /** 主题设置：UI 用 collectAsState 订阅，用户切换时自动重组 */
+    val themeSettings = settingsRepo.themeSettings
+
+    fun setThemeMode(mode: com.shuaji.cards.data.ThemeMode) {
+        viewModelScope.launch { settingsRepo.setThemeMode(mode) }
+    }
+
+    fun setUseDynamicColor(enabled: Boolean) {
+        viewModelScope.launch { settingsRepo.setUseDynamicColor(enabled) }
+    }
 
     /**
      * 导出。失败弹全局 Snackbar（isError=true → ⚠️ 前缀），UI 转 Done 等用户 acknowledge。
