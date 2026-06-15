@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -52,6 +53,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.shuaji.cards.R
 import com.shuaji.cards.ShuajiApplication
+import com.shuaji.cards.data.local.TransactionEntity
 import com.shuaji.cards.ui.component.CardVisual
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -90,6 +92,7 @@ fun CardDetailScreen(
 
     var showResetDialog by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf(false) }
+    var swipeToDelete by remember { mutableStateOf<TransactionEntity?>(null) }
 
     val titleLoading = stringResource(R.string.detail_title_loading)
     val backCd = stringResource(R.string.common_back)
@@ -167,9 +170,12 @@ fun CardDetailScreen(
                     requiredCount = current.requiredCount,
                 )
             }
-            // 4. 流水列表（按时间倒序，全部 N 行——零死数据）
+            // 4. 流水列表（按时间倒序，全部 N 行——零死数据，每行可单笔删除）
             item {
-                SwipeListSection(swipes = current.swipes)
+                SwipeListSection(
+                    swipes = current.swipes,
+                    onRequestDelete = { swipeToDelete = it },
+                )
             }
             // 5. 信息区：每个可填字段都有展示位置
             item {
@@ -212,6 +218,24 @@ fun CardDetailScreen(
             },
         )
     }
+
+    // 单笔删除流水：每行垃圾桶按钮 → 二次确认 → ViewModel.deleteSwipe
+    swipeToDelete?.let { target ->
+        AlertDialog(
+            onDismissRequest = { swipeToDelete = null },
+            title = { Text(stringResource(R.string.detail_delete_swipe_dialog_title)) },
+            text = { Text(stringResource(R.string.detail_delete_swipe_dialog_message, formatDateTime(target.occurredAtMillis))) },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.deleteSwipe(target.id)
+                    swipeToDelete = null
+                }) { Text(stringResource(R.string.common_delete)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { swipeToDelete = null }) { Text(stringResource(R.string.common_cancel)) }
+            },
+        )
+    }
 }
 
 @Composable
@@ -223,8 +247,21 @@ private fun ExtendedFabRecord(onClick: () -> Unit) {
     )
 }
 
+/**
+ * 流水列表 section：把 swipes 全部按时间倒序展示出来，每行可单笔删除。
+ *
+ * - 标题行：左边"刷卡记录"，右边"已刷 N 笔"（= 列表行数）
+ * - 行：序号 + 时间戳 + 垃圾桶按钮
+ * - 空态：引导用户点 FAB 记第一笔
+ *
+ * 单笔删除走 AlertDialog 二次确认（与"重置""删卡"同一档次的破坏性操作，
+ * 都需要在 UI 层兜底），不在按钮上"点了就删"。
+ */
 @Composable
-private fun SwipeListSection(swipes: List<Long>) {
+private fun SwipeListSection(
+    swipes: List<TransactionEntity>,
+    onRequestDelete: (TransactionEntity) -> Unit,
+) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.medium,
@@ -260,7 +297,7 @@ private fun SwipeListSection(swipes: List<Long>) {
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
                 )
             } else {
-                swipes.forEachIndexed { index, millis ->
+                swipes.forEachIndexed { index, txn ->
                     if (index > 0) {
                         DividerLine()
                     }
@@ -268,9 +305,8 @@ private fun SwipeListSection(swipes: List<Long>) {
                         modifier =
                             Modifier
                                 .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 10.dp),
+                                .padding(start = 16.dp, end = 4.dp, top = 6.dp, bottom = 6.dp),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween,
                     ) {
                         Text(
                             text = stringResource(R.string.detail_swipe_index, index + 1),
@@ -279,11 +315,24 @@ private fun SwipeListSection(swipes: List<Long>) {
                             modifier = Modifier.width(28.dp),
                         )
                         Text(
-                            text = formatDateTime(millis),
+                            text = formatDateTime(txn.occurredAtMillis),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurface,
                             fontWeight = FontWeight.Medium,
+                            modifier = Modifier.weight(1f),
                         )
+                        // 单笔删除按钮 —— 触发 onRequestDelete 弹出二次确认
+                        IconButton(
+                            onClick = { onRequestDelete(txn) },
+                            modifier = Modifier.size(36.dp),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Delete,
+                                contentDescription = stringResource(R.string.detail_action_delete_swipe),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(18.dp),
+                            )
+                        }
                     }
                 }
             }

@@ -59,8 +59,15 @@ class CardRepository(
      * 流水表瘦到 2 字段后，每行只有 (card_id, occurred_at_millis)，
      * UI 拿到的就是一个时间戳序列——按「刷一笔 = 一行」原则展示。
      */
-    fun observeTransactions(cardId: Long): Flow<List<TransactionEntity>> =
-        transactionDao.observeForCard(cardId)
+    fun observeTransactions(cardId: Long): Flow<List<TransactionEntity>> = transactionDao.observeForCard(cardId)
+
+    /**
+     * 单笔删除：流水列表里每行垃圾桶按钮触发。
+     * 删完 SQL COUNT 重算 currentCount，UI 立刻刷新。
+     */
+    suspend fun deleteTransaction(id: Long) {
+        transactionDao.deleteById(id)
+    }
 
     // ── 文件夹 ──
 

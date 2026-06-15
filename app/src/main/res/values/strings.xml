@@ -70,6 +70,9 @@
     <string name="detail_label_swipes">刷卡记录</string>
     <string name="detail_swipes_empty">还没有记录，点右下角「记一笔」开始追踪</string>
     <string name="detail_swipe_index">%1$d</string>
+    <string name="detail_action_delete_swipe">删除这一笔</string>
+    <string name="detail_delete_swipe_dialog_title">删除这一笔？</string>
+    <string name="detail_delete_swipe_dialog_message">将删除 %1$s 的这笔刷卡记录，操作不可撤销。</string>
     <string name="detail_reset_dialog_title">重置本周期？</string>
     <string name="detail_reset_dialog_message">将清零当前笔数，操作不可撤销。</string>
     <string name="detail_reset_dialog_confirm">重置</string>

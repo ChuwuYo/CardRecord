@@ -4,10 +4,10 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.shuaji.cards.data.CardRepository
 import com.shuaji.cards.data.local.CardWithCount
+import com.shuaji.cards.data.local.TransactionEntity
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -17,9 +17,10 @@ import kotlinx.coroutines.launch
  * - [currentCount] 当前已刷笔数（实时计算）
  * - [requiredCount] 年度免年费所需笔数
  * - [isExpired] 是否已过有效期
- * - [swipes] 该卡全部流水（按时间倒序）—— 详情页「流水列表」直接渲染这个序列
+ * - [swipes] 该卡全部流水（按时间倒序）—— 详情页「流水列表」直接渲染这个序列，
+ *   每行用 [TransactionEntity.id] 做单笔删除的 key
  *
- * 流水表瘦到 2 字段后，每行只剩时间戳；UI 列表把 `swipes` 全部展示出来
+ * 流水表瘦到 2 字段后，每行只剩时间戳 + id；UI 列表把 `swipes` 全部展示出来
  * （行数 == `currentCount`），保证「写一行就有 UI 一行」，不写死数据。
  */
 data class CardDetailUi(
@@ -27,7 +28,7 @@ data class CardDetailUi(
     val currentCount: Int,
     val isExpired: Boolean,
     val lastSwipeAtMillis: Long?,
-    val swipes: List<Long> = emptyList(),
+    val swipes: List<TransactionEntity> = emptyList(),
 ) {
     val requiredCount: Int get() = card.requiredCount
 }
@@ -40,14 +41,14 @@ class CardDetailViewModel(
 
     /**
      * 详情页主状态：把「卡本身 + 笔数」和「流水列表」两个流合并。
-     * 任何一个变化（记一笔 / 重置 / 编辑卡）都触发 UI 刷新。
+     * 任何一个变化（记一笔 / 重置 / 单笔删除 / 编辑卡）都触发 UI 刷新。
      */
     val card: StateFlow<CardDetailUi?> =
         combine(
             repository.observeCard(cardId),
             repository.observeTransactions(cardId),
         ) { cwc, swipes ->
-            cwc?.toDetailUi(nowProvider(), swipes.map { it.occurredAtMillis })
+            cwc?.toDetailUi(nowProvider(), swipes)
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     /**
@@ -65,6 +66,14 @@ class CardDetailViewModel(
         viewModelScope.launch { repository.resetCardCycle(cardId) }
     }
 
+    /**
+     * 详情页"单笔删除"：流水列表每行垃圾桶按钮触发。
+     * 删完 SQL COUNT 重算 currentCount，流水列表自动少一行。
+     */
+    fun deleteSwipe(id: Long) {
+        viewModelScope.launch { repository.deleteTransaction(id) }
+    }
+
     fun deleteCard() {
         viewModelScope.launch {
             card.value?.let { repository.deleteCard(it.card) }
@@ -74,7 +83,7 @@ class CardDetailViewModel(
 
 private fun CardWithCount.toDetailUi(
     now: Long,
-    swipes: List<Long>,
+    swipes: List<TransactionEntity>,
 ): CardDetailUi =
     CardDetailUi(
         card = card,

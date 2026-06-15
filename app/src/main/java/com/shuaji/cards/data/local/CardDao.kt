@@ -111,4 +111,11 @@ interface TransactionDao {
      */
     @Query("SELECT * FROM transactions WHERE card_id = :cardId ORDER BY occurred_at_millis DESC")
     fun observeForCard(cardId: Long): Flow<List<TransactionEntity>>
+
+    /**
+     * 单笔删除：流水列表每行一个垃圾桶按钮 → 删这一行。
+     * 一次删一行，不是"重置一把全清"。
+     */
+    @Query("DELETE FROM transactions WHERE id = :id")
+    suspend fun deleteById(id: Long)
 }
