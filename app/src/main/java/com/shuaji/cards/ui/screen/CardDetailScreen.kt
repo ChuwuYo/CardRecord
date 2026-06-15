@@ -170,16 +170,16 @@ fun CardDetailScreen(
                     requiredCount = current.requiredCount,
                 )
             }
-            // 4. 流水列表（按时间倒序，全部 N 行——零死数据，每行可单笔删除）
+            // 4. 信息区：发卡行 / 卡号 / 备注（先看卡片元数据）
+            item {
+                CardInfoSection(detail = current)
+            }
+            // 5. 流水列表（按时间倒序，全部 N 行——零死数据，每行可单笔删除）
             item {
                 SwipeListSection(
                     swipes = current.swipes,
                     onRequestDelete = { swipeToDelete = it },
                 )
-            }
-            // 5. 信息区：每个可填字段都有展示位置
-            item {
-                CardInfoSection(detail = current)
             }
         }
     }

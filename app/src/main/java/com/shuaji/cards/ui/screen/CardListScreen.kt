@@ -30,7 +30,6 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
@@ -114,7 +113,6 @@ fun CardListScreen(
         topBar = {
             ListTopBar(
                 cardCount = state.visibleCards.size,
-                onSearch = {},
                 onLayoutToggle = viewModel::toggleLayoutMode,
                 layoutMode = state.layoutMode,
             )
@@ -177,7 +175,6 @@ fun CardListScreen(
 @Composable
 private fun ListTopBar(
     cardCount: Int,
-    onSearch: () -> Unit,
     onLayoutToggle: () -> Unit,
     layoutMode: ListLayoutMode,
 ) {
@@ -199,9 +196,6 @@ private fun ListTopBar(
             }
         },
         actions = {
-            IconButton(onClick = onSearch) {
-                Icon(Icons.Default.Search, contentDescription = null)
-            }
             IconButton(onClick = onLayoutToggle) {
                 if (layoutMode == ListLayoutMode.LIST) {
                     Icon(
