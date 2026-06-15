@@ -21,13 +21,12 @@ import com.shuaji.cards.data.ThemeSettings
  * 设计取向：冷调深蓝（银行业务的"信任感"）+ 高饱和的青/品红强调色 +
  * 锐角几何（[Shape.kt] 中定义）。
  *
- * **v1.5.1 修**：支持三种颜色来源——
- * 1. [ColorSource.SYSTEM_DYNAMIC]：Android 12+ 跟系统壁纸动态色，低版本回退品牌色
- * 2. [ColorSource.BRAND]：用预设品牌色（[LightColors] / [DarkColors]）
- * 3. [ColorSource.CUSTOM]：用户自选种子色，用 Material 3 内置算法生成整套配色
+ * **v1.5.1 修**：支持两种颜色来源——
+ * 1. [ColorSource.SYSTEM_DYNAMIC]：Android 12+ 跟系统壁纸动态色，低版本回退默认色
+ * 2. [ColorSource.CUSTOM]：用户自选种子色，HSL 算法生成整套配色
  *
- * 品牌色抽离成 [DefaultBrandPrimary] / [DefaultBrandPrimaryDark] 等
- * `Default*` 顶层常量，BRAND 模式下使用。
+ * 默认品牌色抽离成 [DefaultBrandPrimary] / [DefaultBrandPrimaryDark] 等
+ * `Default*` 顶层常量，作为低版本回退和默认种子色使用。
  */
 
 val DefaultBrandPrimary = Color(0xFF0061A4)
@@ -111,9 +110,8 @@ fun ShuajiTheme(
 /**
  * 根据 [ThemeSettings.colorSource] 解析最终使用的 [ColorScheme]。
  *
- * - SYSTEM_DYNAMIC：Android 12+ 用系统动态色，低版本回退 BRAND
- * - BRAND：用预设 [LightColors] / [DarkColors]
- * - CUSTOM：从用户种子色生成整套配色（Material 3 内置算法）
+ * - SYSTEM_DYNAMIC：Android 12+ 用系统动态色，低版本回退默认色
+ * - CUSTOM：从用户种子色生成整套配色（HSL 算法）
  */
 @Composable
 private fun resolveColorScheme(
@@ -126,32 +124,24 @@ private fun resolveColorScheme(
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
             } else {
-                // 低版本回退品牌色
-                if (darkTheme) DarkColors else LightColors
+                // 低版本回退默认色（用默认品牌色作为种子生成）
+                generateColorSchemeFromSeed(DefaultBrandPrimary, darkTheme)
             }
-        }
-
-        ColorSource.BRAND -> {
-            if (darkTheme) DarkColors else LightColors
         }
 
         ColorSource.CUSTOM -> {
             val seedHex = settings.seedColorHex
-            if (seedHex != null) {
-                // Material 3 内置算法：从种子色生成完整 ColorScheme
-                // 用 androidx.compose.material3 的 experimental API
-                // `ColorSchemeHelper` 或 `dynamicLightColorScheme(seedColor)`
-                // 但 Compose M3 没有直接暴露 seedColor 接口。
-                //
-                // 替代方案：用 Monet 算法自己生成 tonal palette，然后填 lightColorScheme。
-                // 这里用最简实现：把种子色作为 primary，其他角色按固定规则偏移。
-                // 后续可接入 material-color-utilities 库做更精确的生成。
-                val seed = Color(android.graphics.Color.parseColor(seedHex))
-                generateColorSchemeFromSeed(seed, darkTheme)
-            } else {
-                // 没选种子色时回退品牌色
-                if (darkTheme) DarkColors else LightColors
-            }
+            val seed =
+                if (seedHex != null) {
+                    try {
+                        Color(android.graphics.Color.parseColor(seedHex))
+                    } catch (_: IllegalArgumentException) {
+                        DefaultBrandPrimary
+                    }
+                } else {
+                    DefaultBrandPrimary
+                }
+            generateColorSchemeFromSeed(seed, darkTheme)
         }
     }
 }

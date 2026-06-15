@@ -19,7 +19,7 @@ import kotlinx.coroutines.flow.map
  * **v1.5.1 修**：从「themeMode + useDynamicColor(boolean)」二维模型升级为
  * 「themeMode + colorSource + seedColorHex」三维模型——
  * - themeMode：只控制亮/暗（SYSTEM/LIGHT/DARK）
- * - colorSource：控制颜色从哪来（SYSTEM_DYNAMIC / BRAND / CUSTOM）
+ * - colorSource：控制颜色从哪来（SYSTEM_DYNAMIC / CUSTOM）
  * - seedColorHex：CUSTOM 时存用户选的种子色（#RRGGBB）
  *
  * 旧版 `useDynamicColor` boolean 字段保留读取兼容（迁移到 ColorSource.SYSTEM_DYNAMIC），
@@ -33,11 +33,11 @@ class SettingsRepository(
             val colorSource =
                 prefs[KEY_COLOR_SOURCE]?.let { ColorSource.fromKey(it) }
                     ?: run {
-                        // 旧版迁移：useDynamicColor=true → SYSTEM_DYNAMIC，false → BRAND
+                        // 旧版迁移：useDynamicColor=true → SYSTEM_DYNAMIC，false → CUSTOM
                         val oldDynamic = prefs[KEY_DYNAMIC_COLOR]
                         when (oldDynamic) {
                             true -> ColorSource.SYSTEM_DYNAMIC
-                            false -> ColorSource.BRAND
+                            false -> ColorSource.CUSTOM
                             else -> ColorSource.SYSTEM_DYNAMIC
                         }
                     }
@@ -88,12 +88,11 @@ enum class ThemeMode(
     }
 }
 
-/** 颜色来源：系统动态色 / 品牌色 / 用户自定义 */
+/** 颜色来源：系统动态色 / 用户自定义 */
 enum class ColorSource(
     val key: String,
 ) {
     SYSTEM_DYNAMIC("system_dynamic"),
-    BRAND("brand"),
     CUSTOM("custom"),
     ;
 
