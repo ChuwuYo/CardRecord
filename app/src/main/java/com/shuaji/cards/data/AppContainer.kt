@@ -1,6 +1,7 @@
 package com.shuaji.cards.data
 
 import android.content.Context
+import com.shuaji.cards.data.backup.BackupRepository
 import com.shuaji.cards.data.local.AppDatabase
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -9,6 +10,7 @@ import kotlinx.coroutines.flow.asSharedFlow
 interface AppContainer {
     val repository: CardRepository
     val settings: SettingsRepository
+    val backup: BackupRepository
 
     /**
      * 自动续期事件：值 = 本次启动时续期的卡数。
@@ -29,6 +31,14 @@ class DefaultAppContainer(
             folderDao = database.cardFolderDao(),
         )
     override val settings: SettingsRepository = SettingsRepository(context.appDataStore)
+    override val backup: BackupRepository =
+        BackupRepository(
+            context = context,
+            database = database,
+            cardDao = database.cardDao(),
+            folderDao = database.cardFolderDao(),
+            transactionDao = database.transactionDao(),
+        )
 
     private val _cycleAutoResetEvents = MutableSharedFlow<Int>(extraBufferCapacity = 4)
     override val cycleAutoResetEvents: SharedFlow<Int> = _cycleAutoResetEvents.asSharedFlow()

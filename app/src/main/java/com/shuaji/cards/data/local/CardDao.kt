@@ -79,6 +79,12 @@ interface CardDao {
     suspend fun getById(id: Long): CardEntity?
 
     /**
+     * 备份导出用：一次性读所有卡（不 observe）。
+     */
+    @Query("SELECT * FROM cards")
+    suspend fun listAll(): List<CardEntity>
+
+    /**
      * 自动续期用：找出所有 nextDueDateMillis < now 的卡。
      * 这些卡应当在新周期开始时重置笔数（删流水）+ 把 nextDueDate 推到下一年。
      * 一次性 while 循环推 N 年，避免下次启动又触发。
@@ -94,6 +100,13 @@ interface CardDao {
 
     @Delete
     suspend fun delete(card: CardEntity)
+
+    /**
+     * 备份导入 REPLACE 用：清空 cards 表。
+     * 配合外键 `ON DELETE CASCADE`，会自动级联清空 transactions 全部行。
+     */
+    @Query("DELETE FROM cards")
+    suspend fun deleteAll()
 }
 
 /**
@@ -119,6 +132,12 @@ interface TransactionDao {
      */
     @Query("SELECT * FROM transactions WHERE card_id = :cardId ORDER BY occurred_at_millis DESC")
     fun observeForCard(cardId: Long): Flow<List<TransactionEntity>>
+
+    /**
+     * 备份导出用：一次性读所有流水。
+     */
+    @Query("SELECT * FROM transactions")
+    suspend fun listAll(): List<TransactionEntity>
 
     /**
      * 单笔删除：流水列表每行一个垃圾桶按钮 → 删这一行。

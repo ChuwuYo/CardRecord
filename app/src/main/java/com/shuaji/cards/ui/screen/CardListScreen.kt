@@ -30,6 +30,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
@@ -83,6 +84,7 @@ fun CardListScreen(
     onAddCard: () -> Unit = {},
     onCardClick: (Long) -> Unit = {},
     onManageFolders: () -> Unit = {},
+    onOpenSettings: () -> Unit = {},
 ) {
     val state by viewModel.uiState.collectAsState()
     val deletedCardName by viewModel.deletedCardName.collectAsState()
@@ -114,6 +116,7 @@ fun CardListScreen(
             ListTopBar(
                 cardCount = state.visibleCards.size,
                 onLayoutToggle = viewModel::toggleLayoutMode,
+                onOpenSettings = onOpenSettings,
                 layoutMode = state.layoutMode,
             )
         },
@@ -176,6 +179,7 @@ fun CardListScreen(
 private fun ListTopBar(
     cardCount: Int,
     onLayoutToggle: () -> Unit,
+    onOpenSettings: () -> Unit,
     layoutMode: ListLayoutMode,
 ) {
     // 用 MD3 TopAppBar 替代自定义 Surface：它会自动应用 WindowInsets.statusBars，
@@ -208,6 +212,13 @@ private fun ListTopBar(
                         contentDescription = stringResource(R.string.list_toggle_to_list),
                     )
                 }
+            }
+            // 设置入口——按用户要求放在右上角最右边
+            IconButton(onClick = onOpenSettings) {
+                Icon(
+                    Icons.Default.Settings,
+                    contentDescription = stringResource(R.string.settings_title),
+                )
             }
         },
         colors =

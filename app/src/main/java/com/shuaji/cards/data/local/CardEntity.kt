@@ -3,6 +3,7 @@ package com.shuaji.cards.data.local
 import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.PrimaryKey
+import kotlinx.serialization.Serializable
 
 /**
  * 卡片实体。
@@ -24,7 +25,12 @@ import androidx.room.PrimaryKey
  *
  * 朝向：
  * - [cardOrientation] = "LANDSCAPE"（横版 1.586:1，标准卡片） / "PORTRAIT"（竖版）
+ *
+ * `@Serializable` 跟 `@Entity` 互不干扰——Room 用 kapt 生成 DAO，kotlinx-serialization
+ * 用 compiler plugin 生成 encoder / decoder，两条独立通路。这个 Entity 既存在数据库表里，
+ * 也作为 `BackupBundle.cards` 的元素直接走 JSON 序列化导出。
  */
+@Serializable
 @Entity(tableName = "cards")
 data class CardEntity(
     @PrimaryKey(autoGenerate = true)

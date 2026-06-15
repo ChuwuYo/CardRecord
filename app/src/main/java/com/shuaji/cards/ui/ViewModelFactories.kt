@@ -8,6 +8,7 @@ import com.shuaji.cards.ShuajiApplication
 import com.shuaji.cards.ui.screen.CardEditViewModel
 import com.shuaji.cards.ui.screen.CardFolderViewModel
 import com.shuaji.cards.ui.screen.CardListViewModel
+import com.shuaji.cards.ui.screen.SettingsViewModel
 
 /**
  * 轻量级 ViewModel 工厂：把 [AppContainer] 注入到 ViewModel。
@@ -24,6 +25,10 @@ object ViewModelFactories {
     val Folders =
         viewModelFactory {
             initializer { CardFolderViewModel(app().container.repository) }
+        }
+    val Settings =
+        viewModelFactory {
+            initializer { SettingsViewModel(app().container.backup) }
         }
 
     private fun CreationExtras.app(): ShuajiApplication {

@@ -14,6 +14,23 @@
     <string name="common_clear">清除</string>
     <string name="common_create">新建</string>
 
+    <!-- ────── 设置页 ────── -->
+    <string name="settings_title">设置</string>
+    <string name="settings_section_data">数据</string>
+    <string name="settings_export">导出配置</string>
+    <string name="settings_export_subtitle">把卡片 / 文件夹 / 流水打包成 JSON 文件</string>
+    <string name="settings_import">导入配置</string>
+    <string name="settings_import_subtitle">从 JSON 备份文件恢复（覆盖或追加）</string>
+    <string name="settings_privacy_note">提示：导出文件包含你的所有卡片信息（卡名 / 备注 / 卡面 URI 等），属于明文 JSON，请勿分享给他人。跨设备恢复时，图片 URI 会失效，需重新上传卡面。</string>
+    <string name="settings_import_dialog_title">选择导入方式</string>
+    <string name="settings_import_dialog_message">"覆盖"会清空当前所有数据并写入备份；"追加"会保留现有数据，把备份合并进来。两种都不会重复卡 id（自增分配）。</string>
+    <string name="settings_import_mode_replace">覆盖</string>
+    <string name="settings_import_mode_merge">追加</string>
+    <string name="settings_import_replace_confirm_title">确认覆盖？</string>
+    <string name="settings_import_replace_confirm_message">此操作会清空当前所有卡片 / 文件夹 / 流水，并写入备份文件的内容。操作不可撤销。</string>
+    <string name="settings_import_merge_confirm_title">确认追加？</string>
+    <string name="settings_import_merge_confirm_message">会把备份文件里的卡片 / 文件夹 / 流水追加到现有数据库，保留现有数据不变。</string>
+
     <!-- ────── 主页 / 列表 ────── -->
     <string name="list_title">刷记</string>
     <string name="list_subtitle">刷卡不再忘记，自动追踪免年费进度</string>

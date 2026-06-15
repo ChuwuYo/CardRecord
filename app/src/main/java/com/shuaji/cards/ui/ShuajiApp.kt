@@ -22,6 +22,7 @@ import com.shuaji.cards.ui.screen.CardDetailScreen
 import com.shuaji.cards.ui.screen.CardEditScreen
 import com.shuaji.cards.ui.screen.CardFolderScreen
 import com.shuaji.cards.ui.screen.CardListScreen
+import com.shuaji.cards.ui.screen.SettingsScreen
 
 object Routes {
     const val LIST = "list"
@@ -29,6 +30,7 @@ object Routes {
     const val EDIT = "edit/{cardId}"
     const val DETAIL = "detail/{cardId}"
     const val FOLDERS = "folders"
+    const val SETTINGS = "settings"
 
     fun edit(cardId: Long?) = if (cardId == null) CREATE else "edit/$cardId"
 
@@ -75,6 +77,7 @@ fun ShuajiApp() {
                     onAddCard = { navController.navigate(Routes.CREATE) },
                     onCardClick = { id -> navController.navigate(Routes.detail(id)) },
                     onManageFolders = { navController.navigate(Routes.FOLDERS) },
+                    onOpenSettings = { navController.navigate(Routes.SETTINGS) },
                 )
             }
             composable(Routes.CREATE) {
@@ -106,6 +109,11 @@ fun ShuajiApp() {
             }
             composable(Routes.FOLDERS) {
                 CardFolderScreen(
+                    onBack = { navController.popBackStack() },
+                )
+            }
+            composable(Routes.SETTINGS) {
+                SettingsScreen(
                     onBack = { navController.popBackStack() },
                 )
             }
