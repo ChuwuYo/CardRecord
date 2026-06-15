@@ -19,13 +19,16 @@ import kotlinx.coroutines.launch
 
 /**
  * 表单状态：所有用户可控字段。
+ *
+ * 不再含 `currentCount`——它从 transactions 表 `COUNT(*)` 算，编辑表单
+ * 也就没有"手动改笔数"这个 UI 入口了（用户唯一改笔数的方式就是
+ * 详情页/主页"记一笔"按钮写一条流水）。
  */
 data class CardEditUiState(
     val name: String = "",
     val bank: String = "",
     val cardNumberMasked: String = "",
     val requiredCount: String = "6",
-    val currentCount: String = "0",
     val validUntilMillis: Long? = null,
     val nextDueDateMillis: Long? = null,
     val colorArgb: Int = 0xFF0061A4.toInt(),
@@ -71,29 +74,29 @@ class CardEditViewModel(
             _uiState.update { it.copy(isLoading = true) }
             val entity = repository.observeCard(cardId).first()
             if (entity != null) {
+                val c = entity.card
                 _uiState.update {
                     it.copy(
-                        name = entity.name,
-                        bank = entity.bank,
-                        cardNumberMasked = entity.cardNumberMasked,
-                        requiredCount = entity.requiredCount.toString(),
-                        currentCount = entity.currentCount.toString(),
-                        validUntilMillis = entity.validUntilMillis,
-                        nextDueDateMillis = entity.nextDueDateMillis,
-                        colorArgb = entity.colorArgb,
-                        note = entity.note,
+                        name = c.name,
+                        bank = c.bank,
+                        cardNumberMasked = c.cardNumberMasked,
+                        requiredCount = c.requiredCount.toString(),
+                        validUntilMillis = c.validUntilMillis,
+                        nextDueDateMillis = c.nextDueDateMillis,
+                        colorArgb = c.colorArgb,
+                        note = c.note,
                         imageSourceType =
                             runCatching {
-                                ImageSourceType.valueOf(entity.imageSourceType)
+                                ImageSourceType.valueOf(c.imageSourceType)
                             }.getOrDefault(ImageSourceType.NONE),
-                        imageProviderKey = entity.imageProviderKey,
-                        imageUri = entity.imageUri,
+                        imageProviderKey = c.imageProviderKey,
+                        imageUri = c.imageUri,
                         cardOrientation =
                             runCatching {
-                                CardOrientation.valueOf(entity.cardOrientation)
+                                CardOrientation.valueOf(c.cardOrientation)
                             }.getOrDefault(CardOrientation.LANDSCAPE),
-                        folderId = entity.folderId,
-                        editingId = entity.id,
+                        folderId = c.folderId,
+                        editingId = c.id,
                         isLoading = false,
                     )
                 }
@@ -112,9 +115,9 @@ class CardEditViewModel(
         if (!state.canSave) return
         viewModelScope.launch {
             val required = state.requiredCount.toInt()
-            val current = state.currentCount.toIntOrNull()?.coerceIn(0, required) ?: 0
             val existingId = state.editingId
-            // 保留旧的 createdAtMillis / cycleStartMillis（编辑时）
+            // 编辑已有卡时保留 createdAtMillis（流水表用 card_id 关联，不依赖这个字段，
+            // 但 UI 列表排序还在用，所以保留）
             val preserved =
                 if (existingId != null) {
                     repository.observeCard(existingId).first()
@@ -128,10 +131,8 @@ class CardEditViewModel(
                     bank = state.bank.trim(),
                     cardNumberMasked = state.cardNumberMasked.trim(),
                     requiredCount = required,
-                    currentCount = current,
                     validUntilMillis = state.validUntilMillis,
                     nextDueDateMillis = state.nextDueDateMillis,
-                    cycleStartMillis = preserved?.cycleStartMillis ?: System.currentTimeMillis(),
                     colorArgb = state.colorArgb,
                     note = state.note,
                     imageUri = state.imageUri,
@@ -139,7 +140,7 @@ class CardEditViewModel(
                     imageProviderKey = state.imageProviderKey,
                     cardOrientation = state.cardOrientation.name,
                     folderId = state.folderId,
-                    createdAtMillis = preserved?.createdAtMillis ?: System.currentTimeMillis(),
+                    createdAtMillis = preserved?.card?.createdAtMillis ?: System.currentTimeMillis(),
                 )
             val id = repository.upsertCard(entity)
             _uiState.update { it.copy(saved = true, editingId = if (existingId == null) id else existingId) }

@@ -16,8 +16,14 @@ interface CardFolderDao {
     @Query("SELECT * FROM card_folders WHERE id = :id")
     suspend fun getById(id: Long): CardFolderEntity?
 
-    @Query("SELECT COUNT(*) FROM cards WHERE folder_id = :folderId AND archived = 0")
+    @Query("SELECT COUNT(*) FROM cards WHERE folder_id = :folderId")
     suspend fun countCardsInFolder(folderId: Long): Int
+
+    /**
+     * 备份导出用：一次性读所有文件夹。
+     */
+    @Query("SELECT * FROM card_folders")
+    suspend fun listAll(): List<CardFolderEntity>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(folder: CardFolderEntity): Long
@@ -27,4 +33,10 @@ interface CardFolderDao {
 
     @Delete
     suspend fun delete(folder: CardFolderEntity)
+
+    /**
+     * 备份导入 REPLACE 用：清空 card_folders 表。
+     */
+    @Query("DELETE FROM card_folders")
+    suspend fun deleteAll()
 }

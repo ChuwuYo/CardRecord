@@ -3,15 +3,20 @@ package com.shuaji.cards.data.local
 import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.PrimaryKey
+import kotlinx.serialization.Serializable
 
 /**
  * 卡片实体。
  *
  * - [requiredCount] 是年免年费所需消费笔数
- * - [currentCount] 当前已完成笔数
- * - [validUntilMillis] 卡片有效截止日
+ * - [validUntilMillis] 卡片有效截止日（设置了就该有「已过期」提示）
  * - [nextDueDateMillis] 下次年费结算日
  * - [colorArgb] 卡片主题色
+ *
+ * 字段精简原则（凡是存在的字段都必须有 UI 消费路径）：
+ * - 删了 `currentCount` —— 从 transactions 表 `COUNT(*)` 算
+ *   （GroupBy 一次拿，UI 拿到的视图模型自带 currentCount，详情见 [com.shuaji.cards.data.local.CardWithCount]）
+ * - 删了 `cycleStartMillis` —— 从未被任何 UI/查询读取的纯死字段
  *
  * 卡面图片来源：
  * - [imageSourceType] = "NONE"     → 不显示图片（纯色卡）
@@ -20,7 +25,12 @@ import androidx.room.PrimaryKey
  *
  * 朝向：
  * - [cardOrientation] = "LANDSCAPE"（横版 1.586:1，标准卡片） / "PORTRAIT"（竖版）
+ *
+ * `@Serializable` 跟 `@Entity` 互不干扰——Room 用 kapt 生成 DAO，kotlinx-serialization
+ * 用 compiler plugin 生成 encoder / decoder，两条独立通路。这个 Entity 既存在数据库表里，
+ * 也作为 `BackupBundle.cards` 的元素直接走 JSON 序列化导出。
  */
+@Serializable
 @Entity(tableName = "cards")
 data class CardEntity(
     @PrimaryKey(autoGenerate = true)
@@ -35,10 +45,6 @@ data class CardEntity(
     val nextDueDateMillis: Long? = null,
     @ColumnInfo(name = "required_count")
     val requiredCount: Int,
-    @ColumnInfo(name = "current_count")
-    val currentCount: Int = 0,
-    @ColumnInfo(name = "cycle_start_millis")
-    val cycleStartMillis: Long = System.currentTimeMillis(),
     @ColumnInfo(name = "color_argb")
     val colorArgb: Int,
     @ColumnInfo(name = "note")
@@ -55,8 +61,6 @@ data class CardEntity(
     val folderId: Long? = null,
     @ColumnInfo(name = "created_at_millis")
     val createdAtMillis: Long = System.currentTimeMillis(),
-    @ColumnInfo(name = "archived")
-    val archived: Boolean = false,
 )
 
 enum class ImageSourceType { NONE, PROVIDER, USER }
