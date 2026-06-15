@@ -14,6 +14,55 @@
     <string name="common_clear">清除</string>
     <string name="common_create">新建</string>
 
+    <!-- ────── 设置页 ────── -->
+    <string name="settings_title">设置</string>
+    <string name="settings_section_data">数据</string>
+    <string name="settings_export">导出配置</string>
+    <string name="settings_export_subtitle">把卡片 / 文件夹 / 流水打包成 JSON 文件</string>
+    <string name="settings_import">导入配置</string>
+    <string name="settings_import_subtitle">从 JSON 备份文件恢复（覆盖或追加）</string>
+    <string name="settings_privacy_note">提示：导出文件包含你的所有卡片信息（卡名 / 备注 / 卡面 URI 等），属于明文 JSON，请勿分享给他人。跨设备恢复时，图片 URI 会失效，需重新上传卡面。</string>
+    <string name="settings_import_dialog_title">选择导入方式</string>
+    <string name="settings_import_dialog_message">"覆盖"会清空当前所有数据并写入备份；"追加"会保留现有数据，把备份合并进来。两种都不会重复卡 id（自增分配）。</string>
+    <string name="settings_import_mode_replace">覆盖</string>
+    <string name="settings_import_mode_merge">追加</string>
+    <string name="settings_import_replace_confirm_title">确认覆盖？</string>
+    <string name="settings_import_replace_confirm_message">此操作会清空当前所有卡片 / 文件夹 / 流水，并写入备份文件的内容。操作不可撤销。</string>
+    <string name="settings_import_merge_confirm_title">确认追加？</string>
+    <string name="settings_import_merge_confirm_message">会把备份文件里的卡片 / 文件夹 / 流水追加到现有数据库，保留现有数据不变。</string>
+    <string name="settings_import_replace_confirm_message_with_count">此备份包含 %1$d 张卡 / %2$d 个文件夹 / %3$d 笔流水。此操作会清空当前所有数据并写入备份内容，操作不可撤销。</string>
+    <string name="settings_import_merge_confirm_message_with_count">此备份包含 %1$d 张卡 / %2$d 个文件夹 / %3$d 笔流水。追加到现有数据库，保留现有数据不变。</string>
+    <string name="settings_backup_time_label">备份时间：%1$s</string>
+    <string name="settings_result_export_success_with_count">已导出 %1$d 张卡 / %2$d 个文件夹 / %3$d 笔流水到备份文件</string>
+    <string name="settings_result_export_empty">已导出空备份（数据库无任何记录）</string>
+    <string name="settings_result_import_replace_with_count">覆盖成功：%1$d 张卡，%2$d 个文件夹，%3$d 笔流水</string>
+    <string name="settings_result_import_merge_with_count">追加成功：%1$d 张卡，%2$d 个文件夹，%3$d 笔流水</string>
+    <string name="settings_result_extras_transactions_skipped">%1$d 笔流水因引用不存在的卡被跳过</string>
+    <string name="settings_result_extras_cards_invalid_folder">%1$d 张卡的文件夹引用无效，已置为未分组</string>
+    <string name="settings_result_extras_duplicate_folders">%1$d 个文件夹与现库重名</string>
+    <string name="settings_result_extras_duplicate_cards">%1$d 张卡与现库重名</string>
+    <string name="settings_result_image_uri_potentially_broken">%1$d 张卡的卡面需要重新上传（图片 URI 在当前设备上不可访问）</string>
+    <string name="settings_result_export_failed">导出失败：%1$s</string>
+    <string name="settings_result_import_failed">导入失败：%1$s</string>
+    <string name="settings_snackbar_error_prefix">⚠️ </string>
+    <string name="settings_result_extras_separator">；</string>
+    <string name="settings_dialog_image_warning">其中 %1$d 张卡的卡面在当前设备上不可访问，需要重新上传</string>
+    <string name="settings_import_persist_warning">⚠️ 文件访问权限未持久化，切换应用或重启后可能无法访问该文件</string>
+
+    <!-- ────── 主题设置 ────── -->
+    <string name="settings_section_appearance">外观</string>
+    <string name="settings_theme_mode">主题模式</string>
+    <string name="settings_theme_mode_system">跟随系统</string>
+    <string name="settings_theme_mode_light">浅色</string>
+    <string name="settings_theme_mode_dark">深色</string>
+    <string name="settings_dynamic_color">动态颜色</string>
+    <string name="settings_dynamic_color_subtitle">使用系统壁纸颜色（Android 12+）</string>
+    <string name="settings_color_source">颜色来源</string>
+    <string name="settings_color_source_system">系统动态</string>
+    <string name="settings_color_source_custom">自定义</string>
+    <string name="settings_custom_color">自定义颜色</string>
+    <string name="settings_custom_color_none">未选择，点击选取</string>
+
     <!-- ────── 主页 / 列表 ────── -->
     <string name="list_title">刷记</string>
     <string name="list_subtitle">刷卡不再忘记，自动追踪免年费进度</string>
@@ -48,6 +97,7 @@
     <string name="card_label_next_due">下次结算</string>
     <string name="card_status_done">已达标</string>
     <string name="card_status_remaining">还需 %1$d 笔</string>
+    <string name="card_status_expired">已过期</string>
     <string name="card_long_press_hint">长按可删除</string>
     <string name="card_increment_one">+1 笔</string>
     <string name="card_detail">详情</string>
@@ -63,21 +113,21 @@
     <string name="detail_action_reset">重置周期</string>
     <string name="detail_action_edit">编辑</string>
     <string name="detail_action_record">记一笔</string>
-    <string name="detail_transactions_title">消费记录（%1$d）</string>
-    <string name="detail_empty_transactions">还没有消费记录，点击右下角「记一笔」</string>
-    <string name="detail_tx_default_merchant">未命名消费</string>
-    <string name="detail_tx_amount_separator">  ·  ¥%1$s</string>
+    <string name="detail_label_bank">发卡行</string>
+    <string name="detail_label_card_number">卡号</string>
+    <string name="detail_label_note">备注</string>
+    <string name="detail_label_swipes">刷卡记录</string>
+    <string name="detail_swipes_empty">还没有记录，点右下角「记一笔」开始追踪</string>
+    <string name="detail_swipe_index">%1$d</string>
+    <string name="detail_action_delete_swipe">删除这一笔</string>
+    <string name="detail_delete_swipe_dialog_title">删除这一笔？</string>
+    <string name="detail_delete_swipe_dialog_message">将删除 %1$s 的这笔刷卡记录，操作不可撤销。</string>
+    <string name="cycle_auto_reset_message">已自动续期 %1$d 张卡，新周期笔数已清零</string>
     <string name="detail_reset_dialog_title">重置本周期？</string>
-    <string name="detail_reset_dialog_message">将清零当前笔数并刷新周年日起点，已有的消费记录将保留。</string>
+    <string name="detail_reset_dialog_message">将清零当前笔数，操作不可撤销。</string>
     <string name="detail_reset_dialog_confirm">重置</string>
     <string name="detail_delete_dialog_title">删除此卡片？</string>
     <string name="detail_delete_dialog_message">将同时删除这张卡的全部消费记录，操作不可撤销。</string>
-    <string name="detail_delete_tx_dialog_title">删除此消费记录？</string>
-    <string name="detail_delete_tx_dialog_message">删除后笔数将自动减 1，操作不可撤销。</string>
-    <string name="detail_add_tx_dialog_title">新增一笔消费</string>
-    <string name="detail_add_tx_merchant_label">商户 / 用途</string>
-    <string name="detail_add_tx_amount_label">金额（可选）</string>
-    <string name="detail_add_tx_note_label">备注（可选）</string>
 
     <!-- ────── 编辑页 ────── -->
     <string name="edit_title_new">添加卡片</string>
@@ -102,7 +152,6 @@
     <string name="edit_field_number">卡号（建议脱敏后四位）</string>
     <string name="edit_field_number_hint">****  ****  ****  1234</string>
     <string name="edit_field_required">所需笔数 *</string>
-    <string name="edit_field_current">当前笔数</string>
     <string name="edit_date_valid_until">卡片有效期</string>
     <string name="edit_date_next_due">下次年费结算日</string>
     <string name="edit_field_note">备注</string>
