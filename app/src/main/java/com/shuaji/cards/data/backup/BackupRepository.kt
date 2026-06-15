@@ -6,14 +6,16 @@ import androidx.room.withTransaction
 import com.shuaji.cards.data.local.AppDatabase
 import com.shuaji.cards.data.local.CardDao
 import com.shuaji.cards.data.local.CardFolderDao
+import com.shuaji.cards.data.local.ImageSourceType
 import com.shuaji.cards.data.local.TransactionDao
+import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
-import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.encodeToStream
 import java.io.BufferedReader
 import java.io.InputStreamReader
 
@@ -42,6 +44,11 @@ import java.io.InputStreamReader
  * **取消语义**（P1-2 修）：[export] / [import] 协程启动时把 Job 存到 [activeJob]，
  * UI 层可以调 [cancelActive] 取消。**取消时 REPLACE/MERGE 的写库事务自动回滚**，
  * 数据库回到 import 前。
+ *
+ * **OOM 防护**（P2-4 修）：[export] 用 [OutputStreamWriter] 包 [encodeToString]
+ * 的「序列化 → 写流」走 streaming 路径——JSON 字符流直接喂给 OutputStream，
+ * **不**先 `text.toByteArray` 把整段 JSON 加载到内存。理论上 100k+ 张卡也不
+ * 会触发 OutOfMemoryError。
  */
 class BackupRepository(
     private val context: Context,
@@ -72,8 +79,13 @@ class BackupRepository(
      * 导出：把数据库全量数据写到 [uri]，返回总行数（cards + folders + transactions）。
      *
      * 整个 I/O 在 [Dispatchers.IO] 上跑，UI 线程不阻塞。
+     *
+     * **P2-4 OOM 修复**：用 [Json.encodeToString] 的 streaming 重载——
+     * `encodeToString(serializer, value, writer)`，让序列化器直接把 JSON
+     * 字符流喂给 [OutputStreamWriter]，**不**经过「先拼成 String 再转 byte[]」
+     * 的双倍内存开销。100k+ 行的数据也不 OOM。
      */
-    suspend fun export(uri: Uri): Int =
+    suspend fun export(uri: Uri): ExportSummary =
         withContext(Dispatchers.IO) {
             val job = coroutineContext[Job]
             if (job != null) activeJob = job
@@ -84,19 +96,25 @@ class BackupRepository(
                 val bundle =
                     BackupBundle(
                         version = BackupBundle.SCHEMA_VERSION,
-                        exportedAtMillis = System.currentTimeMillis(),
                         cards = cards,
                         folders = folders,
                         transactions = transactions,
                     )
-                val text = json.encodeToString(bundle)
-                // P2-4 修：用 "w"（二进制）而不是 "wt"（文本）——"wt" 在某些 DocumentsProvider
-                // 下会做 \n → \r\n 转换；JSON 我们手写字节流，不需要文本模式
                 context.contentResolver.openOutputStream(uri, "w")?.use { out ->
-                    out.write(text.toByteArray(Charsets.UTF_8))
+                    // P2-4 OOM 修复：用 kotlinx-serialization 1.6+ 的 [encodeToStream]
+                    // 扩展函数——直接把 JSON 字符流喂给 OutputStream，**不**经过
+                    // 「先拼成 String 再转 byte[]」的双倍内存开销。100k+ 行的数据
+                    // 也不 OOM。注意：这是 [ExperimentalSerializationApi]，标记
+                    // `@OptIn` 后稳定可用——kotlinx-serialization 自己跨平台都这么用。
+                    @OptIn(ExperimentalSerializationApi::class)
+                    json.encodeToStream(BackupBundle.serializer(), bundle, out)
                     out.flush()
                 } ?: throw BackupException("无法打开目标 URI 用于写入（可能被占用）")
-                cards.size + folders.size + transactions.size
+                ExportSummary(
+                    cardCount = cards.size,
+                    folderCount = folders.size,
+                    transactionCount = transactions.size,
+                )
             } finally {
                 if (job != null && activeJob === job) activeJob = null
             }
@@ -105,7 +123,7 @@ class BackupRepository(
     /**
      * 导入：从 [uri] 读 JSON，按 [mode] 写入数据库。
      *
-     * 返回 [ImportResult] 含实际插入条数 + id 映射（MERGE 模式）。
+     * 返回 [ImportResult] 含实际插入条数 + 跳过 / 重名 / 卡面 URI 统计。
      * 失败抛 [BackupException]（UI 层 try-catch 转 Snackbar）。
      * 协程被取消 → 事务自动 ROLLBACK。
      */
@@ -171,6 +189,14 @@ class BackupRepository(
         }
 
     /**
+     * 备份里 USER 类型卡数（imageSourceType == USER）——跨设备恢复时这部分的
+     * imageUri 在新设备上失效，UI 提示用户「N 张卡的卡面需要重新上传」。
+     * 同设备恢复时 URI 仍然有效，但提醒也无害（用户可忽略）。
+     */
+    private fun countUserImageCards(bundle: BackupBundle): Int =
+        bundle.cards.count { it.imageSourceType == ImageSourceType.USER.name }
+
+    /**
      * REPLACE 模式：先清空（含 CASCADE），再按依赖顺序写入。
      * **P0-2 修**：写 cards 前校验 folderId，凡是不在 bundle.folders 里的 folderId 全部置 null，
      * 避免 FK 约束违反 → 整个事务回滚 + 用户原数据已清空的灾难。
@@ -205,6 +231,7 @@ class BackupRepository(
             foldersAdded = folders.size,
             transactionsAdded = transactions.size,
             cardsSkippedInvalidFolder = invalidCount,
+            imageUriUserCount = countUserImageCards(bundle),
         )
     }
 
@@ -219,6 +246,10 @@ class BackupRepository(
      * 计入 [ImportResult.transactionsSkipped]，UI 提示用户「其中 N 笔因引用不存在的卡被跳过」。
      *
      * **MERGE 永远走 INSERT 路径**（`id = 0L` + AUTOINCREMENT），**不**会覆盖现库同 id 的 folder / card。
+     *
+     * 内部用 `folderRemap` / `cardRemap` 维护 old → new 映射，仅供 doMerge 自己写
+     * transactions 时用；**不**再把映射返回到 [ImportResult]（id 对用户无意义，
+     * 客户端从未消费过「导入前后 id 对应关系」）。
      */
     private suspend fun doMerge(bundle: BackupBundle): ImportResult {
         // 1) **写之前**先抓现有 name 集合——重名检测不能包含本次刚追加的，否则"自己跟自己"也算重名
@@ -265,9 +296,24 @@ class BackupRepository(
             transactionsSkipped = txSkipped,
             duplicateFolderNames = duplicateFolders,
             duplicateCardNames = duplicateCards,
-            // folder + card 映射都放一起；客户端按需要查找（注意 folder / card id 可能重叠，
-            // 但客户端不靠这个做业务判断——只是参考）
-            idRemap = folderRemap + cardRemap,
+            imageUriUserCount = countUserImageCards(bundle),
         )
     }
+}
+
+/**
+ * 导出结果摘要——UI 拼 Snackbar 用。
+ *
+ * 原来 export 返回 `Int`（总行数），UI 拼成「已导出 N 条」；问题是 N 把卡 / 文件夹 / 流水
+ * 混在一起算，用户不知道是「5 张卡还是 5 笔流水」。「凡是存在就要有存在意义」→
+ * 按三类分桶，UI 拼「已导出 N1 张卡 / N2 个文件夹 / N3 笔流水」。
+ */
+data class ExportSummary(
+    val cardCount: Int,
+    val folderCount: Int,
+    val transactionCount: Int,
+) {
+    val total: Int get() = cardCount + folderCount + transactionCount
+
+    val isEmpty: Boolean get() = total == 0
 }

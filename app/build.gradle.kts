@@ -15,8 +15,8 @@ android {
         applicationId = "com.shuaji.cards"
         minSdk = 26
         targetSdk = 36
-        versionCode = 16
-        versionName = "1.4.1"
+        versionCode = 17
+        versionName = "1.5.0"
 
         vectorDrawables { useSupportLibrary = true }
     }
@@ -127,6 +127,7 @@ dependencies {
     testImplementation("androidx.test.ext:junit-ktx:1.2.1")
     testImplementation("androidx.room:room-testing:2.7.2")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.1")
+    testImplementation("org.mockito.kotlin:mockito-kotlin:5.4.0")
 }
 
 configurations.all {

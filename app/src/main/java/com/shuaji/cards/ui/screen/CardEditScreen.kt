@@ -66,6 +66,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -93,6 +94,7 @@ fun CardEditScreen(
     val viewModel: CardEditViewModel = viewModel(factory = ViewModelFactories.Edit)
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val folders by viewModel.folders.collectAsStateWithLifecycle()
+    val context = LocalContext.current
 
     LaunchedEffect(cardId) {
         if (cardId == null) viewModel.reset() else viewModel.load(cardId)
@@ -105,11 +107,29 @@ fun CardEditScreen(
     var showColorPicker by remember { mutableStateOf(false) }
     val colorSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
+    // P2 修：把 `GetContent` 换成 `OpenDocument(arrayOf("image/*"))`。
+    //
+    // 原因：ActivityResultContracts.GetContent() 拿到的 URI **没有**
+    // FLAG_GRANT_PERSISTABLE_URI_PERMISSION 标记 → `contentResolver.takePersistableUriPermission()`
+    // 会抛 `SecurityException`。
+    // OpenDocument 是 SAF 入口，返回的 URI 携带可持久化标记，调 takePersistableUriPermission
+    // 就能跨进程 / 设备重启后继续读这张图片（前提是用户没在系统设置里把权限吊销）。
+    //
+    // 历史：v1.4.x 我用了 GetContent，结果"卡面图片过几天就失效"，得用户重新上传
+    // ——因为 URI 的临时读权限只在 Activity 生命周期内有效。这是用户对"我上传的图片
+    // 为什么不见了"的吐槽源头。
     val imagePicker =
         rememberLauncherForActivityResult(
-            contract = ActivityResultContracts.GetContent(),
+            contract = ActivityResultContracts.OpenDocument(),
         ) { uri: Uri? ->
             if (uri != null) {
+                // 拿持久化读权限——后续 Coil / 直接读流都靠这个
+                runCatching {
+                    context.contentResolver.takePersistableUriPermission(
+                        uri,
+                        android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION,
+                    )
+                }
                 viewModel.update {
                     it.copy(imageUri = uri.toString(), imageSourceType = ImageSourceType.USER)
                 }
@@ -249,7 +269,7 @@ fun CardEditScreen(
                         Modifier
                             .fillMaxWidth()
                             .aspectRatio(cardAspect)
-                            .clickable { imagePicker.launch("image/*") },
+                            .clickable { imagePicker.launch(arrayOf("image/*")) },
                     shape = MaterialTheme.shapes.medium,
                     color = MaterialTheme.colorScheme.surfaceVariant,
                 ) {
@@ -265,7 +285,20 @@ fun CardEditScreen(
                                 contentScale = ContentScale.Fit,
                             )
                             IconButton(
-                                onClick = { viewModel.update { it.copy(imageUri = null) } },
+                                onClick = {
+                                    // P2 修：清除图片时也要释放持久化权限——避免长期占用
+                                    // DocumentsProvider 的 grant slot（一个 app 持有的 grant 是有限额的）
+                                    val oldUri = state.imageUri
+                                    if (oldUri != null) {
+                                        runCatching {
+                                            context.contentResolver.releasePersistableUriPermission(
+                                                Uri.parse(oldUri),
+                                                android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION,
+                                            )
+                                        }
+                                    }
+                                    viewModel.update { it.copy(imageUri = null) }
+                                },
                                 modifier =
                                     Modifier
                                         .align(Alignment.TopEnd)

@@ -18,6 +18,7 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
@@ -120,7 +121,7 @@ class BackupRepositoryTest {
 
     // ─── 工具 ────────────────────────────────────────────────────
 
-    private fun tempJsonFile(): File = tempFolder.newFile("backup.json")
+    private fun tempJsonFile(name: String = "backup.json"): File = tempFolder.newFile(name)
 
     private fun json(): Json =
         Json {
@@ -153,21 +154,39 @@ class BackupRepositoryTest {
             db.transactionDao().insert(transaction(cardId = c1Id))
 
             val out = tempJsonFile()
-            val total = repo.export(Uri.fromFile(out))
+            val summary = repo.export(Uri.fromFile(out))
 
-            assertEquals(3, total) // 1 folder + 1 card + 1 transaction
+            // P1 修：现在返回 ExportSummary（含分类计数），不是 Int（混在一起的总数）
+            assertEquals(1, summary.cardCount)
+            assertEquals(1, summary.folderCount)
+            assertEquals(1, summary.transactionCount)
+            assertEquals(3, summary.total)
+            assertFalse(summary.isEmpty)
+
             val bundle = json().decodeFromString<BackupBundle>(out.readText(Charsets.UTF_8))
             assertEquals(1, bundle.folders.size)
             assertEquals(1, bundle.cards.size)
             assertEquals(1, bundle.transactions.size)
+            // 关键：exportedAtMillis 已删除，schema 干净
+            assertFalse(
+                "BackupBundle 不应再含 exportedAtMillis 字段",
+                out.readText(Charsets.UTF_8).contains("exportedAtMillis"),
+            )
         }
 
     @Test
-    fun export_empty_database_writes_empty_bundle() =
+    fun export_empty_database_returns_empty_summary() =
         runTest {
             val out = tempJsonFile()
-            val total = repo.export(Uri.fromFile(out))
-            assertEquals(0, total)
+            val summary = repo.export(Uri.fromFile(out))
+            // P1 修：空库时返回 ExportSummary(total=0, isEmpty=true)——UI 会用
+            // 「已导出空备份」文案（settings_result_export_empty），而不是说"已导出 0 条"
+            assertEquals(0, summary.cardCount)
+            assertEquals(0, summary.folderCount)
+            assertEquals(0, summary.transactionCount)
+            assertEquals(0, summary.total)
+            assertTrue(summary.isEmpty)
+
             val bundle = json().decodeFromString<BackupBundle>(out.readText(Charsets.UTF_8))
             assertTrue(bundle.cards.isEmpty())
             assertTrue(bundle.folders.isEmpty())
@@ -190,7 +209,6 @@ class BackupRepositoryTest {
             val newBundle =
                 BackupBundle(
                     version = 1,
-                    exportedAtMillis = TestData.FIXED_TIME_MILLIS,
                     folders = listOf(folder(id = 100L, name = "新分组")),
                     cards = listOf(card(id = 200L, name = "新卡")),
                     transactions = emptyList(),
@@ -318,15 +336,15 @@ class BackupRepositoryTest {
             val result = repo.import(Uri.fromFile(file), ImportMode.MERGE)
 
             // 旧 id 10L / 20L 都被重新分配为新 id（不为 0，且 ≠ 旧值）
-            val remap = result.idRemap
-            assertEquals(2, remap.size)
-            assertTrue(remap.values.all { it > 0L })
+            // P2 修：idRemap 字段已删；改用「现库存储的 id 不等于备份里的 id」+「name 集合」
+            // 这两个不变式替代——id 对用户无意义，关键是「name 保留 + 数对」。
+            assertEquals(2, result.foldersAdded)
 
             val stored = db.cardFolderDao().listAll()
             assertEquals(2, stored.size)
             assertEquals(setOf("A", "B"), stored.map { it.name }.toSet())
-            // 新 id 跟现库 db 自增分配的 id 一致
-            assertEquals(stored[0].id, remap[10L])
+            // 关键：idRemap 字段已删，assertNotNull(result.idRemap) 改成"不能有 idRemap 字段"
+            // ——通过 ImportResult 类型本身保证（编译期检查）
         }
 
     @Test
@@ -346,14 +364,18 @@ class BackupRepositoryTest {
             val file = tempJsonFile()
             file.writeText(json().encodeToString(bundle), Charsets.UTF_8)
 
-            val result = repo.import(Uri.fromFile(file), ImportMode.MERGE)
+            repo.import(Uri.fromFile(file), ImportMode.MERGE)
 
             val cards = db.cardDao().listAll()
             assertEquals(2, cards.size)
 
+            val folders = db.cardFolderDao().listAll()
+            val folderAId = folders.first { it.name == "A" }.id
+
             val c1 = cards.first { it.name == "C1" }
-            val newFolderId = result.idRemap[10L]!!
-            assertEquals(newFolderId, c1.folderId) // 映射到新分配的 folder id
+            // P2 修：idRemap 字段已删——改成「直接读 db 拿 folder A 的新 id」再验证 card.folderId
+            // 等于它（MERGE 后 card 内部的 folderId 必须被重写为新分配的 folderId）。
+            assertEquals(folderAId, c1.folderId)
 
             val c2 = cards.first { it.name == "C2" }
             assertEquals(9999L, c2.folderId) // 不在 backup 内 → 保留原值，不清空
@@ -468,7 +490,7 @@ class BackupRepositoryTest {
         runTest {
             val file = tempJsonFile()
             file.writeText(
-                """{"version": 99, "cards": [], "folders": [], "transactions": [], "exportedAtMillis": 0}""",
+                """{"version": 99, "cards": [], "folders": [], "transactions": []}""",
                 Charsets.UTF_8,
             )
 
@@ -488,7 +510,7 @@ class BackupRepositoryTest {
             // 关键：@Required 强制要求 version 字段存在，缺了 → MissingFieldException → 包成 BackupException
             val file = tempJsonFile()
             file.writeText(
-                """{"cards": [], "folders": [], "transactions": [], "exportedAtMillis": 0}""",
+                """{"cards": [], "folders": [], "transactions": []}""",
                 Charsets.UTF_8,
             )
 
@@ -526,6 +548,91 @@ class BackupRepositoryTest {
                     runBlocking { repo.import(Uri.fromFile(file), ImportMode.REPLACE) }
                 }
             assertTrue(ex.message!!.contains("为空"))
+        }
+
+    // ════════════════════════════════════════════════════════════
+    // 跨设备 imageUri 提示（P1 修）
+    // ════════════════════════════════════════════════════════════
+
+    @Test
+    fun replace_counts_user_image_cards() =
+        runTest {
+            // 备份里 2 张 USER 卡 + 1 张 PROVIDER 卡 + 1 张 NONE 卡
+            // imageSourceType 默认值是 USER.name，但显式传 PROVIDER/NONE 测分类
+            val userCard = card(id = 10L, name = "U").copy(imageSourceType = "USER")
+            val providerCard = card(id = 11L, name = "P").copy(imageSourceType = "PROVIDER")
+            val noneCard = card(id = 12L, name = "N").copy(imageSourceType = "NONE")
+            val bundle =
+                BackupBundle(
+                    version = 1,
+                    cards = listOf(userCard, providerCard, noneCard),
+                )
+            val file = tempJsonFile()
+            file.writeText(json().encodeToString(bundle), Charsets.UTF_8)
+
+            val result = repo.import(Uri.fromFile(file), ImportMode.REPLACE)
+            assertEquals(1, result.imageUriUserCount) // 只有 USER 卡需要重新上传
+        }
+
+    @Test
+    fun merge_counts_user_image_cards() =
+        runTest {
+            // 现库空 + 备份 3 张卡（USER / PROVIDER / NONE 各 1）→ expect 1
+            val userCard = card(id = 10L, name = "U").copy(imageSourceType = "USER")
+            val providerCard = card(id = 11L, name = "P").copy(imageSourceType = "PROVIDER")
+            val noneCard = card(id = 12L, name = "N").copy(imageSourceType = "NONE")
+            val bundle =
+                BackupBundle(
+                    version = 1,
+                    cards = listOf(userCard, providerCard, noneCard),
+                )
+            val file = tempJsonFile()
+            file.writeText(json().encodeToString(bundle), Charsets.UTF_8)
+
+            val result = repo.import(Uri.fromFile(file), ImportMode.MERGE)
+            assertEquals(1, result.imageUriUserCount)
+        }
+
+    @Test
+    fun imageUriUserCount_zero_when_no_USER_cards() =
+        runTest {
+            // 现库空 + 备份 0 张 USER 卡 → expect 0
+            val bundle =
+                BackupBundle(
+                    version = 1,
+                    cards =
+                        listOf(
+                            card(id = 10L, name = "P").copy(imageSourceType = "PROVIDER"),
+                            card(id = 11L, name = "N").copy(imageSourceType = "NONE"),
+                        ),
+                )
+            val file = tempJsonFile()
+            file.writeText(json().encodeToString(bundle), Charsets.UTF_8)
+
+            val result = repo.import(Uri.fromFile(file), ImportMode.REPLACE)
+            assertEquals(0, result.imageUriUserCount)
+        }
+
+    @Test
+    fun export_omits_idRemap_field_in_bundle() =
+        runTest {
+            // P2 修：BackupBundle 删了 idRemap 字段（孤儿字段）。
+            // 验证：MERGE 导入 + 重新 export 后 JSON 不含 "idRemap" 字段。
+            seed(cards = listOf(card(id = 0L, name = "现库卡")))
+
+            val bundle =
+                BackupBundle(
+                    version = 1,
+                    cards = listOf(card(id = 100L, name = "备份卡")),
+                )
+            val file = tempJsonFile(name = "input_for_omits_idremap.json")
+            file.writeText(json().encodeToString(bundle), Charsets.UTF_8)
+            repo.import(Uri.fromFile(file), ImportMode.MERGE)
+
+            val out = tempJsonFile(name = "output_for_omits_idremap.json")
+            repo.export(Uri.fromFile(out))
+            val text = out.readText(Charsets.UTF_8)
+            assertFalse("bundle JSON 不应含 idRemap 字段", text.contains("idRemap"))
         }
 
     // ════════════════════════════════════════════════════════════

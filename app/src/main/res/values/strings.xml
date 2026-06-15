@@ -30,6 +30,22 @@
     <string name="settings_import_replace_confirm_message">此操作会清空当前所有卡片 / 文件夹 / 流水，并写入备份文件的内容。操作不可撤销。</string>
     <string name="settings_import_merge_confirm_title">确认追加？</string>
     <string name="settings_import_merge_confirm_message">会把备份文件里的卡片 / 文件夹 / 流水追加到现有数据库，保留现有数据不变。</string>
+    <string name="settings_import_replace_confirm_message_with_count">此备份包含 %1$d 张卡 / %2$d 个文件夹 / %3$d 笔流水。此操作会清空当前所有数据并写入备份内容，操作不可撤销。</string>
+    <string name="settings_import_merge_confirm_message_with_count">此备份包含 %1$d 张卡 / %2$d 个文件夹 / %3$d 笔流水。追加到现有数据库，保留现有数据不变。</string>
+    <string name="settings_backup_time_label">备份时间：%1$s</string>
+    <string name="settings_result_export_success_with_count">已导出 %1$d 张卡 / %2$d 个文件夹 / %3$d 笔流水到备份文件</string>
+    <string name="settings_result_export_empty">已导出空备份（数据库无任何记录）</string>
+    <string name="settings_result_import_replace_with_count">覆盖成功：%1$d 张卡，%2$d 个文件夹，%3$d 笔流水</string>
+    <string name="settings_result_import_merge_with_count">追加成功：%1$d 张卡，%2$d 个文件夹，%3$d 笔流水</string>
+    <string name="settings_result_extras_transactions_skipped">%1$d 笔流水因引用不存在的卡被跳过</string>
+    <string name="settings_result_extras_cards_invalid_folder">%1$d 张卡的文件夹引用无效，已置为未分组</string>
+    <string name="settings_result_extras_duplicate_folders">%1$d 个文件夹与现库重名</string>
+    <string name="settings_result_extras_duplicate_cards">%1$d 张卡与现库重名</string>
+    <string name="settings_result_image_uri_potentially_broken">%1$d 张卡的卡面需要重新上传（图片 URI 在当前设备上不可访问）</string>
+    <string name="settings_result_export_failed">导出失败：%1$s</string>
+    <string name="settings_result_import_failed">导入失败：%1$s</string>
+    <string name="settings_dialog_cancel_export">取消导出</string>
+    <string name="settings_dialog_cancel_import">取消导入</string>
 
     <!-- ────── 主页 / 列表 ────── -->
     <string name="list_title">刷记</string>

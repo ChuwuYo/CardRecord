@@ -3,6 +3,7 @@ package com.shuaji.cards.ui
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
@@ -18,6 +19,7 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.shuaji.cards.R
 import com.shuaji.cards.ShuajiApplication
+import com.shuaji.cards.data.SettingsDoneEvent
 import com.shuaji.cards.ui.screen.CardDetailScreen
 import com.shuaji.cards.ui.screen.CardEditScreen
 import com.shuaji.cards.ui.screen.CardFolderScreen
@@ -40,23 +42,42 @@ object Routes {
 /**
  * 顶层 app 容器：Scaffold + NavHost + 全局 SnackbarHost。
  *
- * SnackbarHost 放在最外层，这样不论用户在哪个 page 都能弹消息
- * ——比如 ShuajiApplication 启动时跑 `resetOverdueCycles`，结果通过
- * `cycleAutoResetEvents` 推到 UI，**不论用户当前在 list / detail / edit
- * 都能看到「X 张卡已自动续期」提示**。
+ * SnackbarHost 放在最外层，这样不论用户在哪个 page 都能弹消息：
+ * - `ShuajiApplication` 启动时跑 `resetOverdueCycles`，结果通过
+ *   `cycleAutoResetEvents` 推到 UI，**不论用户当前在 list / detail / edit
+ *   都能看到「X 张卡已自动续期」提示**。
+ * - `SettingsViewModel` 导出 / 导入完成时，**通过 `settingsEvents` 推到全局**——
+ *   用户点完「导出」后即使立刻跳走，弹出来的「已导出 N 条」也能在 Home 看到
+ *   （P1 修：原来 SettingsScreen 自带 SnackbarHost，跨页面即丢）。
  */
 @Composable
 fun ShuajiApp() {
     val context = LocalContext.current
     val app = context.applicationContext as ShuajiApplication
     val cycleEvents = app.container.cycleAutoResetEvents
+    val settingsEvents = app.container.settingsEvents
     val snackbarHostState = remember { SnackbarHostState() }
     val autoResetMessage = stringResource(R.string.cycle_auto_reset_message)
 
     // 订阅自动续期事件 → 弹 Snackbar
     LaunchedEffect(cycleEvents) {
         cycleEvents.collect { count ->
-            snackbarHostState.showSnackbar(autoResetMessage.format(count))
+            snackbarHostState.showSnackbar(
+                message = autoResetMessage.format(count),
+                duration = SnackbarDuration.Short,
+            )
+        }
+    }
+
+    // P1 修：订阅设置页 Done 事件 → 全局弹 Snackbar。
+    // 用 Long 持续时间——导出 / 导入这种"操作结果回执"用户多看一眼更稳
+    // （SnackbarDuration.Long = 10s，Short = 4s）。
+    LaunchedEffect(settingsEvents) {
+        settingsEvents.collect { event: SettingsDoneEvent ->
+            snackbarHostState.showSnackbar(
+                message = event.message,
+                duration = SnackbarDuration.Long,
+            )
         }
     }
 
