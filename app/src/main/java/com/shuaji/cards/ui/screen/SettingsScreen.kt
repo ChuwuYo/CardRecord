@@ -127,6 +127,9 @@ fun SettingsScreen(onBack: () -> Unit) {
     // 做 UI 警告。用 rememberSaveable 保证旋转屏幕后状态不丢。
     var tookPersistable by rememberSaveable { mutableStateOf(true) }
 
+    // 自定义颜色取色器对话框显示状态
+    var showColorPicker by rememberSaveable { mutableStateOf(false) }
+
     // 导出：弹 SAF 文件创建器（application/json）
     val exportLauncher =
         rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
@@ -285,6 +288,7 @@ fun SettingsScreen(onBack: () -> Unit) {
                         color = MaterialTheme.colorScheme.primary,
                     )
                 }
+                // 主题模式：跟随系统 / 浅色 / 深色
                 item {
                     val themeSettings by viewModel.themeSettings.collectAsState(initial = null)
                     val currentMode = themeSettings?.themeMode ?: ThemeMode.SYSTEM
@@ -311,24 +315,66 @@ fun SettingsScreen(onBack: () -> Unit) {
                         },
                     )
                 }
+                // 颜色来源：系统动态 / 品牌色 / 自定义
                 item {
                     val themeSettings by viewModel.themeSettings.collectAsState(initial = null)
-                    val dynamicEnabled = themeSettings?.useDynamicColor ?: true
-                    val sdkOk = android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S
+                    val currentSource = themeSettings?.colorSource ?: com.shuaji.cards.data.ColorSource.SYSTEM_DYNAMIC
                     ListItem(
-                        headlineContent = { Text(stringResource(R.string.settings_dynamic_color)) },
-                        supportingContent = { Text(stringResource(R.string.settings_dynamic_color_subtitle)) },
-                        trailingContent = {
-                            Switch(
-                                checked = dynamicEnabled,
-                                onCheckedChange = { viewModel.setUseDynamicColor(it) },
-                                enabled = sdkOk && enabled,
+                        headlineContent = { Text(stringResource(R.string.settings_color_source)) },
+                        supportingContent = {
+                            Text(
+                                when (currentSource) {
+                                    com.shuaji.cards.data.ColorSource.SYSTEM_DYNAMIC ->
+                                        stringResource(R.string.settings_color_source_system)
+                                    com.shuaji.cards.data.ColorSource.BRAND ->
+                                        stringResource(R.string.settings_color_source_brand)
+                                    com.shuaji.cards.data.ColorSource.CUSTOM ->
+                                        stringResource(R.string.settings_color_source_custom)
+                                }
                             )
                         },
-                        modifier = Modifier.clickable(enabled = sdkOk && enabled) {
-                            viewModel.setUseDynamicColor(!dynamicEnabled)
+                        modifier = Modifier.clickable(enabled = enabled) {
+                            // 循环切换：SYSTEM_DYNAMIC → BRAND → CUSTOM → SYSTEM_DYNAMIC
+                            val next =
+                                when (currentSource) {
+                                    com.shuaji.cards.data.ColorSource.SYSTEM_DYNAMIC ->
+                                        com.shuaji.cards.data.ColorSource.BRAND
+                                    com.shuaji.cards.data.ColorSource.BRAND ->
+                                        com.shuaji.cards.data.ColorSource.CUSTOM
+                                    com.shuaji.cards.data.ColorSource.CUSTOM ->
+                                        com.shuaji.cards.data.ColorSource.SYSTEM_DYNAMIC
+                                }
+                            viewModel.setColorSource(next)
                         },
                     )
+                }
+                // 品牌色圆点选择器（BRAND 时显示）
+                item {
+                    val themeSettings by viewModel.themeSettings.collectAsState(initial = null)
+                    if (themeSettings?.colorSource == com.shuaji.cards.data.ColorSource.BRAND) {
+                        BrandColorSelector(
+                            onSelect = { hex ->
+                                viewModel.setSeedColorHex(hex)
+                            },
+                        )
+                    }
+                }
+                // 自定义取色器入口（CUSTOM 时显示）
+                item {
+                    val themeSettings by viewModel.themeSettings.collectAsState(initial = null)
+                    if (themeSettings?.colorSource == com.shuaji.cards.data.ColorSource.CUSTOM) {
+                        ListItem(
+                            headlineContent = { Text(stringResource(R.string.settings_custom_color)) },
+                            supportingContent = {
+                                themeSettings?.seedColorHex?.let {
+                                    Text(it)
+                                } ?: Text(stringResource(R.string.settings_custom_color_none))
+                            },
+                            modifier = Modifier.clickable(enabled = enabled) {
+                                showColorPicker = true
+                            },
+                        )
+                    }
                 }
             }
 
@@ -349,6 +395,85 @@ fun SettingsScreen(onBack: () -> Unit) {
                         }
                     }
                 }
+            }
+        }
+    }
+
+    // 自定义颜色取色器对话框
+    if (showColorPicker) {
+        val themeSettings by viewModel.themeSettings.collectAsState(initial = null)
+        var pickedColor by remember {
+            mutableStateOf(
+                themeSettings?.seedColorHex?.let { hex ->
+                    try {
+                        Color(android.graphics.Color.parseColor(hex))
+                    } catch (_: IllegalArgumentException) {
+                        Color(0xFF0061A4)
+                    }
+                } ?: Color(0xFF0061A4),
+            )
+        }
+        AlertDialog(
+            onDismissRequest = { showColorPicker = false },
+            title = { Text(stringResource(R.string.settings_custom_color)) },
+            text = {
+                ModernColorPicker(
+                    initialColor = pickedColor,
+                    onColorSelected = { pickedColor = it },
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.setSeedColorHex("#%06X".format(0xFFFFFF and pickedColor.toArgb()))
+                        showColorPicker = false
+                    },
+                ) {
+                    Text(stringResource(R.string.common_confirm))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showColorPicker = false }) {
+                    Text(stringResource(R.string.common_cancel))
+                }
+            },
+        )
+    }
+}
+
+/**
+ * 品牌色圆点选择器。
+ *
+ * 提供 4 组预设品牌色（蓝/青/红/紫），点击后把种子色 hex 写进 DataStore。
+ * BRAND 模式下 Theme.kt 用这些种子色生成完整 Light/Dark ColorScheme。
+ */
+@Composable
+private fun BrandColorSelector(onSelect: (String) -> Unit) {
+    val brandColors =
+        listOf(
+            "#0061A4" to "蓝色",
+            "#00B5A5" to "青色",
+            "#E53935" to "红色",
+            "#7B1FA2" to "紫色",
+        )
+    Row(
+        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        brandColors.forEach { (hex, label) ->
+            val color = Color(android.graphics.Color.parseColor(hex))
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                androidx.compose.material3.Surface(
+                    onClick = { onSelect(hex) },
+                    shape = androidx.compose.material3.MaterialTheme.shapes.small,
+                    color = color,
+                    modifier = Modifier.size(40.dp),
+                ) {}
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = label,
+                    style = androidx.compose.material3.MaterialTheme.typography.labelSmall,
+                )
             }
         }
     }
