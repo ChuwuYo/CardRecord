@@ -47,6 +47,7 @@
     <string name="settings_snackbar_error_prefix">⚠️ </string>
     <string name="settings_result_extras_separator">；</string>
     <string name="settings_dialog_image_warning">其中 %1$d 张卡的卡面在当前设备上不可访问，需要重新上传</string>
+    <string name="settings_import_persist_warning">⚠️ 文件访问权限未持久化，切换应用或重启后可能无法访问该文件</string>
 
     <!-- ────── 主页 / 列表 ────── -->
     <string name="list_title">刷记</string>
