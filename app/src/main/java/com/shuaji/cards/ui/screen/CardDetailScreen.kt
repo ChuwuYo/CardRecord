@@ -64,11 +64,14 @@ import java.util.Locale
  * validUntilMillis / nextDueDateMillis / colorArgb / note / imageSourceType /
  * cardOrientation / folderId），在这里都至少有"展示"的归宿。
  *
+ * 流水表瘦到 2 字段（card_id, occurred_at_millis）后，**每一行流水
+ * 都在 UI 有归宿**——「流水列表」section 把 `current.swipes` 全部按时间
+ * 倒序展示出来，行数 == currentCount，零死数据。
+ *
  * 操作上只保留：记一笔（FAB） / 重置（顶部按钮） / 编辑 / 删除。
  *
- * 流水列表 / 单笔删除 / AddTransactionDialog 这些 v1.3.10 还存在的 UI 已经
- * 全删：流水表瘦到只剩时间和卡 id，列表里能展示的字段就是时间，
- * 信息密度太低，没有"流水列表"这种独立 UI 的存在价值。
+ * v1.4.1: 详情页加完整流水列表 section（v1.4.0 只显示一行最近时间是错的，
+ * 流水表保留全部行，UI 必须有对应行数）。
  */
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
@@ -164,11 +167,9 @@ fun CardDetailScreen(
                     requiredCount = current.requiredCount,
                 )
             }
-            // 4. 最近一笔时间（让流水表 occurredAtMillis 有 UI 消费路径）
-            if (current.lastSwipeAtMillis != null) {
-                item {
-                    LastSwipeRow(timestampMillis = current.lastSwipeAtMillis)
-                }
+            // 4. 流水列表（按时间倒序，全部 N 行——零死数据）
+            item {
+                SwipeListSection(swipes = current.swipes)
             }
             // 5. 信息区：每个可填字段都有展示位置
             item {
@@ -223,31 +224,69 @@ private fun ExtendedFabRecord(onClick: () -> Unit) {
 }
 
 @Composable
-private fun LastSwipeRow(timestampMillis: Long) {
+private fun SwipeListSection(swipes: List<Long>) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(8.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        shape = MaterialTheme.shapes.medium,
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
     ) {
-        Row(
-            modifier =
-                Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween,
-        ) {
-            Text(
-                text = stringResource(R.string.detail_label_last_swipe),
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Text(
-                text = formatDateTime(timestampMillis),
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.Medium,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
+        Column(modifier = Modifier.padding(vertical = 4.dp)) {
+            // 标题行
+            Row(
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Text(
+                    text = stringResource(R.string.detail_label_swipes),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text(
+                    text = stringResource(R.string.card_count_compact_format, swipes.size, swipes.size),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    fontWeight = FontWeight.SemiBold,
+                )
+            }
+            if (swipes.isEmpty()) {
+                Text(
+                    text = stringResource(R.string.detail_swipes_empty),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                )
+            } else {
+                swipes.forEachIndexed { index, millis ->
+                    if (index > 0) {
+                        DividerLine()
+                    }
+                    Row(
+                        modifier =
+                            Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        Text(
+                            text = stringResource(R.string.detail_swipe_index, index + 1),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.width(28.dp),
+                        )
+                        Text(
+                            text = formatDateTime(millis),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            fontWeight = FontWeight.Medium,
+                        )
+                    }
+                }
+            }
         }
     }
 }

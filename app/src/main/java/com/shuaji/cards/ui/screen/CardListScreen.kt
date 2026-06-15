@@ -18,9 +18,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ViewList
@@ -456,39 +458,81 @@ private fun FolderHeader(
     }
 }
 
+/**
+ * grid 模式 cell 类型：把 grouped 摊平到一个 grid 流里。
+ *
+ * 之前 v1.3.10 用 `LazyRow + 260dp` 实现 grid，本质是「横向滚动的固定宽列」，
+ * 手机屏宽 360-420dp 下 260dp 占 2/3 屏宽，看起来只放得下 1.5 张卡——这就是
+ * 你说的"2/3~3/4 大小"。这里改用 `LazyVerticalGrid(GridCells.Adaptive(160dp))`：
+ * 屏宽 360dp → 2 列；420dp → 2 列；600dp+ → 3+ 列自适应。
+ */
+private sealed interface CardGridCell {
+    val key: String
+
+    data class Header(
+        val title: String,
+        val colorArgb: Int,
+        val isAllGroup: Boolean,
+    ) : CardGridCell {
+        override val key: String get() = "h-$title"
+    }
+
+    data class Item(
+        val card: CardUi,
+    ) : CardGridCell {
+        override val key: String get() = "i-${card.card.id}"
+    }
+}
+
 @Composable
 private fun CardsGrid(
     state: ListUiState,
     onCardClick: (Long) -> Unit,
 ) {
-    LazyColumn(
+    // 摊平 grouped → cell 流（header + cards）
+    val cells =
+        remember(state.grouped) {
+            state.grouped.flatMap { group ->
+                listOf(
+                    CardGridCell.Header(
+                        title = group.title,
+                        colorArgb = group.colorArgb,
+                        isAllGroup = group.isAllGroup,
+                    ),
+                ) + group.cards.map { CardGridCell.Item(it) }
+            }
+        }
+    LazyVerticalGrid(
+        columns = GridCells.Adaptive(minSize = 160.dp),
         contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 96.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
         modifier = Modifier.fillMaxSize(),
     ) {
-        state.grouped.forEach { group ->
-            item(key = "header-${group.key}") {
-                FolderHeader(
-                    title = group.title,
-                    colorArgb = group.colorArgb,
-                    isAllGroup = group.isAllGroup,
-                )
-            }
-            item(key = "grid-${group.key}") {
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    itemsIndexed(group.cards, key = { _, c -> c.card.id }) { _, card ->
-                        Box(modifier = Modifier.width(260.dp)) {
-                            CardListItem(
-                                card = card,
-                                onClick = { onCardClick(card.card.id) },
-                                onLongClick = {},
-                                onSwipe = {},
-                                onDetail = { onCardClick(card.card.id) },
-                                compact = true,
-                            )
-                        }
-                    }
-                }
+        // Header 跨满整行（不是 grid cell），Item 占 1 格
+        items(
+            items = cells,
+            key = { it.key },
+            span = { cell ->
+                if (cell is CardGridCell.Header) GridItemSpan(maxLineSpan) else GridItemSpan(1)
+            },
+        ) { cell ->
+            when (cell) {
+                is CardGridCell.Header ->
+                    FolderHeader(
+                        title = cell.title,
+                        colorArgb = cell.colorArgb,
+                        isAllGroup = cell.isAllGroup,
+                    )
+                is CardGridCell.Item ->
+                    CardListItem(
+                        card = cell.card,
+                        onClick = { onCardClick(cell.card.card.id) },
+                        onLongClick = {},
+                        onSwipe = {},
+                        onDetail = { onCardClick(cell.card.card.id) },
+                        compact = true,
+                    )
             }
         }
     }

@@ -54,6 +54,14 @@ class CardRepository(
         transactionDao.deleteAllForCard(cardId)
     }
 
+    /**
+     * 详情页「流水列表」：按时间倒序拉该卡全部流水行。
+     * 流水表瘦到 2 字段后，每行只有 (card_id, occurred_at_millis)，
+     * UI 拿到的就是一个时间戳序列——按「刷一笔 = 一行」原则展示。
+     */
+    fun observeTransactions(cardId: Long): Flow<List<TransactionEntity>> =
+        transactionDao.observeForCard(cardId)
+
     // ── 文件夹 ──
 
     fun observeFolders(): Flow<List<CardFolderEntity>> = folderDao.observeAll()

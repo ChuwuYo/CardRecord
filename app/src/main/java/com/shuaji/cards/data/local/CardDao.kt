@@ -92,6 +92,10 @@ interface CardDao {
  * 流水表只做两件事：插一笔、删该卡全部。
  * 「撤销最后一笔」/「重置年度笔数」都是 `DELETE FROM transactions WHERE card_id = ?`。
  * 「当前笔数」从 COUNT 算，「最近一笔时间」从 MAX 算——流水表不再承担计数职责。
+ *
+ * 流水表瘦到 2 字段（card_id, occurred_at_millis）后，按时间倒序把全部
+ * 时间戳暴露给详情页「流水列表」section——这才是流水行真正的归宿。
+ * 凡是存在的行就要在 UI 里有消费，否则就是写而不读的脏数据。
  */
 @Dao
 interface TransactionDao {
@@ -100,4 +104,11 @@ interface TransactionDao {
 
     @Query("DELETE FROM transactions WHERE card_id = :cardId")
     suspend fun deleteAllForCard(cardId: Long)
+
+    /**
+     * 详情页「流水列表」用：按时间倒序拉该卡全部流水。
+     * 顺序固定为 DESC——最新一笔在最上面，符合用户直觉。
+     */
+    @Query("SELECT * FROM transactions WHERE card_id = :cardId ORDER BY occurred_at_millis DESC")
+    fun observeForCard(cardId: Long): Flow<List<TransactionEntity>>
 }
