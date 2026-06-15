@@ -8,6 +8,9 @@ import com.shuaji.cards.data.local.CardWithCount
 import com.shuaji.cards.data.local.TransactionDao
 import com.shuaji.cards.data.local.TransactionEntity
 import kotlinx.coroutines.flow.Flow
+import java.util.Calendar
+import java.util.Date
+import java.util.GregorianCalendar
 
 /**
  * 仓库层：**只暴露「业务用例」**，不暴露 Room Entity / DAO 给 ViewModel。
@@ -86,4 +89,39 @@ class CardRepository(
     }
 
     suspend fun countCardsInFolder(folderId: Long): Int = folderDao.countCardsInFolder(folderId)
+
+    // ── 自动续期（App 启动时跑） ──
+
+    /**
+     * **凡是填了 `nextDueDateMillis` 的卡，在到这天时都要自动续期**——
+     * 不然这个字段就是「写而不读」的纯死字段。
+     *
+     * 行为：
+     * 1. 找出所有 `nextDueDateMillis < now` 的卡（这些卡是上一周期到期后没重置的）
+     * 2. 对每张卡：
+     *    - 删该卡所有流水（`currentCount` 由 SQL COUNT 重算为 0）
+     *    - 把 `nextDueDateMillis` 推到 `> now`（while 循环：可能累积 N 年没开 app）
+     * 3. 返回续期卡数（0 = 这次没卡需要续期，调用方不弹 Snackbar）
+     *
+     * 用 [Calendar.add(YEAR, 1)] 而不是 +365 天——自动处理闰年 2-29。
+     */
+    suspend fun resetOverdueCycles(now: Long): Int {
+        val overdue = cardDao.findOverdue(now)
+        if (overdue.isEmpty()) return 0
+        overdue.forEach { card ->
+            val currentNext = card.nextDueDateMillis ?: return@forEach
+            // 一次性推 N 年：用户半年没开 app，nextDueDate 可能已经过 1+ 年
+            var next = currentNext
+            while (next <= now) {
+                val cal = GregorianCalendar()
+                cal.time = Date(next)
+                cal.add(Calendar.YEAR, 1)
+                next = cal.timeInMillis
+            }
+            // 删流水 + 推 nextDueDate
+            transactionDao.deleteAllForCard(card.id)
+            cardDao.update(card.copy(nextDueDateMillis = next))
+        }
+        return overdue.size
+    }
 }

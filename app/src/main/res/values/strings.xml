@@ -73,6 +73,7 @@
     <string name="detail_action_delete_swipe">删除这一笔</string>
     <string name="detail_delete_swipe_dialog_title">删除这一笔？</string>
     <string name="detail_delete_swipe_dialog_message">将删除 %1$s 的这笔刷卡记录，操作不可撤销。</string>
+    <string name="cycle_auto_reset_message">已自动续期 %1$d 张卡，新周期笔数已清零</string>
     <string name="detail_reset_dialog_title">重置本周期？</string>
     <string name="detail_reset_dialog_message">将清零当前笔数，操作不可撤销。</string>
     <string name="detail_reset_dialog_confirm">重置</string>

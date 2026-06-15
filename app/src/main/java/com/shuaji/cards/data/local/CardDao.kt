@@ -78,6 +78,14 @@ interface CardDao {
     @Query("SELECT * FROM cards WHERE id = :id")
     suspend fun getById(id: Long): CardEntity?
 
+    /**
+     * 自动续期用：找出所有 nextDueDateMillis < now 的卡。
+     * 这些卡应当在新周期开始时重置笔数（删流水）+ 把 nextDueDate 推到下一年。
+     * 一次性 while 循环推 N 年，避免下次启动又触发。
+     */
+    @Query("SELECT * FROM cards WHERE next_due_date_millis IS NOT NULL AND next_due_date_millis < :now")
+    suspend fun findOverdue(now: Long): List<CardEntity>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(card: CardEntity): Long
 
