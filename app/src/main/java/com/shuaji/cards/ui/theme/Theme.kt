@@ -10,6 +10,7 @@ import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import com.shuaji.cards.data.ColorSource
 import com.shuaji.cards.data.ThemeMode
@@ -160,8 +161,7 @@ private fun generateColorSchemeFromSeed(
     seed: Color,
     darkTheme: Boolean,
 ): ColorScheme {
-    val hsl = FloatArray(3)
-    android.graphics.Color.colorToHSL(seed.toArgb(), hsl)
+    val hsl = seed.toHSL()
     val hue = hsl[0]
     val sat = hsl[1]
     val light = hsl[2]
@@ -243,6 +243,46 @@ private fun generateColorSchemeFromSeed(
     }
 }
 
-/** HSL → Compose Color 辅助函数 */
-private fun hslColor(hue: Float, saturation: Float, lightness: Float): Color =
-    Color(android.graphics.Color.HSLToColor(floatArrayOf(hue, saturation, lightness)))
+/**
+ * Color → HSL 辅助函数（纯 Kotlin 实现，不依赖 Android SDK 的 colorToHSL）。
+ * 返回 (hue [0,360), saturation [0,1], lightness [0,1])。
+ */
+private fun Color.toHSL(): FloatArray {
+    val r = (red * 255).toInt()
+    val g = (green * 255).toInt()
+    val b = (blue * 255).toInt()
+    val rf = r / 255f
+    val gf = g / 255f
+    val bf = b / 255f
+    val max = maxOf(rf, maxOf(gf, bf))
+    val min = minOf(rf, minOf(gf, bf))
+    val delta = max - min
+    val h = if (delta == 0f) 0f
+    else when (max) {
+        rf -> ((gf - bf) / delta).let { if (it < 0f) it + 6f else it }
+        gf -> ((bf - rf) / delta) + 2f
+        else -> ((rf - gf) / delta) + 4f
+    } * 60f
+    val l = (max + min) / 2f
+    val s = if (delta == 0f) 0f else delta / (1f - Math.abs(2f * l - 1f))
+    return floatArrayOf(h, s, l)
+}
+
+/** HSL → Compose Color 辅助函数（纯 Kotlin 实现，不依赖 Android SDK 的 HSLToColor）。 */
+private fun hslColor(hue: Float, saturation: Float, lightness: Float): Color {
+    val c = (1f - Math.abs(2f * lightness - 1f)) * saturation
+    val x = c * (1f - Math.abs(((hue / 60f) % 2f) - 1f))
+    val m = lightness - c / 2f
+    val (r1, g1, b1) = when {
+        hue < 60f -> Triple(c, x, 0f)
+        hue < 120f -> Triple(x, c, 0f)
+        hue < 180f -> Triple(0f, c, x)
+        hue < 240f -> Triple(0f, x, c)
+        hue < 300f -> Triple(x, 0f, c)
+        else -> Triple(c, 0f, x)
+    }
+    val r = ((r1 + m) * 255).toInt()
+    val g = ((g1 + m) * 255).toInt()
+    val b = ((b1 + m) * 255).toInt()
+    return Color(android.graphics.Color.argb(0xFF, r, g, b))
+}
