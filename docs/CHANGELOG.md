@@ -1,6 +1,6 @@
 # 刷记 Release Notes
 
-## v1.5.1 (2025)
+## v1.5.1 (2026-06-17)
 
 - 卡组织图标替换为官方规范 SVG（Visa / MasterCard / JCB / UnionPay / American Express / Diners Club / Discover）
 - 修复卡组织图标在卡片上的渲染变形与比例问题
