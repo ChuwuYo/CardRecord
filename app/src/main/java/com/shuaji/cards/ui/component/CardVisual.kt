@@ -274,9 +274,12 @@ private fun CardImageLayer(
                 Image(
                     painter = painterResource(network.logoRes),
                     contentDescription = stringResource(network.displayNameRes),
-                    contentScale = ContentScale.Crop,
-                    modifier = modifier,
-                    alpha = 0.45f,
+                    contentScale = ContentScale.Fit,
+                    modifier =
+                        modifier
+                            .padding(top = 10.dp, end = 12.dp, bottom = 32.dp),
+                    alignment = Alignment.TopEnd,
+                    alpha = 0.8f,
                 )
             }
         }
