@@ -29,7 +29,6 @@ import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -46,7 +45,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -58,6 +56,8 @@ import com.shuaji.cards.data.backup.ImportMode
 import com.shuaji.cards.data.local.ImageSourceType
 import com.shuaji.cards.ui.ViewModelFactories
 import com.shuaji.cards.ui.component.ModernColorPicker
+import com.shuaji.cards.ui.theme.DefaultBrandPrimary
+import com.shuaji.cards.ui.theme.parseSeedColor
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -168,7 +168,7 @@ fun SettingsScreen(onBack: () -> Unit) {
                     if (!tookOk) {
                         android.util.Log.w(
                             "SettingsScreen",
-                            "takePersistableUriPermission 失败，导入 URI ${uri} 在进程重启后将不可访问",
+                            "takePersistableUriPermission 失败，导入 URI $uri 在进程重启后将不可访问",
                         )
                     }
                 }
@@ -305,19 +305,20 @@ fun SettingsScreen(onBack: () -> Unit) {
                                     ThemeMode.SYSTEM -> stringResource(R.string.settings_theme_mode_system)
                                     ThemeMode.LIGHT -> stringResource(R.string.settings_theme_mode_light)
                                     ThemeMode.DARK -> stringResource(R.string.settings_theme_mode_dark)
-                                }
+                                },
                             )
                         },
-                        modifier = Modifier.clickable(enabled = enabled) {
-                            // 循环切换：SYSTEM → LIGHT → DARK → SYSTEM
-                            val next =
-                                when (currentMode) {
-                                    ThemeMode.SYSTEM -> ThemeMode.LIGHT
-                                    ThemeMode.LIGHT -> ThemeMode.DARK
-                                    ThemeMode.DARK -> ThemeMode.SYSTEM
-                                }
-                            viewModel.setThemeMode(next)
-                        },
+                        modifier =
+                            Modifier.clickable(enabled = enabled) {
+                                // 循环切换：SYSTEM → LIGHT → DARK → SYSTEM
+                                val next =
+                                    when (currentMode) {
+                                        ThemeMode.SYSTEM -> ThemeMode.LIGHT
+                                        ThemeMode.LIGHT -> ThemeMode.DARK
+                                        ThemeMode.DARK -> ThemeMode.SYSTEM
+                                    }
+                                viewModel.setThemeMode(next)
+                            },
                     )
                 }
                 // 颜色来源：系统动态 / 自定义
@@ -333,20 +334,21 @@ fun SettingsScreen(onBack: () -> Unit) {
                                         stringResource(R.string.settings_color_source_system)
                                     com.shuaji.cards.data.ColorSource.CUSTOM ->
                                         stringResource(R.string.settings_color_source_custom)
-                                }
+                                },
                             )
                         },
-                        modifier = Modifier.clickable(enabled = enabled) {
-                            // 二选一切换：SYSTEM_DYNAMIC ↔ CUSTOM
-                            val next =
-                                when (currentSource) {
-                                    com.shuaji.cards.data.ColorSource.SYSTEM_DYNAMIC ->
-                                        com.shuaji.cards.data.ColorSource.CUSTOM
-                                    com.shuaji.cards.data.ColorSource.CUSTOM ->
-                                        com.shuaji.cards.data.ColorSource.SYSTEM_DYNAMIC
-                                }
-                            viewModel.setColorSource(next)
-                        },
+                        modifier =
+                            Modifier.clickable(enabled = enabled) {
+                                // 二选一切换：SYSTEM_DYNAMIC ↔ CUSTOM
+                                val next =
+                                    when (currentSource) {
+                                        com.shuaji.cards.data.ColorSource.SYSTEM_DYNAMIC ->
+                                            com.shuaji.cards.data.ColorSource.CUSTOM
+                                        com.shuaji.cards.data.ColorSource.CUSTOM ->
+                                            com.shuaji.cards.data.ColorSource.SYSTEM_DYNAMIC
+                                    }
+                                viewModel.setColorSource(next)
+                            },
                     )
                 }
                 // 自定义取色器入口（CUSTOM 时显示）
@@ -360,9 +362,10 @@ fun SettingsScreen(onBack: () -> Unit) {
                                     Text(it)
                                 } ?: Text(stringResource(R.string.settings_custom_color_none))
                             },
-                            modifier = Modifier.clickable(enabled = enabled) {
-                                showColorPicker = true
-                            },
+                            modifier =
+                                Modifier.clickable(enabled = enabled) {
+                                    showColorPicker = true
+                                },
                         )
                     }
                 }
@@ -393,15 +396,7 @@ fun SettingsScreen(onBack: () -> Unit) {
     if (showColorPicker) {
         val themeSettings by viewModel.themeSettings.collectAsState(initial = null)
         var pickedColor by remember {
-            mutableStateOf(
-                themeSettings?.seedColorHex?.let { hex ->
-                    try {
-                        Color(android.graphics.Color.parseColor(hex))
-                    } catch (_: IllegalArgumentException) {
-                        Color(0xFF0061A4)
-                    }
-                } ?: Color(0xFF0061A4),
-            )
+            mutableStateOf(parseSeedColor(themeSettings?.seedColorHex) ?: DefaultBrandPrimary)
         }
         AlertDialog(
             onDismissRequest = { showColorPicker = false },
@@ -431,8 +426,6 @@ fun SettingsScreen(onBack: () -> Unit) {
     }
 }
 
-
-
 /**
  * 用 `DocumentsContract.Document.COLUMN_LAST_MODIFIED` + 解析 JSON 顶层的
  * 「卡片/文件夹/流水数」算出来的备份文件元数据。
@@ -457,8 +450,11 @@ private val BackupFileInfoStateSaver: Saver<MutableState<BackupFileInfo?>, Strin
         save = { it.value?.let { v -> Json.encodeToString(BackupFileInfo.serializer(), v) } ?: "" },
         restore = { json ->
             mutableStateOf<BackupFileInfo?>(
-                if (json.isEmpty()) null
-                else runCatching { Json.decodeFromString(BackupFileInfo.serializer(), json) }.getOrNull(),
+                if (json.isEmpty()) {
+                    null
+                } else {
+                    runCatching { Json.decodeFromString(BackupFileInfo.serializer(), json) }.getOrNull()
+                },
             )
         },
     )
@@ -483,21 +479,27 @@ private suspend fun readBackupFileInfo(
     var lastModified: Long? = null
     // DocumentsContract.Document.COLUMN_LAST_MODIFIED（API 19+）而不是
     // OpenableColumns.LAST_MODIFIED（API 29+）——minSdk=26，旧的常量在 API 26-28 查不到。
-    resolver.query(uri, arrayOf(DocumentsContract.Document.COLUMN_LAST_MODIFIED, DocumentsContract.Document.COLUMN_DISPLAY_NAME), null, null, null)?.use { c ->
-        if (c.moveToFirst()) {
-            val idx = c.getColumnIndex(DocumentsContract.Document.COLUMN_LAST_MODIFIED)
-            if (idx >= 0 && !c.isNull(idx)) {
-                lastModified = c.getLong(idx)
+    resolver
+        .query(
+            uri,
+            arrayOf(DocumentsContract.Document.COLUMN_LAST_MODIFIED, DocumentsContract.Document.COLUMN_DISPLAY_NAME),
+            null,
+            null,
+            null,
+        )?.use { c ->
+            if (c.moveToFirst()) {
+                val idx = c.getColumnIndex(DocumentsContract.Document.COLUMN_LAST_MODIFIED)
+                if (idx >= 0 && !c.isNull(idx)) {
+                    lastModified = c.getLong(idx)
+                }
             }
         }
-    }
     return runCatching {
         resolver.openInputStream(uri)?.use { input ->
             val text = input.readBytes().toString(Charsets.UTF_8)
             val root = BackupFileInfoJson.parseToJsonElement(text).jsonObject
 
-            fun arraySize(key: String): Int =
-                runCatching { root[key]?.jsonArray?.size ?: 0 }.getOrDefault(0)
+            fun arraySize(key: String): Int = runCatching { root[key]?.jsonArray?.size ?: 0 }.getOrDefault(0)
 
             val cardCount = arraySize("cards")
             val folderCount = arraySize("folders")

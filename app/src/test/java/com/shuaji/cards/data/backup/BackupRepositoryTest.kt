@@ -378,7 +378,9 @@ class BackupRepositoryTest {
             assertEquals(folderAId, c1.folderId)
 
             val c2 = cards.first { it.name == "C2" }
-            assertEquals(9999L, c2.folderId) // 不在 backup 内 → 保留原值，不清空
+            // 指向 backup 内不存在、现库也没有的 folder（9999）→ 置 null（避免悬空外键约束），
+            // 这同时会计入 cardsSkippedInvalidFolder。
+            assertNull(c2.folderId)
         }
 
     @Test

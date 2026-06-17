@@ -47,6 +47,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -321,7 +322,7 @@ private fun FolderEditDialog(
                 // 复用卡片编辑页的 ModernColorPicker：和卡片主题色取色器视觉一致
                 ModernColorPicker(
                     initialColor = Color(color),
-                    onColorSelected = { c -> color = c.toComposeArgb() },
+                    onColorSelected = { c -> color = c.toArgb() },
                 )
             }
         },
@@ -340,11 +341,3 @@ private fun FolderEditDialog(
         },
     )
 }
-
-private fun Color.toComposeArgb(): Int =
-    android.graphics.Color.argb(
-        (alpha * 255).toInt(),
-        (red * 255).toInt(),
-        (green * 255).toInt(),
-        (blue * 255).toInt(),
-    )
