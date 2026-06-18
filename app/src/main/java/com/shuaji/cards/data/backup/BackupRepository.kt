@@ -3,6 +3,7 @@ package com.shuaji.cards.data.backup
 import android.content.Context
 import android.net.Uri
 import androidx.room.withTransaction
+import com.shuaji.cards.R
 import com.shuaji.cards.data.local.AppDatabase
 import com.shuaji.cards.data.local.CardDao
 import com.shuaji.cards.data.local.CardFolderDao
@@ -109,7 +110,7 @@ class BackupRepository(
                     @OptIn(ExperimentalSerializationApi::class)
                     json.encodeToStream(BackupBundle.serializer(), bundle, out)
                     out.flush()
-                } ?: throw BackupException("无法打开目标 URI 用于写入（可能被占用）")
+                } ?: throw BackupException(context.getString(R.string.backup_error_open_target_uri))
                 ExportSummary(
                     cardCount = cards.size,
                     folderCount = folders.size,
@@ -139,28 +140,44 @@ class BackupRepository(
                     try {
                         context.contentResolver.openInputStream(uri)?.use { input ->
                             BufferedReader(InputStreamReader(input, Charsets.UTF_8)).readText()
-                        } ?: throw BackupException("无法打开源 URI 用于读取")
+                        } ?: throw BackupException(context.getString(R.string.backup_error_open_source_uri))
                     } catch (e: BackupException) {
                         throw e
                     } catch (e: java.io.FileNotFoundException) {
                         // SAF 临时权限过期 / 用户选的文件被删了——常有的事
-                        throw BackupException("源文件不存在或已失效：${e.message}", e)
+                        throw BackupException(
+                            context.getString(
+                                R.string.backup_error_source_missing,
+                                e.message ?: context.getString(R.string.common_unknown_reason),
+                            ),
+                            e,
+                        )
                     } catch (e: java.io.IOException) {
-                        throw BackupException("读取备份文件失败：${e.message}", e)
+                        throw BackupException(
+                            context.getString(
+                                R.string.backup_error_read_failed,
+                                e.message ?: context.getString(R.string.common_unknown_reason),
+                            ),
+                            e,
+                        )
                     }
                 ensureActive()
-                if (text.isBlank()) throw BackupException("备份文件为空")
+                if (text.isBlank()) throw BackupException(context.getString(R.string.backup_error_empty_file))
 
                 val bundle =
                     try {
                         json.decodeFromString<BackupBundle>(text)
                     } catch (e: Exception) {
-                        throw BackupException("备份文件格式不正确（不是合法的 JSON）", e)
+                        throw BackupException(context.getString(R.string.backup_error_malformed_json), e)
                     }
                 ensureActive()
                 if (bundle.version != BackupBundle.SCHEMA_VERSION) {
                     throw BackupException(
-                        "备份 schema 版本不匹配（文件 version=${bundle.version}，当前=${BackupBundle.SCHEMA_VERSION}）",
+                        context.getString(
+                            R.string.backup_error_version_mismatch,
+                            bundle.version,
+                            BackupBundle.SCHEMA_VERSION,
+                        ),
                     )
                 }
 
@@ -180,7 +197,13 @@ class BackupRepository(
                     } catch (e: BackupException) {
                         throw e
                     } catch (e: Exception) {
-                        throw BackupException("数据库写入失败：${e.message ?: "未知错误"}", e)
+                        throw BackupException(
+                            context.getString(
+                                R.string.backup_error_db_write_failed,
+                                e.message ?: context.getString(R.string.common_unknown_error),
+                            ),
+                            e,
+                        )
                     }
                 result
             } finally {
