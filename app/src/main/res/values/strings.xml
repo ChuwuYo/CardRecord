@@ -46,7 +46,7 @@
     <string name="settings_result_image_uri_potentially_broken">%1$d 张卡的卡面需要重新上传（图片 URI 在当前设备上不可访问）</string>
     <string name="settings_result_export_failed">导出失败：%1$s</string>
     <string name="settings_result_import_failed">导入失败：%1$s</string>
-    <string name="settings_snackbar_error_prefix">⚠️ </string>
+    <string name="settings_snackbar_error_prefix">"⚠️ "</string>
     <string name="settings_result_extras_separator">；</string>
     <string name="settings_dialog_image_warning">其中 %1$d 张卡的卡面在当前设备上不可访问，需要重新上传</string>
     <string name="settings_import_persist_warning">⚠️ 文件访问权限未持久化，切换应用或重启后可能无法访问该文件</string>
@@ -137,6 +137,7 @@
     <string name="detail_label_card_number">卡号</string>
     <string name="detail_label_note">备注</string>
     <string name="detail_label_swipes">刷卡记录</string>
+    <string name="detail_swipe_count">%1$d 笔</string>
     <string name="detail_swipes_empty">还没有记录，点右下角「记一笔」开始追踪</string>
     <string name="detail_swipe_index">%1$d</string>
     <string name="detail_action_delete_swipe">删除这一笔</string>
@@ -188,7 +189,6 @@
     <string name="folder_dialog_edit_title">编辑文件夹</string>
     <string name="folder_dialog_field_name">名称</string>
     <string name="folder_dialog_field_color">颜色</string>
-    <string name="folder_dialog_color_current_label">当前色</string>
     <string name="folder_count_label">%1$d 张卡</string>
     <string name="folder_delete_title">删除「%1$s」？</string>
     <string name="folder_delete_message">文件夹下的卡片不会被删除，会被移到「未分类」。</string>

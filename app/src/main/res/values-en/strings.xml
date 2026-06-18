@@ -136,6 +136,7 @@
     <string name="detail_label_card_number">Card number</string>
     <string name="detail_label_note">Note</string>
     <string name="detail_label_swipes">Swipe records</string>
+    <string name="detail_swipe_count">%1$d swipes</string>
     <string name="detail_swipes_empty">No records yet. Tap \"Record swipe\" at the bottom right to start tracking.</string>
     <string name="detail_swipe_index">%1$d</string>
     <string name="detail_action_delete_swipe">Delete this swipe</string>
@@ -187,7 +188,6 @@
     <string name="folder_dialog_edit_title">Edit folder</string>
     <string name="folder_dialog_field_name">Name</string>
     <string name="folder_dialog_field_color">Color</string>
-    <string name="folder_dialog_color_current_label">Current</string>
     <string name="folder_count_label">%1$d cards</string>
     <string name="folder_delete_title">Delete \"%1$s\"?</string>
     <string name="folder_delete_message">Cards in this folder won\'t be deleted; they will be moved to Unfiled.</string>

@@ -46,6 +46,13 @@ interface AppContainer {
      * 干净——对外只发不可改的 read-only `SharedFlow`，写入端只在 [DefaultAppContainer] 内部。
      */
     suspend fun emitSettings(event: SettingsDoneEvent)
+
+    /**
+     * 启动时跑一次到期续期：把所有 nextDueDateMillis 已过的卡续期（删流水 + 推 1 年），
+     * 并将续期卡数 emit 到 [cycleAutoResetEvents]。逻辑收口到容器内，
+     * [ShuajiApplication] 只依赖接口、不再向下转型到 [DefaultAppContainer]。
+     */
+    suspend fun runStartupCycleReset(nowMillis: Long)
 }
 
 class DefaultAppContainer(
@@ -96,9 +103,14 @@ class DefaultAppContainer(
     private val _settingsEvents = MutableSharedFlow<SettingsDoneEvent>(extraBufferCapacity = 4)
     override val settingsEvents: SharedFlow<SettingsDoneEvent> = _settingsEvents.asSharedFlow()
 
-    /** ShuajiApplication 启动时调一次：把仓库结果 emit 到 SharedFlow。 */
-    suspend fun emitCycleAutoReset(count: Int) {
+    /** 把仓库结果 emit 到 SharedFlow（count == 0 不发，避免噪音）。 */
+    private suspend fun emitCycleAutoReset(count: Int) {
         if (count > 0) _cycleAutoResetEvents.emit(count)
+    }
+
+    override suspend fun runStartupCycleReset(nowMillis: Long) {
+        val resetCount = repository.resetOverdueCycles(nowMillis)
+        emitCycleAutoReset(resetCount)
     }
 
     /** P1 修：把设置页 Done 事件 emit 到 SharedFlow，顶层 SnackbarHost 消费。 */
