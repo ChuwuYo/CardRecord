@@ -23,6 +23,7 @@ enum class AppLanguage(
 ) {
     SYSTEM(null, R.string.settings_language_system),
     SIMPLIFIED_CHINESE("zh-Hans", R.string.settings_language_zh_hans),
+    ENGLISH("en", R.string.settings_language_en),
     ;
 
     companion object {
