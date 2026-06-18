@@ -8,12 +8,12 @@ import com.shuaji.cards.data.local.CardDao
 import com.shuaji.cards.data.local.CardFolderDao
 import com.shuaji.cards.data.local.ImageSourceType
 import com.shuaji.cards.data.local.TransactionDao
-import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.encodeToStream
 import java.io.BufferedReader
@@ -193,8 +193,7 @@ class BackupRepository(
      * imageUri 在新设备上失效，UI 提示用户「N 张卡的卡面需要重新上传」。
      * 同设备恢复时 URI 仍然有效，但提醒也无害（用户可忽略）。
      */
-    private fun countUserImageCards(bundle: BackupBundle): Int =
-        bundle.cards.count { it.imageSourceType == ImageSourceType.USER.name }
+    private fun countUserImageCards(bundle: BackupBundle): Int = bundle.cards.count { it.imageSourceType == ImageSourceType.USER.name }
 
     /**
      * REPLACE 模式：先清空（含 CASCADE），再按依赖顺序写入。
@@ -266,7 +265,6 @@ class BackupRepository(
         // 1) **写之前**先抓现有 id / name 集合——重名检测不能包含本次刚追加的，
         //    校验 folderId 合法性时也要用"写之前"的现库 id 集合
         val existingFolderIds = cardFolderDao.listAll().map { it.id }.toSet()
-        val validFolderIds: Set<Long> = existingFolderIds + bundle.folders.map { it.id }.toSet()
         val existingFolderNames = cardFolderDao.listAll().map { it.name }.toSet()
         val existingCardNames = cardDao.listAll().map { it.name }.toSet()
 
@@ -276,6 +274,10 @@ class BackupRepository(
             val newId = folderDao.upsert(folder.copy(id = 0L))
             folderRemap[folder.id] = newId
         }
+        // 合法 folderId 集合 = 现库已有 + 本次 backup folders 写库后分配的新 id。
+        // 必须用 remap 后的新 id（folderRemap.values）而非 backup 里的原始 id，否则指向
+        // backup 内 folder 的 card 会因「新 id 不在原始 id 集合」被误判非法而置 null。
+        val validFolderIds: Set<Long> = existingFolderIds + folderRemap.values
 
         // 3) 写 cards：id 清零，folderId 用映射后的新 id。
         //    候选 id 必须在 validFolderIds 里：原 folderId（不在 backup）指向现库合法 folder
