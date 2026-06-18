@@ -70,6 +70,9 @@ class SettingsViewModelTest {
 
     /** fakeContainer 把 ViewModel emit 的事件直接记到这里，断言时读取即可。 */
     private val emittedEvents = mutableListOf<SettingsDoneEvent>()
+
+    /** 可选钩子：emitSettings 被调用的「那一刻」同步触发，用于断言 emit 时点的状态。 */
+    private var onEmitSettings: ((SettingsDoneEvent) -> Unit)? = null
     private val fakeContainer =
         object : AppContainer {
             // 没测的 repo / settings 留空即可——用 `by lazy` 包一层，**仅在访问时才抛** error()。
@@ -83,6 +86,7 @@ class SettingsViewModelTest {
                 MutableSharedFlow<SettingsDoneEvent>().asSharedFlow()
 
             override suspend fun emitSettings(event: SettingsDoneEvent) {
+                onEmitSettings?.invoke(event)
                 emittedEvents += event
             }
         }
@@ -196,11 +200,12 @@ class SettingsViewModelTest {
     @Test
     fun state_transitions_Idle_Working_Done_then_acknowledge_to_Idle() =
         runTest(mainDispatcherRule.testDispatcher.scheduler) {
-            whenever(backup.export(any())).doReturn(
-                ExportSummary(cardCount = 1, folderCount = 0, transactionCount = 0),
-            )
-
             val vm = newVm()
+            // 用 doAnswer 在 export 真正执行期间断言已进入 Working——仅看最终态无法证明中间态。
+            whenever(backup.export(any())).doAnswer {
+                assertEquals("export 执行期间应为 Working", SettingsUiState.Working, vm.state.value)
+                ExportSummary(cardCount = 1, folderCount = 0, transactionCount = 0)
+            }
             assertEquals("初始应为 Idle", SettingsUiState.Idle, vm.state.value)
 
             val collected = runAndCollect { vm.export(android.net.Uri.EMPTY) }
@@ -378,6 +383,10 @@ class SettingsViewModelTest {
             )
 
             val vm = newVm()
+            // 验证 finalize 的顺序保证：emitSettings 被调用的那一刻，state 必须已经写成 Done。
+            onEmitSettings = {
+                assertEquals("emitSettings 时 state 应已是 Done", SettingsUiState.Done, vm.state.value)
+            }
             val collected = runAndCollect { vm.export(android.net.Uri.EMPTY) }
 
             // finalize 顺序 = _state.value = Done → emitSettings：state 写到 Done，事件发出 1 条。
