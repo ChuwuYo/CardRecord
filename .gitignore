@@ -31,3 +31,5 @@ release.keystore
 # 临时/日志
 *.log
 *.hprof
+# Android SDK（构建工具，按环境各自安装，切勿提交）
+android-sdk/
