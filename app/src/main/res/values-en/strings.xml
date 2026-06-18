@@ -1,0 +1,205 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">CardRecord</string>
+
+    <!-- ────── Common ────── -->
+    <string name="common_back">Back</string>
+    <string name="common_cancel">Cancel</string>
+    <string name="common_confirm">OK</string>
+    <string name="common_save">Save</string>
+    <string name="common_delete">Delete</string>
+    <string name="common_edit">Edit</string>
+    <string name="common_done">Done</string>
+    <string name="common_select">Select</string>
+    <string name="common_clear">Clear</string>
+    <string name="common_create">Create</string>
+    <string name="common_unknown_reason">Unknown reason</string>
+    <string name="common_unknown_error">Unknown error</string>
+
+    <!-- ────── Settings ────── -->
+    <string name="settings_title">Settings</string>
+    <string name="settings_section_data">Data</string>
+    <string name="settings_export">Export config</string>
+    <string name="settings_export_subtitle">Pack cards / folders / transactions into a JSON file</string>
+    <string name="settings_import">Import config</string>
+    <string name="settings_import_subtitle">Restore from a JSON backup (replace or merge)</string>
+    <string name="settings_privacy_note">Note: the exported file contains all your card info (name / note / image URI, etc.) as plaintext JSON—please don\'t share it with others. When restoring on another device, image URIs become invalid and card images must be re-uploaded.</string>
+    <string name="settings_import_dialog_title">Choose import mode</string>
+    <string name="settings_import_dialog_message">\"Replace\" clears all current data and writes the backup; \"Merge\" keeps existing data and merges the backup in. Neither reuses card IDs (they are auto-assigned).</string>
+    <string name="settings_import_mode_replace">Replace</string>
+    <string name="settings_import_mode_merge">Merge</string>
+    <string name="settings_import_replace_confirm_title">Confirm replace?</string>
+    <string name="settings_import_replace_confirm_message">This clears all current cards / folders / transactions and writes the contents of the backup file. It cannot be undone.</string>
+    <string name="settings_import_merge_confirm_title">Confirm merge?</string>
+    <string name="settings_import_merge_confirm_message">This appends the cards / folders / transactions from the backup file to the existing database, keeping existing data unchanged.</string>
+    <string name="settings_import_replace_confirm_message_with_count">This backup contains %1$d cards / %2$d folders / %3$d transactions. It clears all current data and writes the backup\'s contents; this cannot be undone.</string>
+    <string name="settings_import_merge_confirm_message_with_count">This backup contains %1$d cards / %2$d folders / %3$d transactions. They will be appended to the existing database, keeping existing data unchanged.</string>
+    <string name="settings_backup_time_label">Backup time: %1$s</string>
+    <string name="settings_result_export_success_with_count">Exported %1$d cards / %2$d folders / %3$d transactions to the backup file</string>
+    <string name="settings_result_export_empty">Exported an empty backup (the database has no records)</string>
+    <string name="settings_result_import_replace_with_count">Replace succeeded: %1$d cards, %2$d folders, %3$d transactions</string>
+    <string name="settings_result_import_merge_with_count">Merge succeeded: %1$d cards, %2$d folders, %3$d transactions</string>
+    <string name="settings_result_extras_transactions_skipped">%1$d transactions skipped (they reference cards that don\'t exist)</string>
+    <string name="settings_result_extras_cards_invalid_folder">%1$d cards had an invalid folder reference and were moved to Unfiled</string>
+    <string name="settings_result_extras_duplicate_folders">%1$d folders share a name with existing ones</string>
+    <string name="settings_result_extras_duplicate_cards">%1$d cards share a name with existing ones</string>
+    <string name="settings_result_image_uri_potentially_broken">%1$d cards need their image re-uploaded (the image URI is not accessible on this device)</string>
+    <string name="settings_result_export_failed">Export failed: %1$s</string>
+    <string name="settings_result_import_failed">Import failed: %1$s</string>
+    <string name="settings_snackbar_error_prefix">"⚠️ "</string>
+    <string name="settings_result_extras_separator">"; "</string>
+    <string name="settings_dialog_image_warning">Of these, %1$d cards\' images are not accessible on this device and need re-uploading</string>
+    <string name="settings_import_persist_warning">⚠️ File access permission was not persisted; the file may be inaccessible after switching apps or restarting</string>
+
+    <!-- Import / export low-level errors (interpolated as %1$s into settings_result_*_failed) -->
+    <string name="backup_error_open_target_uri">Cannot open the target URI for writing (it may be in use)</string>
+    <string name="backup_error_open_source_uri">Cannot open the source URI for reading</string>
+    <string name="backup_error_source_missing">Source file does not exist or has expired: %1$s</string>
+    <string name="backup_error_read_failed">Failed to read the backup file: %1$s</string>
+    <string name="backup_error_empty_file">The backup file is empty</string>
+    <string name="backup_error_malformed_json">The backup file is malformed (not valid JSON)</string>
+    <string name="backup_error_version_mismatch">Backup schema version mismatch (file version=%1$d, current=%2$d)</string>
+    <string name="backup_error_db_write_failed">Database write failed: %1$s</string>
+
+    <!-- ────── Appearance ────── -->
+    <string name="settings_section_appearance">Appearance</string>
+    <string name="settings_theme_mode">Theme mode</string>
+    <string name="settings_theme_mode_system">Follow system</string>
+    <string name="settings_theme_mode_light">Light</string>
+    <string name="settings_theme_mode_dark">Dark</string>
+    <string name="settings_dynamic_color">Dynamic color</string>
+    <string name="settings_dynamic_color_subtitle">Use system wallpaper colors (Android 12+)</string>
+    <string name="settings_color_source">Color source</string>
+    <string name="settings_color_source_system">System dynamic</string>
+    <string name="settings_color_source_custom">Custom</string>
+    <string name="settings_custom_color">Custom color</string>
+    <string name="settings_custom_color_none">Not selected, tap to pick</string>
+
+    <!-- ────── Language ────── -->
+    <string name="settings_language">Language</string>
+    <string name="settings_language_dialog_title">Choose language</string>
+    <string name="settings_language_system">Follow system</string>
+    <string name="settings_language_zh_hans">简体中文</string>
+    <string name="settings_language_en">English</string>
+
+    <!-- ────── Home / list ────── -->
+    <string name="list_title">CardRecord</string>
+    <string name="list_subtitle">Never forget a swipe—auto-track your annual-fee waiver progress</string>
+    <string name="list_add_card">Add card</string>
+    <string name="list_filter_all">All cards</string>
+    <string name="list_filter_unfiled">Unfiled</string>
+    <string name="list_filter_manage">Manage folders…</string>
+    <string name="list_filter_folder_count">%1$d folders</string>
+    <string name="list_filter_switch">Switch</string>
+    <string name="list_filter_deleted_folder">Deleted folder</string>
+    <string name="list_toggle_to_grid">Switch to grid</string>
+    <string name="list_toggle_to_list">Switch to list</string>
+    <string name="list_overall_progress">Overall progress</string>
+    <string name="list_overall_progress_value">%1$d / %2$d  ·  %3$d%%</string>
+    <string name="list_overall_progress_done">🎉 All done</string>
+    <string name="list_empty_title">No cards yet</string>
+    <string name="list_empty_subtitle">Tap the button at the bottom right to add your first card\nCustomize the name, theme color, required swipes, and due date</string>
+    <string name="list_delete_dialog_title">Delete %1$s?</string>
+    <string name="list_delete_dialog_message">This also deletes all spending records for this card. It cannot be undone.</string>
+    <string name="list_delete_dialog_message_undo">Deleted %1$s</string>
+    <string name="list_delete_dialog_undo">Undo</string>
+    <string name="list_filter_anchor_label">Folder filter</string>
+
+    <!-- ────── Card item ────── -->
+    <string name="card_count_unit">swipes</string>
+    <string name="card_count_format">%1$d / %2$d</string>
+    <string name="card_count_compact_format">%1$d / %2$d</string>
+    <string name="card_percent_format">%1$d%%</string>
+    <string name="card_date_next_due">Next reset %1$s</string>
+    <string name="card_date_valid_until">Valid until %1$s</string>
+    <string name="card_label_valid_until">Valid until</string>
+    <string name="card_label_next_due">Next reset</string>
+    <string name="card_status_done">Completed</string>
+    <string name="card_status_remaining">%1$d more to go</string>
+    <string name="card_status_expired">Expired</string>
+    <string name="card_long_press_hint">Long-press to delete</string>
+    <string name="card_increment_one">+1</string>
+    <string name="card_detail">Details</string>
+    <string name="card_image_content_description">Card image</string>
+    <string name="card_default_name">Unnamed card</string>
+    <string name="card_default_bank">—</string>
+
+    <!-- ────── Details ────── -->
+    <string name="detail_title">Card details</string>
+    <string name="detail_title_loading">Card details</string>
+    <string name="detail_loading">Loading…</string>
+    <string name="detail_action_delete">Delete card</string>
+    <string name="detail_action_reset">Reset cycle</string>
+    <string name="detail_action_edit">Edit</string>
+    <string name="detail_action_record">Record swipe</string>
+    <string name="detail_label_bank">Issuer</string>
+    <string name="detail_label_card_number">Card number</string>
+    <string name="detail_label_note">Note</string>
+    <string name="detail_label_swipes">Swipe records</string>
+    <string name="detail_swipes_empty">No records yet. Tap \"Record swipe\" at the bottom right to start tracking.</string>
+    <string name="detail_swipe_index">%1$d</string>
+    <string name="detail_action_delete_swipe">Delete this swipe</string>
+    <string name="detail_delete_swipe_dialog_title">Delete this swipe?</string>
+    <string name="detail_delete_swipe_dialog_message">This deletes the swipe record from %1$s. It cannot be undone.</string>
+    <string name="cycle_auto_reset_message">Auto-renewed %1$d cards; the new cycle\'s count has been reset to zero</string>
+    <string name="detail_reset_dialog_title">Reset this cycle?</string>
+    <string name="detail_reset_dialog_message">This resets the current count to zero. It cannot be undone.</string>
+    <string name="detail_reset_dialog_confirm">Reset</string>
+    <string name="detail_delete_dialog_title">Delete this card?</string>
+    <string name="detail_delete_dialog_message">This also deletes all spending records for this card. It cannot be undone.</string>
+
+    <!-- ────── Edit ────── -->
+    <string name="edit_title_new">Add card</string>
+    <string name="edit_title_edit">Edit card</string>
+    <string name="edit_section_image">Card image</string>
+    <string name="edit_image_user">Custom upload</string>
+    <string name="edit_image_provider">Preset network</string>
+    <string name="edit_image_none">Solid color</string>
+    <string name="edit_image_clear">Clear image</string>
+    <string name="edit_image_pick_hint">Tap to choose a card image</string>
+    <string name="edit_section_choose_network">Choose network</string>
+    <string name="edit_section_orientation">Card orientation</string>
+    <string name="edit_orientation_landscape">Landscape</string>
+    <string name="edit_orientation_portrait">Portrait</string>
+    <string name="edit_section_folder">Folder</string>
+    <string name="edit_folder_unfiled">Unfiled</string>
+    <string name="edit_section_theme_color">Theme color</string>
+    <string name="edit_field_name">Card name *</string>
+    <string name="edit_field_name_hint">e.g., Travel Platinum Card</string>
+    <string name="edit_field_bank">Issuer (manual entry)</string>
+    <string name="edit_field_bank_hint">e.g., CMB / HSBC / Chase</string>
+    <string name="edit_field_number">Card number (last 4 digits recommended)</string>
+    <string name="edit_field_number_hint">****  ****  ****  1234</string>
+    <string name="edit_field_required">Required swipes *</string>
+    <string name="edit_date_valid_until">Card expiry</string>
+    <string name="edit_date_next_due">Next annual-fee reset date</string>
+    <string name="edit_field_note">Note</string>
+    <string name="edit_date_unset">Not set</string>
+    <string name="edit_color_picker_title">Choose theme color</string>
+    <string name="edit_color_hex_label">HEX</string>
+    <string name="edit_save_new">Save and add to list</string>
+    <string name="edit_save_existing">Save changes</string>
+
+    <!-- ────── Folders ────── -->
+    <string name="folder_title">Folders</string>
+    <string name="folder_create">New folder</string>
+    <string name="folder_dialog_create_title">New folder</string>
+    <string name="folder_dialog_edit_title">Edit folder</string>
+    <string name="folder_dialog_field_name">Name</string>
+    <string name="folder_dialog_field_color">Color</string>
+    <string name="folder_dialog_color_current_label">Current</string>
+    <string name="folder_count_label">%1$d cards</string>
+    <string name="folder_delete_title">Delete \"%1$s\"?</string>
+    <string name="folder_delete_message">Cards in this folder won\'t be deleted; they will be moved to Unfiled.</string>
+    <string name="folder_empty_title">No folders yet</string>
+    <string name="folder_empty_subtitle">Create groups for your cards, like \"Travel\" or \"Daily\"</string>
+
+    <!-- ────── Networks ────── -->
+    <string name="network_visa">Visa</string>
+    <string name="network_mastercard">MasterCard</string>
+    <string name="network_unionpay">UnionPay</string>
+    <string name="network_jcb">JCB</string>
+    <string name="network_amex">American Express</string>
+    <string name="network_diners">Diners Club</string>
+    <string name="network_discover">Discover</string>
+</resources>

@@ -15,8 +15,8 @@ android {
         applicationId = "com.shuaji.cards"
         minSdk = 26
         targetSdk = 36
-        versionCode = 19
-        versionName = "1.5.2"
+        versionCode = 20
+        versionName = "1.5.3"
 
         vectorDrawables { useSupportLibrary = true }
     }
@@ -95,6 +95,8 @@ android {
 
 dependencies {
     implementation("androidx.core:core-ktx:1.15.0")
+    // 应用内语言切换（per-app language 官方方案）：AppCompatDelegate.setApplicationLocales
+    implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.9.0")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.9.0")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.9.0")
