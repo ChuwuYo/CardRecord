@@ -26,12 +26,10 @@ class ShuajiApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         container = DefaultAppContainer(this)
-        // 启动时自动续期检查（任何 nextDueDateMillis < now 的卡 → 删流水 + 推 1 年）
-        val defaultContainer = container as DefaultAppContainer
+        // 启动时自动续期检查（任何 nextDueDateMillis < now 的卡 → 删流水 + 推 1 年）。
+        // 续期 + emit 收口在 AppContainer 内，这里只依赖接口、不向下转型。
         appScope.launch {
-            val resetCount =
-                defaultContainer.repository.resetOverdueCycles(System.currentTimeMillis())
-            defaultContainer.emitCycleAutoReset(resetCount)
+            container.runStartupCycleReset(System.currentTimeMillis())
         }
     }
 }

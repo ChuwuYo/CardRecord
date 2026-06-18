@@ -444,34 +444,38 @@ fun SettingsScreen(onBack: () -> Unit) {
     // 自定义颜色取色器对话框
     if (showColorPicker) {
         val themeSettings by viewModel.themeSettings.collectAsState(initial = null)
-        var pickedColor by remember {
-            mutableStateOf(parseSeedColor(themeSettings?.seedColorHex) ?: DefaultBrandPrimary)
+        // 等设置加载完成再建取色器：themeSettings 首帧为 null，若此时就建 picker，
+        // initialColor 会被定成默认色且之后无法回填——必须拿到已保存的 seedColorHex 再建，
+        // 这样重新打开时取色器停在「当前已选颜色」而非默认色。
+        themeSettings?.let { loaded ->
+            val savedColor = parseSeedColor(loaded.seedColorHex) ?: DefaultBrandPrimary
+            var pickedColor by remember(savedColor) { mutableStateOf(savedColor) }
+            AlertDialog(
+                onDismissRequest = { showColorPicker = false },
+                title = { Text(stringResource(R.string.settings_custom_color)) },
+                text = {
+                    ModernColorPicker(
+                        initialColor = savedColor,
+                        onColorSelected = { pickedColor = it },
+                    )
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            viewModel.setSeedColorHex("#%06X".format(0xFFFFFF and pickedColor.toArgb()))
+                            showColorPicker = false
+                        },
+                    ) {
+                        Text(stringResource(R.string.common_confirm))
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showColorPicker = false }) {
+                        Text(stringResource(R.string.common_cancel))
+                    }
+                },
+            )
         }
-        AlertDialog(
-            onDismissRequest = { showColorPicker = false },
-            title = { Text(stringResource(R.string.settings_custom_color)) },
-            text = {
-                ModernColorPicker(
-                    initialColor = pickedColor,
-                    onColorSelected = { pickedColor = it },
-                )
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        viewModel.setSeedColorHex("#%06X".format(0xFFFFFF and pickedColor.toArgb()))
-                        showColorPicker = false
-                    },
-                ) {
-                    Text(stringResource(R.string.common_confirm))
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showColorPicker = false }) {
-                    Text(stringResource(R.string.common_cancel))
-                }
-            },
-        )
     }
 
     // 语言选择对话框：选项由 AppLanguage.entries 驱动，新增语言无需改这里

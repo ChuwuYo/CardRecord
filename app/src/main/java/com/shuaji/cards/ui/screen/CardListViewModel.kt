@@ -158,8 +158,7 @@ class CardListViewModel(
      * 主页快捷记一笔：写一条流水。currentCount 由 SQL COUNT 实时算，
      * 写完 Flow 立刻把新的 CardUi 推给 UI 刷新。
      *
-     * 上限检查：UI 也做了（按钮 disabled / 进度条满格时不可点），
-     * 这里兜底再 clamp 一次 —— 数据库不信任。
+     * 上限由 UI 控制（达标后按钮 disabled / 进度条满格不可点），ViewModel 不二次校验。
      */
     fun swipe(cardId: Long) {
         viewModelScope.launch {
@@ -224,7 +223,7 @@ internal fun groupCardsForList(
                 groups +=
                     CardListGroup(
                         key = "unfiled",
-                        title = "未分类",
+                        title = "", // 未分类组：标题在 UI 层按 isAllGroup 本地化渲染
                         colorArgb = 0,
                         cards = sorted,
                         isAllGroup = true,
@@ -258,7 +257,7 @@ internal fun groupCardsForList(
             listOf(
                 CardListGroup(
                     key = "unfiled",
-                    title = "未分类",
+                    title = "", // 未分类组：标题在 UI 层按 isAllGroup 本地化渲染
                     colorArgb = 0,
                     cards = unfiled,
                     isAllGroup = true,

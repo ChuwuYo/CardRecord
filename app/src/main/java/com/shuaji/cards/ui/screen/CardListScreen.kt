@@ -64,7 +64,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.shuaji.cards.R
@@ -230,10 +229,12 @@ private fun ListTopBar(
 
 @Composable
 private fun OverallProgress(state: ListUiState) {
-    val totalRequired = state.allCards.sumOf { it.card.requiredCount }
-    val totalCurrent = state.allCards.sumOf { it.currentCount }
+    val allCards = state.allCards
+    // 只依赖 allCards 的三次全量遍历用 remember 缓存，避免每帧重算（卡片量大时明显）。
+    val totalRequired = remember(allCards) { allCards.sumOf { it.card.requiredCount } }
+    val totalCurrent = remember(allCards) { allCards.sumOf { it.currentCount } }
     val percent = if (totalRequired == 0) 100 else (totalCurrent * 100 / totalRequired).coerceIn(0, 100)
-    val allDone = state.allCards.isNotEmpty() && state.allCards.all { it.currentCount >= it.card.requiredCount }
+    val allDone = remember(allCards) { allCards.isNotEmpty() && allCards.all { it.currentCount >= it.card.requiredCount } }
     Column(
         modifier =
             Modifier
@@ -455,7 +456,9 @@ private fun FolderHeader(
             Spacer(Modifier.width(8.dp))
         }
         Text(
-            text = title,
+            // 「未分类」分组头（isAllGroup）走 stringResource 本地化，不用 ViewModel
+            // 传来的硬编码标题，避免英文环境露出中文「未分类」。
+            text = if (isAllGroup) stringResource(R.string.list_filter_unfiled) else title,
             style = MaterialTheme.typography.titleSmall,
             fontWeight = FontWeight.SemiBold,
             color = MaterialTheme.colorScheme.onSurface,
@@ -560,7 +563,6 @@ private fun EmptyState(modifier: Modifier = Modifier) {
                 text = stringResource(R.string.list_empty_subtitle),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                overflow = TextOverflow.Ellipsis,
             )
         }
     }
