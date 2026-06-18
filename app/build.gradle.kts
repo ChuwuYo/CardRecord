@@ -15,8 +15,8 @@ android {
         applicationId = "com.shuaji.cards"
         minSdk = 26
         targetSdk = 36
-        versionCode = 18
-        versionName = "1.5.1"
+        versionCode = 19
+        versionName = "1.5.2"
 
         vectorDrawables { useSupportLibrary = true }
     }
@@ -115,6 +115,10 @@ dependencies {
     // 现代化调色板：HSV 圆形色环 + 多滑动条（BrightnessSlider / AlphaSlider / SaturationSlider）
     // 1.1.2 是 Maven Central 上最新的 Kotlin 2.0 编译版本（Kotlin 2.1.20 兼容）
     implementation("com.github.skydoves:colorpicker-compose:1.1.2")
+    // 种子色 → Material 3 配色：MaterialKolor 封装 Google material-color-utilities 的
+    // HCT / tonal palette 官方算法（Material You）。2.1.1 用 Kotlin 2.1.20 + Compose 1.7.3 编译，
+    // 与本项目工具链一致，避免自己写 HSL 近似。
+    implementation("com.materialkolor:material-kolor:2.1.1")
     debugImplementation("androidx.compose.ui:ui-tooling")
     kapt("androidx.room:room-compiler:2.7.2")
 

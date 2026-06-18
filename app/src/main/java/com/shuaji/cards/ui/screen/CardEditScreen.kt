@@ -67,6 +67,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
@@ -165,7 +166,7 @@ fun CardEditScreen(
                         // 下次进程被杀后再访问会暴露问题，用户可以重新上传。
                         android.util.Log.w(
                             "CardEditScreen",
-                            "takePersistableUriPermission 失败，URI ${uri} 在进程重启后可能失效：${e.message}",
+                            "takePersistableUriPermission 失败，URI $uri 在进程重启后可能失效：${e.message}",
                         )
                         false
                     }
@@ -618,7 +619,7 @@ fun CardEditScreen(
                 ModernColorPicker(
                     initialColor = Color(state.colorArgb),
                     onColorSelected = { c ->
-                        viewModel.update { it.copy(colorArgb = c.toComposeArgb()) }
+                        viewModel.update { it.copy(colorArgb = c.toArgb()) }
                     },
                 )
                 Spacer(Modifier.height(16.dp))
@@ -898,11 +899,3 @@ private fun formatDate(millis: Long): String {
     val fmt = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
     return fmt.format(Date(millis))
 }
-
-private fun Color.toComposeArgb(): Int =
-    android.graphics.Color.argb(
-        (alpha * 255).toInt(),
-        (red * 255).toInt(),
-        (green * 255).toInt(),
-        (blue * 255).toInt(),
-    )
