@@ -13,6 +13,8 @@
     <string name="common_select">选择</string>
     <string name="common_clear">清除</string>
     <string name="common_create">新建</string>
+    <string name="common_unknown_reason">未知原因</string>
+    <string name="common_unknown_error">未知错误</string>
 
     <!-- ────── 设置页 ────── -->
     <string name="settings_title">设置</string>
@@ -49,6 +51,16 @@
     <string name="settings_dialog_image_warning">其中 %1$d 张卡的卡面在当前设备上不可访问，需要重新上传</string>
     <string name="settings_import_persist_warning">⚠️ 文件访问权限未持久化，切换应用或重启后可能无法访问该文件</string>
 
+    <!-- 导入 / 导出底层错误（作为 %1$s 拼入 settings_result_*_failed） -->
+    <string name="backup_error_open_target_uri">无法打开目标 URI 用于写入（可能被占用）</string>
+    <string name="backup_error_open_source_uri">无法打开源 URI 用于读取</string>
+    <string name="backup_error_source_missing">源文件不存在或已失效：%1$s</string>
+    <string name="backup_error_read_failed">读取备份文件失败：%1$s</string>
+    <string name="backup_error_empty_file">备份文件为空</string>
+    <string name="backup_error_malformed_json">备份文件格式不正确（不是合法的 JSON）</string>
+    <string name="backup_error_version_mismatch">备份 schema 版本不匹配（文件 version=%1$d，当前=%2$d）</string>
+    <string name="backup_error_db_write_failed">数据库写入失败：%1$s</string>
+
     <!-- ────── 主题设置 ────── -->
     <string name="settings_section_appearance">外观</string>
     <string name="settings_theme_mode">主题模式</string>
@@ -62,6 +74,14 @@
     <string name="settings_color_source_custom">自定义</string>
     <string name="settings_custom_color">自定义颜色</string>
     <string name="settings_custom_color_none">未选择，点击选取</string>
+
+    <!-- ────── 语言 ────── -->
+    <string name="settings_language">语言</string>
+    <string name="settings_language_dialog_title">选择语言</string>
+    <!-- 新增语言：在 AppLanguage 枚举加项 + values-<tag>/strings.xml + locales_config.xml -->
+    <string name="settings_language_system">跟随系统</string>
+    <string name="settings_language_zh_hans">简体中文</string>
+    <string name="settings_language_en">English</string>
 
     <!-- ────── 主页 / 列表 ────── -->
     <string name="list_title">刷记</string>

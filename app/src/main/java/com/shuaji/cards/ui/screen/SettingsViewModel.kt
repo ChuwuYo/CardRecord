@@ -7,7 +7,6 @@ import androidx.lifecycle.viewModelScope
 import com.shuaji.cards.R
 import com.shuaji.cards.data.AppContainer
 import com.shuaji.cards.data.SettingsDoneEvent
-import com.shuaji.cards.data.backup.BackupException
 import com.shuaji.cards.data.backup.BackupRepository
 import com.shuaji.cards.data.backup.ExportSummary
 import com.shuaji.cards.data.backup.ImportMode
@@ -102,12 +101,9 @@ class SettingsViewModel(
                 // 用户主动取消 → 静默回到 Idle
                 _state.value = SettingsUiState.Idle
                 throw e
-            } catch (e: BackupException) {
-                val message = errorMessage(R.string.settings_result_export_failed, e.message ?: "未知原因")
-                finalize(message = message, isError = true)
             } catch (e: Exception) {
-                val message = errorMessage(R.string.settings_result_export_failed, e.message ?: "未知错误")
-                finalize(message = message, isError = true)
+                // BackupException 与其它异常统一处理；错误文案已国际化（见 BackupRepository / errorMessage）
+                finalize(errorMessage(R.string.settings_result_export_failed, e.message), isError = true)
             }
         }
     }
@@ -129,12 +125,8 @@ class SettingsViewModel(
             } catch (e: CancellationException) {
                 _state.value = SettingsUiState.Idle
                 throw e
-            } catch (e: BackupException) {
-                val message = errorMessage(R.string.settings_result_import_failed, e.message ?: "未知原因")
-                finalize(message = message, isError = true)
             } catch (e: Exception) {
-                val message = errorMessage(R.string.settings_result_import_failed, e.message ?: "未知错误")
-                finalize(message = message, isError = true)
+                finalize(errorMessage(R.string.settings_result_import_failed, e.message), isError = true)
             }
         }
     }
@@ -178,11 +170,14 @@ class SettingsViewModel(
         settingsEventsSink.emitSettings(SettingsDoneEvent(message = message, isError = isError))
     }
 
-    /** 错误文案统一封装：「XXX 失败：<cause>」。 */
+    /** 错误文案统一封装：「XXX 失败：<cause>」。cause 为 null（异常无 message）时回退到本地化的「未知原因」。 */
     private fun errorMessage(
         @androidx.annotation.StringRes templateRes: Int,
-        cause: String,
-    ): String = getApplication<Application>().getString(templateRes, cause)
+        cause: String?,
+    ): String {
+        val app = getApplication<Application>()
+        return app.getString(templateRes, cause ?: app.getString(R.string.common_unknown_reason))
+    }
 
     /**
      * 把 [ImportResult] 拼成一行可读消息。
