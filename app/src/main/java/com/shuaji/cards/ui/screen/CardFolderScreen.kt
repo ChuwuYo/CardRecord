@@ -288,8 +288,8 @@ private fun FolderEditDialog(
     onDismiss: () -> Unit,
     onConfirm: (name: String, color: Int) -> Unit,
 ) {
-    var name by remember { mutableStateOf(initial?.name ?: "") }
-    var color by remember { mutableStateOf(initial?.colorArgb ?: 0xFF42A5F5.toInt()) }
+    var name by remember(initial) { mutableStateOf(initial?.name ?: "") }
+    var color by remember(initial) { mutableStateOf(initial?.colorArgb ?: 0xFF42A5F5.toInt()) }
 
     val titleText =
         stringResource(

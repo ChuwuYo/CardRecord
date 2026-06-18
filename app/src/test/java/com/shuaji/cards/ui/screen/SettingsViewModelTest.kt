@@ -89,6 +89,9 @@ class SettingsViewModelTest {
                 onEmitSettings?.invoke(event)
                 emittedEvents += event
             }
+
+            // 测试不涉及启动续期，留空实现满足接口即可。
+            override suspend fun runStartupCycleReset(nowMillis: Long) = Unit
         }
 
     @Before

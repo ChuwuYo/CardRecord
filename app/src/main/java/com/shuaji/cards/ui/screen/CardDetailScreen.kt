@@ -283,7 +283,7 @@ private fun SwipeListSection(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Text(
-                    text = stringResource(R.string.card_count_compact_format, swipes.size, swipes.size),
+                    text = stringResource(R.string.detail_swipe_count, swipes.size),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurface,
                     fontWeight = FontWeight.SemiBold,

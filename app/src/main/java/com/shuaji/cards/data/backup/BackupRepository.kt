@@ -58,7 +58,6 @@ class BackupRepository(
     private val folderDao: CardFolderDao,
     private val transactionDao: TransactionDao,
 ) {
-    private val cardFolderDao = database.cardFolderDao()
     private val json =
         Json {
             prettyPrint = true
@@ -230,7 +229,7 @@ class BackupRepository(
         // 1) 删 cards → 自动 CASCADE 清 transactions
         cardDao.deleteAll()
         // 2) 删 folders
-        cardFolderDao.deleteAll()
+        folderDao.deleteAll()
         // 3) 按依赖顺序写：folders → cards（带 folderId 校验）→ transactions
         val folders = bundle.folders
         val cards = bundle.cards
@@ -287,8 +286,8 @@ class BackupRepository(
     private suspend fun doMerge(bundle: BackupBundle): ImportResult {
         // 1) **写之前**先抓现有 id / name 集合——重名检测不能包含本次刚追加的，
         //    校验 folderId 合法性时也要用"写之前"的现库 id 集合
-        val existingFolderIds = cardFolderDao.listAll().map { it.id }.toSet()
-        val existingFolderNames = cardFolderDao.listAll().map { it.name }.toSet()
+        val existingFolderIds = folderDao.listAll().map { it.id }.toSet()
+        val existingFolderNames = folderDao.listAll().map { it.name }.toSet()
         val existingCardNames = cardDao.listAll().map { it.name }.toSet()
 
         // 2) 写 folders：id 清零让 SQLite 重新分配，记 oldFolderId → newFolderId 映射
