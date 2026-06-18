@@ -63,6 +63,13 @@
     <string name="settings_custom_color">自定义颜色</string>
     <string name="settings_custom_color_none">未选择，点击选取</string>
 
+    <!-- ────── 语言 ────── -->
+    <string name="settings_language">语言</string>
+    <string name="settings_language_dialog_title">选择语言</string>
+    <!-- 新增语言：在 AppLanguage 枚举加项 + values-<tag>/strings.xml + locales_config.xml -->
+    <string name="settings_language_system">跟随系统</string>
+    <string name="settings_language_zh_hans">简体中文</string>
+
     <!-- ────── 主页 / 列表 ────── -->
     <string name="list_title">刷记</string>
     <string name="list_subtitle">刷卡不再忘记，自动追踪免年费进度</string>

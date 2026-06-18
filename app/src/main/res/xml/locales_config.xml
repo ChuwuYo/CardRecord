@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    应用支持的语言清单（Android 13+ per-app language 系统集成用）。
+    新增语言时：在此加一条 <locale>，并同步 AppLanguage 枚举与 values-<tag>/strings.xml。
+-->
+<locale-config xmlns:android="http://schemas.android.com/apk/res/android">
+    <locale android:name="zh-Hans" />
+</locale-config>

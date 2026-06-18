@@ -18,8 +18,12 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.BrightnessMedium
+import androidx.compose.material.icons.filled.Colorize
 import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.FileUpload
+import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -28,6 +32,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -54,6 +59,7 @@ import com.shuaji.cards.R
 import com.shuaji.cards.data.ThemeMode
 import com.shuaji.cards.data.backup.ImportMode
 import com.shuaji.cards.data.local.ImageSourceType
+import com.shuaji.cards.ui.AppLanguage
 import com.shuaji.cards.ui.ViewModelFactories
 import com.shuaji.cards.ui.component.ModernColorPicker
 import com.shuaji.cards.ui.theme.DefaultBrandPrimary
@@ -134,6 +140,9 @@ fun SettingsScreen(onBack: () -> Unit) {
 
     // 自定义颜色取色器对话框显示状态
     var showColorPicker by rememberSaveable { mutableStateOf(false) }
+
+    // 语言选择对话框显示状态
+    var showLanguageDialog by rememberSaveable { mutableStateOf(false) }
 
     // 导出：弹 SAF 文件创建器（application/json）
     val exportLauncher =
@@ -298,6 +307,13 @@ fun SettingsScreen(onBack: () -> Unit) {
                     val themeSettings by viewModel.themeSettings.collectAsState(initial = null)
                     val currentMode = themeSettings?.themeMode ?: ThemeMode.SYSTEM
                     ListItem(
+                        leadingContent = {
+                            Icon(
+                                Icons.Default.BrightnessMedium,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                            )
+                        },
                         headlineContent = { Text(stringResource(R.string.settings_theme_mode)) },
                         supportingContent = {
                             Text(
@@ -326,6 +342,13 @@ fun SettingsScreen(onBack: () -> Unit) {
                     val themeSettings by viewModel.themeSettings.collectAsState(initial = null)
                     val currentSource = themeSettings?.colorSource ?: com.shuaji.cards.data.ColorSource.SYSTEM_DYNAMIC
                     ListItem(
+                        leadingContent = {
+                            Icon(
+                                Icons.Default.Palette,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                            )
+                        },
                         headlineContent = { Text(stringResource(R.string.settings_color_source)) },
                         supportingContent = {
                             Text(
@@ -356,6 +379,13 @@ fun SettingsScreen(onBack: () -> Unit) {
                     val themeSettings by viewModel.themeSettings.collectAsState(initial = null)
                     if (themeSettings?.colorSource == com.shuaji.cards.data.ColorSource.CUSTOM) {
                         ListItem(
+                            leadingContent = {
+                                Icon(
+                                    Icons.Default.Colorize,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                )
+                            },
                             headlineContent = { Text(stringResource(R.string.settings_custom_color)) },
                             supportingContent = {
                                 themeSettings?.seedColorHex?.let {
@@ -368,6 +398,25 @@ fun SettingsScreen(onBack: () -> Unit) {
                                 },
                         )
                     }
+                }
+                // 语言：应用内切换（AppCompat per-app language，列表由 AppLanguage.entries 驱动）
+                item {
+                    val currentLanguage = AppLanguage.current()
+                    ListItem(
+                        leadingContent = {
+                            Icon(
+                                Icons.Default.Translate,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                            )
+                        },
+                        headlineContent = { Text(stringResource(R.string.settings_language)) },
+                        supportingContent = { Text(stringResource(currentLanguage.labelRes)) },
+                        modifier =
+                            Modifier.clickable(enabled = enabled) {
+                                showLanguageDialog = true
+                            },
+                    )
                 }
             }
 
@@ -419,6 +468,42 @@ fun SettingsScreen(onBack: () -> Unit) {
             },
             dismissButton = {
                 TextButton(onClick = { showColorPicker = false }) {
+                    Text(stringResource(R.string.common_cancel))
+                }
+            },
+        )
+    }
+
+    // 语言选择对话框：选项由 AppLanguage.entries 驱动，新增语言无需改这里
+    if (showLanguageDialog) {
+        val current = AppLanguage.current()
+        AlertDialog(
+            onDismissRequest = { showLanguageDialog = false },
+            title = { Text(stringResource(R.string.settings_language_dialog_title)) },
+            text = {
+                Column {
+                    AppLanguage.entries.forEach { lang ->
+                        ListItem(
+                            leadingContent = {
+                                RadioButton(
+                                    selected = lang == current,
+                                    onClick = null,
+                                )
+                            },
+                            headlineContent = { Text(stringResource(lang.labelRes)) },
+                            modifier =
+                                Modifier.clickable {
+                                    showLanguageDialog = false
+                                    // AppCompat 会持久化并重建 Activity 以应用新语言
+                                    if (lang != current) AppLanguage.apply(lang)
+                                },
+                        )
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { showLanguageDialog = false }) {
                     Text(stringResource(R.string.common_cancel))
                 }
             },
