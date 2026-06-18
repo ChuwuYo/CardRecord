@@ -10,9 +10,15 @@
            窗口背景就是这个颜色，跟 Compose 内的 background 完全一致，
            Navigation crossfade 过渡中用户看不到任何突兀的色差。
            配套资源：values/colors.xml、values-night/colors.xml。
-        3) windowAnimationStyle：
-           关掉系统默认的 enter/exit slide 动画。
-           Compose Navigation 自带 crossfade，叠两层动画会让切换有"先闪后淡"的视觉噪声。
+        3) windowAnimationStyle = @style/WindowAnimation.Shuaji（淡入淡出）：
+           **根治语言切换 / 重建时的"黑闪 / 白闪"**。
+           AppCompatDelegate.setApplicationLocales() 会触发 Activity.recreate()，
+           销毁旧窗口、重建新窗口之间有一帧间隙，此时屏幕显示的是 windowBackground
+           （深色 #0A121C 近黑 / 浅色 #F6FAFF 近白），用户感知为"黑屏/白闪"。
+           给 Activity 级转场一个 fade，让旧画面淡出、新画面淡入，把这帧间隙盖住。
+           注意：windowAnimationStyle 只作用于 Activity 级转场（冷启动 / recreate），
+           应用内 Compose Navigation 的 crossfade 是窗口内的另一层、不触发 Activity
+           转场，两者不冲突、不会叠加。
         4) 不写 android:windowLightStatusBar：
            旧版本是 true，但 enableEdgeToEdge() 会运行时按 darkTheme 覆盖；
            静态写死反而在暗色模式下短暂错乱。
@@ -21,6 +27,14 @@
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
         <item name="android:windowBackground">@color/window_background</item>
-        <item name="android:windowAnimationStyle">@null</item>
+        <item name="android:windowAnimationStyle">@style/WindowAnimation.Shuaji</item>
+    </style>
+
+    <!-- Activity 级转场：淡入淡出，掩盖 recreate（语言切换）时的窗口重建间隙 -->
+    <style name="WindowAnimation.Shuaji" parent="@android:style/Animation.Activity">
+        <item name="android:activityOpenEnterAnimation">@android:anim/fade_in</item>
+        <item name="android:activityOpenExitAnimation">@android:anim/fade_out</item>
+        <item name="android:activityCloseEnterAnimation">@android:anim/fade_in</item>
+        <item name="android:activityCloseExitAnimation">@android:anim/fade_out</item>
     </style>
 </resources>
