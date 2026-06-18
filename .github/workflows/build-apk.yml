@@ -1,0 +1,68 @@
+name: Build APK
+
+# 手动触发（Actions 页面点 "Run workflow"）或推送到 main 时构建 release APK。
+# 产物在本次运行的 Artifacts 里下载（cardrecord-release-apk）。
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+
+permissions:
+  contents: read
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install SDK packages
+        run: |
+          yes | sdkmanager "platforms;android-36" "build-tools;36.0.0" "platform-tools" > /dev/null
+
+      # 仓库里的 gradlew 是本地沙箱专用的桩（直接 exec mise 的 gradle），
+      # GitHub runner 上没有那条路径，所以这里改用官方 action 安装真正的 Gradle，
+      # 再用 `gradle` 命令构建，不碰仓库里的 gradlew。
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.14.4'
+
+      # gradle.properties 里写死的 127.0.0.1:18080 是本地沙箱的出口代理，
+      # runner 上不存在，会让依赖下载卡死/失败。CI 运行时剥掉这几行
+      # （只改 runner 的工作副本，不提交回仓库，沙箱构建仍可用代理）。
+      - name: Disable sandbox-only Maven proxy
+        run: |
+          sed -i -E '/^systemProp\.(http|https)\.(proxyHost|proxyPort|nonProxyHosts)=/d' gradle.properties
+
+      # release 构建复用 debug 签名密钥（见 app/build.gradle.kts 的 signingConfigs），
+      # 未签名 APK 装不上。这里用标准 debug 凭据重建一个 debug.keystore。
+      - name: Generate debug keystore
+        run: |
+          mkdir -p "$HOME/.android"
+          keytool -genkeypair -v \
+            -keystore "$HOME/.android/debug.keystore" \
+            -storepass android -keypass android \
+            -alias androiddebugkey \
+            -keyalg RSA -keysize 2048 -validity 10000 \
+            -dname "CN=Android Debug,O=Android,C=US"
+
+      - name: Build release APK
+        run: gradle :app:assembleRelease --no-daemon --stacktrace
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cardrecord-release-apk
+          path: app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error
