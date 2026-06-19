@@ -36,12 +36,79 @@
 - 关键模块用 `Explore` / `general-purpose` subagent 交叉调研，结论回到我这里对照源码核对，再落地。
 - 构建/测试自检命令见 CLAUDE.md（沙箱用系统 gradle，需补 SDK 元数据；或依赖 CI）。
 
-## 附录 A：问题清单（P1 填充，持续更新）
+## 附录 A：问题清单（P1 勘察结果）
 
-_待 P1 勘察后写入。每条形如：`[零影响|需完善] 文件:行 — 问题 — 建议`_
+整体结论：**代码质量很高**——架构清晰、注释充分、已有多轮自我优化（实体上挂领域知识、
+派生值用 SQL 实时算杜绝漂移、迁移脚本对 TableInfo.equals 极其谨慎）。i18n 简/英双语
+**176 键完全对齐**，无缺失。绝大多数发现是 refinement 级别的零影响重构；唯一高危项是下面的
+P1-CRIT（外键 schema 不一致）。
+
+### 🔴 高危（需完善 / 正确性，已对照源码核实）
+
+- **P1-CRIT** `data/local/CardEntity.kt:34` + `AppDatabase.kt:213` — **`cards` 表外键 schema 不一致**。
+  `MIGRATION_5_6` 建 `cards` 时写了 `FOREIGN KEY(folder_id) REFERENCES card_folders(id) ON DELETE SET NULL`，
+  但 `CardEntity` 的 `@Entity` **没声明** `@ForeignKey`/`@Index`。后果两个：
+  1. **v5→v6 升级用户可能启动崩溃**：Room 每次启动用「实体推导出的期望 schema(无 FK)」校验
+     「迁移后的实际 schema(有 FK)」，`TableInfo.equals` 不等 → `IllegalStateException`
+     （且这不会走 destructiveMigration 兜底）。全新安装两边都无 FK，所以一致、不崩——
+     很可能因此一直没被发现。
+  2. **`deleteFolder` 依赖的 `ON DELETE SET NULL` 在全新安装上根本不生效**：全新安装的
+     `cards` 没 FK，删文件夹后卡的 `folder_id` 变悬空，未真正置空（功能未完善）。
+  - 修复方向（需谨慎 + 迁移测试）：给 `CardEntity` 加
+    `@ForeignKey(entity=CardFolderEntity, parentColumns=["id"], childColumns=["folder_id"], onDelete=SET_NULL)`
+    + `indices=[Index("folder_id")]`，并加 **v6→v7 迁移** 重建 `cards` 表统一 FK+索引；
+    配 Room `MigrationTestHelper` 测 v5→v6→v7 与全新建表。**因触及所有用户 DB、且沙箱
+    SDK 残缺难以本地跑迁移测试，落地前先经迁移测试验证，必要时向用户确认。**
+
+### 🟡 零影响重构（data 层）
+
+- `data/CardRepository.kt:84` — `deleteFolder` 注释说会把卡 folder_id 置空，实际依赖 FK
+  级联（见 P1-CRIT）。修好 P1-CRIT 后同步把注释改成「依赖 ON DELETE SET NULL」。
+- `data/CardRepository.kt:131`（`resetOverdueCycles`）— `GregorianCalendar()` 在 while 循环内
+  每次 new，可提到循环外复用（同一卡推 N 年时少分配对象）。
+- `data/backup/BackupRepository.kt:289-290` — `folderDao.listAll()` 调了两次（建 id 集 + name 集），
+  合并为一次查询后 `map` 两个集合。
+
+### 🟡 零影响重构（UI / screen / viewmodel）
+
+- `ui/screen/CardFolderViewModel.kt` — `rename()` / `recolor()` 疑似无人调用（只用 `update()`），
+  确认后删死代码。
+- `ui/screen/SettingsScreen.kt:307/342/379` — `themeSettings` 的 `collectAsState(initial=null)` 重复三次，
+  提升到屏幕级一次采集。
+- `ui/screen/CardListScreen.kt:~539` — grid 模式 `onLongClick={}`/`onSwipe={}` 空回调，
+  确认 grid 是否应与 list 行为一致（若是则补、否则移除空 handler）。
+- `ui/screen/CardEditScreen.kt` / `CardDetailScreen.kt` — 魔法尺寸 120.dp、对话框状态与 LazyColumn
+  作用域错位等，提取/colocate（均零影响）。
+- 无障碍：部分 `clickable` 缺 `onClickLabel`（DateRow 等），可补（零影响，体验增强）。
+
+### 🟡 零影响重构（component / theme / 入口）
+
+- `ui/component/CardListItem.kt:~365` — 每个 item 渲染都 new `SimpleDateFormat`，提到文件级常量复用
+  （注意线程/Locale：用 `Locale.getDefault()`，语言切换会 recreate 故可接受；或用 `remember`）。
+- `ui/component/CardVisual.kt` — 魔法色 `0xFF8A8E96` 与装饰条尺寸/角度/alpha 提为具名常量。
+- `ui/component/ModernColorPicker.kt:~92` — HEX 格式串提具名常量。
+- `ui/ShuajiApp.kt:~56` — `context.applicationContext as ShuajiApplication` 用 `requireNotNull`/`check`
+  给出更清晰报错（零影响、健壮性）。
+- `data/AppContainer.kt:~103` — `_settingsEvents` 的 `extraBufferCapacity=4` 加注释说明取值依据。
+
+### 🟡 零影响（构建 / CI / 资源）
+
+- `app/build.gradle.kts` — 存在 `gradle/libs.versions.toml` 版本目录但仅覆盖约 35%；
+  appcompat/三方库/测试库版本仍硬编码在 build.gradle。可逐步迁移到版本目录（零影响）。
+  - `material-icons-extended:1.7.6` 与 Compose BOM 并存，确认是否可交由 BOM 管理。
+- `.github/workflows/build-apk.yml` — action 用 `@v4/@v3` tag 而非 pinned SHA（供应链加固，可选）；
+  可加 `concurrency` 取消同分支旧运行。proxy 的运行时 sed、debug 签名重建均为**有意为之**，不动。
+- 资源/Manifest/备份规则/locale 配置经核查均正确，无整改项。
 
 ## 附录 B：进度记忆（自动压缩前更新，供下次续作）
 
-- 当前阶段：**P0 完成，准备进入 P1**。
-- 已提交：P0（Plan + CLAUDE.md）。
-- 下一步：P1 逐目录勘察 `data/` 与 `ui/`，把问题清单写入附录 A。
+- **当前阶段：P1 完成（问题清单见附录 A），准备进入 P2 起的落地。**
+- 已提交：P0（Plan+CLAUDE.md）、P1（本附录）。
+- **续作建议顺序**：
+  1. 先做低风险零影响重构（data 层 3 项 + UI/component 各项），每组一个 `refactor:` commit，
+     用编译/ktlint 自检。
+  2. **P1-CRIT 单独处理**：先写 Room `MigrationTestHelper` 迁移测试复现/验证，再决定是否落地
+     v6→v7 修复；因高危，落地前考虑 `AskUserQuestion` 向用户确认。
+  3. P5 补关键流程单测；P6 脚本/CI；P7 Design.md；P8 交叉终审。
+- 沙箱限制提醒（见 CLAUDE.md）：本地难干净构建/跑 instrumented 测试，JVM/Robolectric 单测可行；
+  实在跑不动就靠 CI（必要时给 CI 加一个 `:app:testDebugUnitTest` job）。
