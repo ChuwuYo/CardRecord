@@ -37,6 +37,7 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.14.4'
+          dependency-graph: disabled
 
       # gradle.properties 里写死的 127.0.0.1:18080 是本地沙箱的出口代理，
       # runner 上不存在，会让依赖下载卡死/失败。CI 运行时剥掉这几行
