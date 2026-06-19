@@ -102,8 +102,21 @@ P1-CRIT（外键 schema 不一致）。
 
 ## 附录 B：进度记忆（自动压缩前更新，供下次续作）
 
-- **当前阶段：P1 完成（问题清单见附录 A），准备进入 P2 起的落地。**
-- 已提交：P0（Plan+CLAUDE.md）、P1（本附录）。
+- **当前阶段：P2/P5/P1-CRIT 已落地，等 CI 验证。**
+- 已提交：P0（Plan+CLAUDE.md）、P1（问题清单）、P2（data 层零影响重构：Calendar 复用 +
+  备份查询去重）、CI（新增 ci.yml 跑 ktlint+单测、build-apk 加 dependency-graph:disabled）、
+  **P1-CRIT 修复**（CardEntity 补 @ForeignKey(SET_NULL)+@Index；AppDatabase 升 v7 +
+  MIGRATION_6_7 统一 cards 外键 + 暴露 ALL_MIGRATIONS；deleteFolder 注释更正；
+  新增 MigrationTest.kt 两条用例）。
+- **待办（按序）**：
+  1. **盯 ci.yml 运行结果**：确认 ktlint 过、MigrationTest 两条用例过、原有测试过。
+     若 MigrationTest 失败按报错修（最可能是 v5 schema 还原细节或 FK 未启用）。
+  2. 继续 P2/P3 其余零影响重构（UI/component：SimpleDateFormat 复用、魔法数提常量、
+     SettingsScreen 重复采集、CardFolderViewModel 死代码确认删除、ShuajiApp 安全转型）。
+  3. P5 补更多关键流程单测（recordSwipe/resetOverdueCycles/年费续期日期推进、ViewModel 状态）。
+  4. P6 脚本/CI 收尾；P7 Design.md（联网调研规范）；P8 交叉终审 + 更新 CHANGELOG/版本号
+     （P1-CRIT 是面向所有用户的 DB 修复，发版时 versionName 应 patch+、CHANGELOG 记一条）。
+- 旧记录：P1 完成情况见附录 A。
 - **续作建议顺序**：
   1. 先做低风险零影响重构（data 层 3 项 + UI/component 各项），每组一个 `refactor:` commit，
      用编译/ktlint 自检。

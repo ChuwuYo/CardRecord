@@ -1,0 +1,209 @@
+package com.shuaji.cards.data.local
+
+import android.content.Context
+import androidx.room.Room
+import androidx.sqlite.db.SupportSQLiteDatabase
+import androidx.sqlite.db.SupportSQLiteOpenHelper
+import androidx.sqlite.db.framework.FrameworkSQLiteOpenHelperFactory
+import androidx.test.core.app.ApplicationProvider
+import kotlinx.coroutines.runBlocking
+import org.junit.After
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
+
+/**
+ * Room 迁移 / 外键 schema 一致性测试。
+ *
+ * 针对 P1-CRIT：历史上 `cards` 表的外键声明在「实体」与「迁移 SQL」之间不一致——
+ * - `MIGRATION_5_6` 的建表 SQL 写了 `ON DELETE SET NULL` 外键；
+ * - 但 v7 之前的 `CardEntity` 没声明 `@ForeignKey`/`@Index`。
+ *
+ * 后果：v5→v6 升级用户启动时 Room schema 校验抛 `IllegalStateException`；
+ * 全新安装用户的 `cards` 表没外键，`deleteFolder` 依赖的 SET NULL 不生效。
+ * v7（实体补外键 + `MIGRATION_6_7` 统一磁盘 schema）修复后，下面两条用例应通过。
+ *
+ * 测试不依赖导出的 schema JSON（本项目 `exportSchema = false`）：
+ * 手工建出 v5 库 → 用真实 `ALL_MIGRATIONS` 跑到最新版 → 强制打开触发 schema 校验。
+ * 若外键不一致，`open` 会抛异常、测试失败。
+ */
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [34], manifest = Config.NONE)
+class MigrationTest {
+    private val context: Context get() = ApplicationProvider.getApplicationContext()
+    private val dbName = "migration-test.db"
+
+    @After
+    fun tearDown() {
+        context.deleteDatabase(dbName)
+    }
+
+    /**
+     * v5 → 最新：升级路径不崩 + 历史数据（含 folder_id 引用）保留。
+     *
+     * 这条用例是 P1-CRIT 的回归测试：修复前，Room 打开时会因
+     * 「实体期望无外键 vs 迁移后磁盘有外键」校验失败抛异常。
+     */
+    @Test
+    fun migrateFromV5_opensWithoutCrashAndPreservesData() {
+        createV5DatabaseWithSampleRow()
+
+        val db =
+            Room
+                .databaseBuilder(context, AppDatabase::class.java, dbName)
+                .addMigrations(*AppDatabase.ALL_MIGRATIONS)
+                .build()
+
+        try {
+            // 强制打开 → 触发 5→6→7 迁移 + onValidateSchema（出 bug 会在此抛异常）。
+            val cards = runBlocking { db.cardDao().listAll() }
+            assertEquals("历史卡片应被迁移保留", 1, cards.size)
+            assertEquals("迁移不应丢失 folder_id 引用", 1L, cards.single().folderId)
+        } finally {
+            db.close()
+        }
+    }
+
+    /**
+     * 删除文件夹时，外键 `ON DELETE SET NULL` 自动把卡片 folder_id 置空（卡片归未分类）。
+     * 这条用例覆盖「全新安装」路径下 SET NULL 是否真正生效。
+     */
+    @Test
+    fun deletingFolder_setsCardsFolderIdToNull() {
+        val db =
+            Room
+                .inMemoryDatabaseBuilder(context, AppDatabase::class.java)
+                .build()
+
+        try {
+            runBlocking {
+                val folderId = db.cardFolderDao().upsert(CardFolderEntity(name = "商旅", colorArgb = 0xFF1234))
+                val cardId =
+                    db.cardDao().upsert(
+                        CardEntity(
+                            name = "Visa",
+                            bank = "某银行",
+                            cardNumberMasked = "**** 1234",
+                            requiredCount = 6,
+                            colorArgb = 0xFF1234,
+                            folderId = folderId,
+                        ),
+                    )
+
+                db.cardFolderDao().delete(
+                    CardFolderEntity(id = folderId, name = "商旅", colorArgb = 0xFF1234),
+                )
+
+                val card = db.cardDao().getById(cardId)
+                assertNotNull("删文件夹不应删卡片", card)
+                assertNull("删文件夹后卡片应归未分类（folder_id 置空）", card!!.folderId)
+            }
+        } finally {
+            db.close()
+        }
+    }
+
+    /**
+     * 手工建一个 version=5 的库，并写入一个 folder + 一张引用它的卡片。
+     *
+     * v5 表结构 = `MIGRATION_5_6` 执行**之前**的形态：
+     * - `cards`：含后来被删的 current_count / cycle_start_millis / archived，且**无 folder 外键**
+     *   （还原历史：v7 之前实体没声明外键，故 v5 建表也没有）。
+     * - `transactions`：含后来被删的 amount_cents / merchant / note，带 card 外键 + 索引。
+     * - `card_folders`：含后来被删的 icon_key。
+     */
+    private fun createV5DatabaseWithSampleRow() {
+        context.deleteDatabase(dbName)
+        val callback =
+            object : SupportSQLiteOpenHelper.Callback(5) {
+                override fun onCreate(db: SupportSQLiteDatabase) {
+                    db.execSQL(
+                        """
+                        CREATE TABLE `cards` (
+                            `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                            `name` TEXT NOT NULL,
+                            `bank` TEXT NOT NULL,
+                            `card_number_masked` TEXT NOT NULL,
+                            `valid_until_millis` INTEGER,
+                            `next_due_date_millis` INTEGER,
+                            `required_count` INTEGER NOT NULL,
+                            `color_argb` INTEGER NOT NULL,
+                            `note` TEXT NOT NULL,
+                            `image_uri` TEXT,
+                            `image_source_type` TEXT NOT NULL DEFAULT 'USER',
+                            `image_provider_key` TEXT,
+                            `card_orientation` TEXT NOT NULL DEFAULT 'LANDSCAPE',
+                            `folder_id` INTEGER,
+                            `created_at_millis` INTEGER NOT NULL,
+                            `current_count` INTEGER NOT NULL DEFAULT 0,
+                            `cycle_start_millis` INTEGER,
+                            `archived` INTEGER NOT NULL DEFAULT 0
+                        )
+                        """.trimIndent(),
+                    )
+                    db.execSQL(
+                        """
+                        CREATE TABLE `transactions` (
+                            `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                            `card_id` INTEGER NOT NULL,
+                            `occurred_at_millis` INTEGER NOT NULL,
+                            `amount_cents` INTEGER NOT NULL DEFAULT 0,
+                            `merchant` TEXT NOT NULL DEFAULT '',
+                            `note` TEXT NOT NULL DEFAULT '',
+                            FOREIGN KEY(`card_id`) REFERENCES `cards`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE
+                        )
+                        """.trimIndent(),
+                    )
+                    db.execSQL("CREATE INDEX `index_transactions_card_id` ON `transactions` (`card_id`)")
+                    db.execSQL(
+                        """
+                        CREATE TABLE `card_folders` (
+                            `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                            `name` TEXT NOT NULL,
+                            `color_argb` INTEGER NOT NULL,
+                            `icon_key` TEXT NOT NULL,
+                            `sort_order` INTEGER NOT NULL,
+                            `created_at_millis` INTEGER NOT NULL
+                        )
+                        """.trimIndent(),
+                    )
+                    // 一个文件夹 + 一张引用它的卡片（验证迁移后 folder_id 仍被保留）
+                    db.execSQL(
+                        "INSERT INTO `card_folders` " +
+                            "(`id`, `name`, `color_argb`, `icon_key`, `sort_order`, `created_at_millis`) " +
+                            "VALUES (1, '商旅', 255, 'folder', 0, 0)",
+                    )
+                    db.execSQL(
+                        "INSERT INTO `cards` (" +
+                            "`id`, `name`, `bank`, `card_number_masked`, `required_count`, `color_argb`, " +
+                            "`note`, `image_source_type`, `card_orientation`, `folder_id`, " +
+                            "`created_at_millis`, `current_count`, `archived`" +
+                            ") VALUES (1, 'Visa', '某银行', '**** 1234', 6, 255, '', 'USER', 'LANDSCAPE', 1, 0, 0, 0)",
+                    )
+                }
+
+                override fun onUpgrade(
+                    db: SupportSQLiteDatabase,
+                    oldVersion: Int,
+                    newVersion: Int,
+                ) {
+                    // 测试只建 v5；真正的升级交给被测的 ALL_MIGRATIONS。
+                }
+            }
+
+        val helper =
+            FrameworkSQLiteOpenHelperFactory().create(
+                SupportSQLiteOpenHelper.Configuration
+                    .builder(context)
+                    .name(dbName)
+                    .callback(callback)
+                    .build(),
+            )
+        helper.writableDatabase.use { /* 触发 onCreate，落地 v5 schema + 样例数据 */ }
+        helper.close()
+    }
+}

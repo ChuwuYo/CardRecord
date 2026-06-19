@@ -2,6 +2,8 @@ package com.shuaji.cards.data.local
 
 import androidx.room.ColumnInfo
 import androidx.room.Entity
+import androidx.room.ForeignKey
+import androidx.room.Index
 import androidx.room.PrimaryKey
 import kotlinx.serialization.Serializable
 
@@ -31,7 +33,23 @@ import kotlinx.serialization.Serializable
  * 也作为 `BackupBundle.cards` 的元素直接走 JSON 序列化导出。
  */
 @Serializable
-@Entity(tableName = "cards")
+@Entity(
+    tableName = "cards",
+    // folder_id 外键：删除文件夹时把该文件夹下卡片的 folder_id 置空（卡片归「未分类」）。
+    // 历史坑：MIGRATION_5_6 早就在建表 SQL 里写了这条 ON DELETE SET NULL 外键，但实体一直没
+    // 声明，导致 (1) 全新安装的 cards 表其实没外键、SET NULL 不生效；(2) v5→v6 升级用户的 DB
+    // 带外键、与实体期望不一致、Room 启动校验崩溃。MIGRATION_6_7 统一两条路径，使实体声明
+    // 与磁盘 schema 一致。indices 必须同时声明：Room 期望被外键引用的子列上有 index_cards_folder_id。
+    foreignKeys = [
+        ForeignKey(
+            entity = CardFolderEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["folder_id"],
+            onDelete = ForeignKey.SET_NULL,
+        ),
+    ],
+    indices = [Index("folder_id")],
+)
 data class CardEntity(
     @PrimaryKey(autoGenerate = true)
     val id: Long = 0L,
