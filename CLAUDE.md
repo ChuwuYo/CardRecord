@@ -11,7 +11,7 @@
 ## 2. 技术栈
 
 - Kotlin + **Jetpack Compose** + **Material 3**（含 Material You 动态取色）。
-- **Room**（DB version 2）做持久化；**DataStore Preferences** 存设置。
+- **Room**（DB version 7，见 `AppDatabase.kt`）做持久化；**DataStore Preferences** 存设置。
 - 手写轻量 DI：`data/AppContainer.kt` + `ShuajiApplication`，ViewModel 走 `*ViewModelFactory` / `ViewModelFactories.kt`。
 - **i18n**：简体中文 + English，`AppCompatDelegate.setApplicationLocales` 做应用内语言切换。
 - 第三方：`skydoves/colorpicker-compose`、`materialkolor`、`coil3`。
@@ -28,8 +28,11 @@
 
 ## 4. CI / 出包
 
-- workflow：`.github/workflows/build-apk.yml`，名为 **Build APK**。
-- 触发：手动 `workflow_dispatch` 或 push 到 `main`。
+- **两个 workflow**（`.github/workflows/`）：
+  - `ci.yml`（**CI**）：所有分支 push / PR 跑 `ktlintCheck` + `:app:testDebugUnitTest`，
+    concurrency 取消同分支旧运行，上传测试报告 artifact。**这是验证关**——改完推分支即自动跑。
+  - `build-apk.yml`（**Build APK**）：见下，只出 APK。
+- **Build APK** 触发：手动 `workflow_dispatch` 或 push 到 `main`。
 - 它**不**用仓库的假 gradlew，而是用 `gradle/actions/setup-gradle@v4` 装真 Gradle 8.14.4，再 `gradle :app:assembleRelease`。
 - 产物：artifact **`cardrecord-release-apk`**，在运行页 Artifacts 下载（保留 90 天）。
 - 已验证可成功出包。日志里 `Node 20 deprecated` 和 `git exit 128`（setup-gradle 的 dependency-graph 探测）都是**无害 warning**。
@@ -52,7 +55,11 @@
 
 - 单测用 **JUnit4 + Robolectric 4.13 + Room in-memory + kotlinx-coroutines-test**；`MainDispatcherRule` 切主调度器。
 - Robolectric 的 `android-all-instrumented` SDK 默认走 Sonatype 在国内不稳，`gradle.properties` 里配了 aliyun 镜像 + 可用 `ROBOLECTRIC_*` 环境变量走本地仓库/离线（见 `app/build.gradle.kts` testOptions 注释）。
-- 现有测试：`BackupRepositoryTest`、`SettingsViewModelTest`、`ColorHexTest`。
+- 现有测试：`BackupRepositoryTest`、`SettingsViewModelTest`、`ColorHexTest`、
+  `MigrationTest`（Room v5→最新迁移 + 外键 SET NULL 回归）、`CardRepositoryTest`
+  （刷卡派生计数 / 重置 / 年费自动续期）。
+- 迁移测试不依赖导出 schema（本项目 `exportSchema=false`）：手建旧版库 → 跑
+  `AppDatabase.ALL_MIGRATIONS` → 强制 open 触发校验。新增/改列必须补迁移 + `MigrationTest` 用例。
 
 ## 8. 源码地图
 
@@ -75,4 +82,5 @@ app/src/main/java/com/shuaji/cards/
 ## 9. 当前进行中的工作
 
 - 分支 `claude/project-quality-and-docs` 正在做「全项目质量提升 + 文档化」。
+- **架构/设计/决策见 `docs/Design.md`**（WHY 与架构取舍，ADR）。
 - **进度看板与计划见 `docs/PLAN_quality_pass.md`**（含问题清单与「自动压缩前进度记忆」附录）。续作时先读它。

@@ -102,20 +102,22 @@ P1-CRIT（外键 schema 不一致）。
 
 ## 附录 B：进度记忆（自动压缩前更新，供下次续作）
 
-- **当前阶段：P2/P5/P1-CRIT 已落地，等 CI 验证。**
-- 已提交：P0（Plan+CLAUDE.md）、P1（问题清单）、P2（data 层零影响重构：Calendar 复用 +
-  备份查询去重）、CI（新增 ci.yml 跑 ktlint+单测、build-apk 加 dependency-graph:disabled）、
-  **P1-CRIT 修复**（CardEntity 补 @ForeignKey(SET_NULL)+@Index；AppDatabase 升 v7 +
-  MIGRATION_6_7 统一 cards 外键 + 暴露 ALL_MIGRATIONS；deleteFolder 注释更正；
-  新增 MigrationTest.kt 两条用例）。
+- **当前阶段：P1-CRIT/P2/P3(部分)/P5/P7 已落地，CI 多次绿。**
+- **已 CI 验证绿**：P0、P1、P2、CI 基建、**P1-CRIT 修复 + MigrationTest**（commit a0521c2 绿）、
+  P3 死代码删除（commit 3093046 绿）。
+- 本批新增（待 CI 验证）：**P5** `CardRepositoryTest`（recordSwipe 派生计数 / resetCardCycle /
+  resetOverdueCycles 整年推进与边界）；**P7** `docs/Design.md`（联网调研 arc42/C4/ADR/Google
+  design doc 后，对照源码写成，已人工核对修正 detekt 描述）；CLAUDE.md 更新（DB v7、ci.yml、
+  测试清单、指向 Design.md）。
+- **判断记录（有意不改的项）**：`formatDate` 的 SimpleDateFormat 不提为静态（会缓存 Locale，
+  语言切换后变陈旧=行为变更）；`applicationContext as ShuajiApplication` 保留（地道写法，
+  改了是低价值 churn）。其余魔法数提常量/SettingsScreen 重复采集列为可选 polish。
 - **待办（按序）**：
-  1. **盯 ci.yml 运行结果**：确认 ktlint 过、MigrationTest 两条用例过、原有测试过。
-     若 MigrationTest 失败按报错修（最可能是 v5 schema 还原细节或 FK 未启用）。
-  2. 继续 P2/P3 其余零影响重构（UI/component：SimpleDateFormat 复用、魔法数提常量、
-     SettingsScreen 重复采集、CardFolderViewModel 死代码确认删除、ShuajiApp 安全转型）。
-  3. P5 补更多关键流程单测（recordSwipe/resetOverdueCycles/年费续期日期推进、ViewModel 状态）。
-  4. P6 脚本/CI 收尾；P7 Design.md（联网调研规范）；P8 交叉终审 + 更新 CHANGELOG/版本号
-     （P1-CRIT 是面向所有用户的 DB 修复，发版时 versionName 应 patch+、CHANGELOG 记一条）。
+  1. 盯本批 CI（CardRepositoryTest 绿）。失败按报错修。
+  2. P3 剩余可选 polish（CardVisual 魔法色提常量等，价值递减，时间够再做）。
+  3. **P8 终审 + 发版收尾**：P1-CRIT 是面向所有用户的 DB 修复 → CHANGELOG 记一条 +
+     versionName patch（1.5.5→1.5.6 / versionCode 23）+ 同步 README「数据库 v2」陈旧描述。
+     最后做一次整体交叉 review。
 - 旧记录：P1 完成情况见附录 A。
 - **续作建议顺序**：
   1. 先做低风险零影响重构（data 层 3 项 + UI/component 各项），每组一个 `refactor:` commit，
