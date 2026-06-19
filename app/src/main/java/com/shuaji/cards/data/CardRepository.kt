@@ -125,10 +125,11 @@ class CardRepository(
             // 解决方案：用 `!!`（Kotlin 平台类型契约的「我保证非空」）配合注释，比 elvis 死代码
             // 干净。
             val currentNext = card.nextDueDateMillis!!
-            // 一次性推 N 年：用户半年没开 app，nextDueDate 可能已经过 1+ 年
+            // 一次性推 N 年：用户半年没开 app，nextDueDate 可能已经过 1+ 年。
+            // Calendar 实例提到循环外复用——推 N 年时不必每轮 new 一个。
+            val cal = GregorianCalendar()
             var next = currentNext
             while (next <= now) {
-                val cal = GregorianCalendar()
                 cal.time = Date(next)
                 cal.add(Calendar.YEAR, 1)
                 next = cal.timeInMillis
