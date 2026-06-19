@@ -81,8 +81,9 @@ app/
 
 ## 数据迁移
 
-当前数据库版本 `v2`（从 `v1` 起新增三列：`image_source_type`、`image_provider_key`、`card_orientation`）。
-启动时自动执行 `MIGRATION_1_2`，失败时 fallback 到清库（兜底策略）。
+当前数据库版本 `v7`，`v1 → v7` 共 6 条迁移按序注册（`AppDatabase.ALL_MIGRATIONS`），
+逐字符匹配 Room 生成的 schema；失败时 fallback 到清库（兜底策略，迁移写对后不会触发）。
+完整迁移历史与设计原则见 [`docs/Design.md`](docs/Design.md) 第 9 节。
 
 ## License
 

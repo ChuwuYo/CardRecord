@@ -102,7 +102,13 @@ P1-CRIT（外键 schema 不一致）。
 
 ## 附录 B：进度记忆（自动压缩前更新，供下次续作）
 
-- **当前阶段：P1-CRIT/P2/P3(部分)/P5/P7 已落地，CI 多次绿。**
+- **当前阶段：P1-CRIT/P2/P3(部分)/P5/P7/P8 已落地并 CI 绿（b35253f success：ktlint+全部单测通过）。**
+- **P8 收尾**：版本 1.5.5→1.5.6 / code 23；CHANGELOG 记 v1.5.6（P1-CRIT 修复 + CI/测试/文档）；
+  README「数据库 v2」→ v7 + 指向 Design.md；删除误提交的空 `CreditRecord` 子模块占位（修 CI
+  checkout exit 128 warning）。
+- **工具提示**：本会话已把 ktlint 1.5.0 CLI 下到 `/tmp/ktlint`，改 Kotlin 后可
+  `java -jar /tmp/ktlint --format <file>` 本地零往返验证风格；GitHub token 存 `/tmp/.ghtoken`
+  （仅本会话，查 CI 用 `curl -H "Authorization: Bearer $(cat /tmp/.ghtoken)"`，避免匿名 429）。
 - **已 CI 验证绿**：P0、P1、P2、CI 基建、**P1-CRIT 修复 + MigrationTest**（commit a0521c2 绿）、
   P3 死代码删除（commit 3093046 绿）。
 - 本批新增（待 CI 验证）：**P5** `CardRepositoryTest`（recordSwipe 派生计数 / resetCardCycle /
