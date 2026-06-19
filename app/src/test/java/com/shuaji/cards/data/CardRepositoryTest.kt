@@ -59,7 +59,11 @@ class CardRepositoryTest {
         )
 
     private suspend fun currentCount(cardId: Long): Int =
-        repo.observeCards().first().single { it.card.id == cardId }.currentCount
+        repo
+            .observeCards()
+            .first()
+            .single { it.card.id == cardId }
+            .currentCount
 
     @Test
     fun recordSwipe_incrementsDerivedCount() =
@@ -98,10 +102,11 @@ class CardRepositoryTest {
             val now = System.currentTimeMillis()
             // 设一个「约 2.2 年前」的结算日：续期应按整年推进到刚好 > now
             val overdueDue =
-                GregorianCalendar().apply {
-                    timeInMillis = now
-                    add(Calendar.DAY_OF_YEAR, -800)
-                }.timeInMillis
+                GregorianCalendar()
+                    .apply {
+                        timeInMillis = now
+                        add(Calendar.DAY_OF_YEAR, -800)
+                    }.timeInMillis
             val id = repo.upsertCard(sampleCard(nextDue = overdueDue))
             repo.recordSwipe(id)
             repo.recordSwipe(id)
@@ -112,7 +117,11 @@ class CardRepositoryTest {
             assertEquals("应有 1 张卡被续期", 1, resetCount)
             assertEquals("续期应清空该卡流水", 0, currentCount(id))
 
-            val newDue = repo.observeCard(id).first()!!.card.nextDueDateMillis!!
+            val newDue =
+                repo
+                    .observeCard(id)
+                    .first()!!
+                    .card.nextDueDateMillis!!
             val oneYearMillis = 366L * 24 * 60 * 60 * 1000
             assertTrue("新结算日应推到未来", newDue > now)
             assertTrue("应按整年最小推进、不过冲超过一年", newDue - now <= oneYearMillis)
