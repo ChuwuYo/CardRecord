@@ -48,14 +48,15 @@ class CardRepositoryTest {
     private fun sampleCard(
         name: String = "Visa",
         nextDue: Long? = null,
-    ) = CardEntity(
-        name = name,
-        bank = "某银行",
-        cardNumberMasked = "**** 1234",
-        nextDueDateMillis = nextDue,
-        requiredCount = 6,
-        colorArgb = 0xFF1234,
-    )
+    ): CardEntity =
+        CardEntity(
+            name = name,
+            bank = "某银行",
+            cardNumberMasked = "**** 1234",
+            nextDueDateMillis = nextDue,
+            requiredCount = 6,
+            colorArgb = 0xFF1234,
+        )
 
     private suspend fun currentCount(cardId: Long): Int =
         repo.observeCards().first().single { it.card.id == cardId }.currentCount

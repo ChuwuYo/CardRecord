@@ -48,7 +48,13 @@ jobs:
           sed -i -E '/^systemProp\.(http|https)\.(proxyHost|proxyPort|nonProxyHosts)=/d' gradle.properties
 
       - name: ktlint
-        run: gradle ktlintCheck --no-daemon --stacktrace
+        run: |
+          gradle ktlintCheck --no-daemon || {
+            echo "::group::ktlint violation reports"
+            find app/build/reports/ktlint -name '*.txt' -exec sh -c 'echo "== $1 =="; cat "$1"' _ {} \;
+            echo "::endgroup::"
+            exit 1
+          }
 
       - name: Unit tests
         run: gradle :app:testDebugUnitTest --no-daemon --stacktrace
