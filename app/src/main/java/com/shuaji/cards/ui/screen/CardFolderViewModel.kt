@@ -54,28 +54,9 @@ class CardFolderViewModel(
         }
     }
 
-    fun rename(
-        folder: CardFolderEntity,
-        newName: String,
-    ) {
-        if (newName.isBlank()) return
-        viewModelScope.launch {
-            repository.updateFolder(folder.copy(name = newName.trim()))
-        }
-    }
-
-    fun recolor(
-        folder: CardFolderEntity,
-        newColor: Int,
-    ) {
-        viewModelScope.launch {
-            repository.updateFolder(folder.copy(colorArgb = newColor))
-        }
-    }
-
     /**
-     * 一次性更新文件夹的名称和颜色。优先用这个而不是 rename + recolor，
-     * 避免在快速连点保存时出现两条中间状态把 Flow 触发两次重组。
+     * 一次性更新文件夹的名称和颜色（单条 UPDATE），避免拆成两次写
+     * 在快速连点保存时产生两条中间状态、把 Flow 触发两次重组。
      */
     fun update(
         folder: CardFolderEntity,
