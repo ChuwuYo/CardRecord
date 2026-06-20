@@ -9,7 +9,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [CardEntity::class, TransactionEntity::class, CardFolderEntity::class],
-    version = 6,
+    version = 7,
     exportSchema = false,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -256,6 +256,86 @@ abstract class AppDatabase : RoomDatabase() {
                 }
             }
 
+        /**
+         * v6 → v7：**统一 `cards` 表的外键 schema**，修复历史不一致。
+         *
+         * 背景（两条互相矛盾的历史路径）：
+         * - **全新安装到 v6**：`cards` 表由 Room 按 `CardEntity` 生成。v6 之前的 `CardEntity`
+         *   **没声明** `@ForeignKey`/`@Index`，所以这些设备上的 `cards` 表**没有** folder 外键
+         *   ⇒ `deleteFolder` 依赖的 `ON DELETE SET NULL` 形同虚设，删文件夹后卡的 `folder_id`
+         *   变悬空、不归「未分类」。
+         * - **v5 → v6 升级**：`MIGRATION_5_6` 的建表 SQL **写了** `ON DELETE SET NULL` 外键
+         *   ⇒ 这些设备的 `cards` 表**有**外键，但与「实体期望无外键」对不上，
+         *   Room 启动 `onValidateSchema` 抛 `IllegalStateException`、且不会走 destructive 兜底
+         *   （校验失败回滚 ⇒ 这些用户的 `user_version` 实际仍停在 5）。
+         *
+         * 本迁移把两条路径都收敛到「带外键 + `index_cards_folder_id` 索引」的统一形态，
+         * 与新版 `CardEntity` 的 `@ForeignKey(SET_NULL)` + `@Index("folder_id")` 声明逐字符匹配：
+         * - 全新 v6 设备（无外键）：重建后获得外键 + 索引。
+         * - 曾崩溃、实际停在 v5 的设备：先跑 5→6 建出外键，再跑 6→7 重建并补索引。
+         *
+         * 走「建新表 → 复制 → 删旧表 → 重命名 → 建索引」四步（SQLite 不支持 ALTER 改外键），
+         * 列定义与 `MIGRATION_5_6` 的 `cards` 完全一致，仅补齐外键与索引。
+         */
+        private val MIGRATION_6_7 =
+            object : Migration(6, 7) {
+                override fun migrate(db: SupportSQLiteDatabase) {
+                    db.execSQL("PRAGMA foreign_keys=OFF")
+                    db.execSQL(
+                        """
+                        CREATE TABLE IF NOT EXISTS `cards_new` (
+                            `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                            `name` TEXT NOT NULL,
+                            `bank` TEXT NOT NULL,
+                            `card_number_masked` TEXT NOT NULL,
+                            `valid_until_millis` INTEGER,
+                            `next_due_date_millis` INTEGER,
+                            `required_count` INTEGER NOT NULL,
+                            `color_argb` INTEGER NOT NULL,
+                            `note` TEXT NOT NULL,
+                            `image_uri` TEXT,
+                            `image_source_type` TEXT NOT NULL DEFAULT 'USER',
+                            `image_provider_key` TEXT,
+                            `card_orientation` TEXT NOT NULL DEFAULT 'LANDSCAPE',
+                            `folder_id` INTEGER,
+                            `created_at_millis` INTEGER NOT NULL,
+                            FOREIGN KEY(`folder_id`) REFERENCES `card_folders`(`id`) ON UPDATE NO ACTION ON DELETE SET NULL
+                        )
+                        """.trimIndent(),
+                    )
+                    db.execSQL(
+                        "INSERT INTO `cards_new` (" +
+                            "`id`, `name`, `bank`, `card_number_masked`, `valid_until_millis`, " +
+                            "`next_due_date_millis`, `required_count`, `color_argb`, `note`, " +
+                            "`image_uri`, `image_source_type`, `image_provider_key`, " +
+                            "`card_orientation`, `folder_id`, `created_at_millis`" +
+                            ") SELECT " +
+                            "`id`, `name`, `bank`, `card_number_masked`, `valid_until_millis`, " +
+                            "`next_due_date_millis`, `required_count`, `color_argb`, `note`, " +
+                            "`image_uri`, `image_source_type`, `image_provider_key`, " +
+                            "`card_orientation`, `folder_id`, `created_at_millis` " +
+                            "FROM `cards`",
+                    )
+                    db.execSQL("DROP TABLE `cards`")
+                    db.execSQL("ALTER TABLE `cards_new` RENAME TO `cards`")
+                    db.execSQL("CREATE INDEX IF NOT EXISTS `index_cards_folder_id` ON `cards` (`folder_id`)")
+                    db.execSQL("PRAGMA foreign_keys=ON")
+                }
+            }
+
+        /**
+         * 全部迁移，按版本顺序。`get()` 与迁移测试共用同一份，避免「测试漏注册某条迁移」。
+         */
+        val ALL_MIGRATIONS: Array<Migration> =
+            arrayOf(
+                MIGRATION_1_2,
+                MIGRATION_2_3,
+                MIGRATION_3_4,
+                MIGRATION_4_5,
+                MIGRATION_5_6,
+                MIGRATION_6_7,
+            )
+
         fun get(context: Context): AppDatabase =
             instance ?: synchronized(this) {
                 instance ?: Room
@@ -263,13 +343,7 @@ abstract class AppDatabase : RoomDatabase() {
                         context.applicationContext,
                         AppDatabase::class.java,
                         "shuaji.db",
-                    ).addMigrations(
-                        MIGRATION_1_2,
-                        MIGRATION_2_3,
-                        MIGRATION_3_4,
-                        MIGRATION_4_5,
-                        MIGRATION_5_6,
-                    )
+                    ).addMigrations(*ALL_MIGRATIONS)
                     // 兜底仍然保留，但写对迁移后这个分支永远走不到
                     .fallbackToDestructiveMigration(true)
                     .build()

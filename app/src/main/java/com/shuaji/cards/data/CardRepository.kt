@@ -81,10 +81,10 @@ class CardRepository(
     suspend fun updateFolder(folder: CardFolderEntity) = folderDao.update(folder)
 
     suspend fun deleteFolder(folder: CardFolderEntity) {
-        // 删除文件夹前先把该文件夹下所有卡的 folder_id 置空
-        // （这里通过 repository 完成，不让 ViewModel 处理）
-        // 注意：当前实现保留「已删除文件夹但卡片还在未分类」的语义
-        // 简单做法：直接删除文件夹，卡片将保留外键引用但查询过滤时显示为未分类
+        // 删文件夹后，该文件夹下卡片的 folder_id 由数据库外键
+        // `ON DELETE SET NULL` 自动置空 → 卡片归「未分类」。
+        // 外键自 v7 起在 cards 表与 CardEntity 上一致声明（见 AppDatabase.MIGRATION_6_7），
+        // 此前全新安装的 cards 表无外键、SET NULL 不生效，已修复。
         folderDao.delete(folder)
     }
 
@@ -125,10 +125,11 @@ class CardRepository(
             // 解决方案：用 `!!`（Kotlin 平台类型契约的「我保证非空」）配合注释，比 elvis 死代码
             // 干净。
             val currentNext = card.nextDueDateMillis!!
-            // 一次性推 N 年：用户半年没开 app，nextDueDate 可能已经过 1+ 年
+            // 一次性推 N 年：用户半年没开 app，nextDueDate 可能已经过 1+ 年。
+            // Calendar 实例提到循环外复用——推 N 年时不必每轮 new 一个。
+            val cal = GregorianCalendar()
             var next = currentNext
             while (next <= now) {
-                val cal = GregorianCalendar()
                 cal.time = Date(next)
                 cal.add(Calendar.YEAR, 1)
                 next = cal.timeInMillis

@@ -286,8 +286,10 @@ class BackupRepository(
     private suspend fun doMerge(bundle: BackupBundle): ImportResult {
         // 1) **写之前**先抓现有 id / name 集合——重名检测不能包含本次刚追加的，
         //    校验 folderId 合法性时也要用"写之前"的现库 id 集合
-        val existingFolderIds = folderDao.listAll().map { it.id }.toSet()
-        val existingFolderNames = folderDao.listAll().map { it.name }.toSet()
+        // 一次查询拿现库 folders，分别建 id / name 两个集合（避免对 folderDao.listAll() 查两次）
+        val existingFolders = folderDao.listAll()
+        val existingFolderIds = existingFolders.map { it.id }.toSet()
+        val existingFolderNames = existingFolders.map { it.name }.toSet()
         val existingCardNames = cardDao.listAll().map { it.name }.toSet()
 
         // 2) 写 folders：id 清零让 SQLite 重新分配，记 oldFolderId → newFolderId 映射

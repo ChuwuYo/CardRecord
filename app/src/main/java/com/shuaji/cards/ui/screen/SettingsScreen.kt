@@ -10,12 +10,16 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.BrightnessMedium
@@ -53,6 +57,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.shuaji.cards.R
@@ -485,23 +490,37 @@ fun SettingsScreen(onBack: () -> Unit) {
             onDismissRequest = { showLanguageDialog = false },
             title = { Text(stringResource(R.string.settings_language_dialog_title)) },
             text = {
+                // 单选对话框用透明、带 selectable 语义的 Row（MD3 single-choice dialog 模式），
+                // 而不是 ListItem——ListItem 的容器色是 colorScheme.surface（深色主题下近黑），
+                // 嵌在 AlertDialog 的 surfaceContainerHigh 容器里会显示成一块更黑的卡片，不协调。
+                // Row 背景透明，继承对话框表面色；selectable 提供单选无障碍语义。
                 Column {
                     AppLanguage.entries.forEach { lang ->
-                        ListItem(
-                            leadingContent = {
-                                RadioButton(
-                                    selected = lang == current,
-                                    onClick = null,
-                                )
-                            },
-                            headlineContent = { Text(stringResource(lang.labelRes)) },
+                        Row(
                             modifier =
-                                Modifier.clickable {
-                                    showLanguageDialog = false
-                                    // AppCompat 会持久化并重建 Activity 以应用新语言
-                                    if (lang != current) AppLanguage.apply(lang)
-                                },
-                        )
+                                Modifier
+                                    .fillMaxWidth()
+                                    .selectable(
+                                        selected = lang == current,
+                                        role = Role.RadioButton,
+                                        onClick = {
+                                            showLanguageDialog = false
+                                            // AppCompat 会持久化并重建 Activity 以应用新语言
+                                            if (lang != current) AppLanguage.apply(lang)
+                                        },
+                                    ).padding(vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            RadioButton(
+                                selected = lang == current,
+                                onClick = null,
+                            )
+                            Spacer(Modifier.width(16.dp))
+                            Text(
+                                text = stringResource(lang.labelRes),
+                                style = MaterialTheme.typography.bodyLarge,
+                            )
+                        }
                     }
                 }
             },
