@@ -1,14 +1,16 @@
 name: Build APK
 
-# 手动触发（Actions 页面点 "Run workflow"）或推送到 main 时构建 release APK。
-# 产物在本次运行的 Artifacts 里下载（cardrecord-release-apk）。
+# 手动触发（Actions 页面点 "Run workflow"，可选任意分支）或推送到 main 时构建 release APK。
+# 产物：1) 本次运行的 Artifacts（cardrecord-release-apk，zip，需登录）；
+#       2) 发到滚动预发布 Release「apk-latest」，提供免登录的 .apk 直链（手机可直接下）。
 on:
   workflow_dispatch:
   push:
     branches: [ main ]
 
+# 需要 write 才能由 runner 创建/更新 Release（不受本沙箱 tag push 限制，走 GITHUB_TOKEN）
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build-apk:
@@ -67,3 +69,26 @@ jobs:
           name: cardrecord-release-apk
           path: app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
+
+      # 读出 versionName，仅用于 Release 标题/说明展示
+      - name: Read versionName
+        id: ver
+        run: echo "name=$(grep -oP 'versionName = \"\K[^\"]+' app/build.gradle.kts)" >> "$GITHUB_OUTPUT"
+
+      # 把 APK 发到滚动预发布「apk-latest」：每次构建把该 tag 移到当前提交并覆盖同名资产，
+      # 下载直链固定不变：
+      #   https://github.com/<owner>/<repo>/releases/download/apk-latest/app-release.apk
+      - name: Publish APK to rolling pre-release (apk-latest)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: apk-latest
+          name: 最新测试包 v${{ steps.ver.outputs.name }}
+          prerelease: true
+          body: |
+            自动构建的最新可安装 APK（**debug 签名，仅供测试**，非正式版本发布）。
+            - 版本：v${{ steps.ver.outputs.name }}
+            - 提交：${{ github.sha }}
+            - 分支：${{ github.ref_name }}
+
+            直接下载下方 Assets 里的 `app-release.apk` 即可安装。
+          files: app/build/outputs/apk/release/app-release.apk
