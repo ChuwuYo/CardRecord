@@ -2,7 +2,6 @@ package com.shuaji.cards.ui.component
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -26,7 +25,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
@@ -87,7 +86,8 @@ fun CardVisual(
         modifier = modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.medium,
         colors = CardDefaults.cardColors(containerColor = Color.Transparent),
-        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
+        // 竖版卡面只占父级中间一段；外层 Card 若投影会形成整行阴影，改由实际卡面盒子投影。
+        elevation = CardDefaults.cardElevation(defaultElevation = if (orientation == CardOrientation.PORTRAIT) 0.dp else 4.dp),
     ) {
         when (orientation) {
             CardOrientation.LANDSCAPE ->
@@ -146,9 +146,6 @@ private fun LandscapeCardBody(
                 card = card,
                 sourceType = sourceType,
             )
-            if (shouldShowBlades(sourceType)) {
-                DecorationBlades()
-            }
             if (shouldShowProviderDecoration(sourceType, network != null)) {
                 ProviderNetworkDecoration(
                     network = checkNotNull(network),
@@ -163,7 +160,7 @@ private fun LandscapeCardBody(
                         .padding(start = 16.dp, top = 16.dp, bottom = 16.dp),
                 card = card,
                 contentEndPadding =
-                    if (shouldShowNetworkBadge(network != null)) {
+                    if (shouldShowNetworkBadge(sourceType, network != null)) {
                         networkLayout.contentEndPadding
                     } else {
                         16.dp
@@ -172,7 +169,7 @@ private fun LandscapeCardBody(
                 showBank = showBank,
                 showName = showName,
             )
-            if (shouldShowNetworkBadge(network != null)) {
+            if (shouldShowNetworkBadge(sourceType, network != null)) {
                 NetworkCornerBadge(
                     network = checkNotNull(network),
                     layout = networkLayout,
@@ -207,6 +204,7 @@ private fun PortraitCardBody(
                 Modifier
                     .width(width)
                     .height(height)
+                    .shadow(4.dp, MaterialTheme.shapes.medium)
                     .clip(MaterialTheme.shapes.medium)
                     .background(cardSurfaceBrush(card)),
         ) {
@@ -215,9 +213,6 @@ private fun PortraitCardBody(
                 card = card,
                 sourceType = sourceType,
             )
-            if (shouldShowBlades(sourceType)) {
-                DecorationBlades()
-            }
             if (shouldShowProviderDecoration(sourceType, network != null)) {
                 ProviderNetworkDecoration(
                     network = checkNotNull(network),
@@ -232,7 +227,7 @@ private fun PortraitCardBody(
                         .padding(start = 14.dp, top = 14.dp, bottom = 14.dp),
                 card = card,
                 contentEndPadding =
-                    if (shouldShowNetworkBadge(network != null)) {
+                    if (shouldShowNetworkBadge(sourceType, network != null)) {
                         networkLayout.contentEndPadding
                     } else {
                         14.dp
@@ -241,7 +236,7 @@ private fun PortraitCardBody(
                 showBank = showBank,
                 showName = showName,
             )
-            if (shouldShowNetworkBadge(network != null)) {
+            if (shouldShowNetworkBadge(sourceType, network != null)) {
                 NetworkCornerBadge(
                     network = checkNotNull(network),
                     layout = networkLayout,
@@ -285,7 +280,6 @@ private fun CardImageLayer(
                     contentDescription = stringResource(R.string.card_image_content_description),
                     modifier = modifier.clip(MaterialTheme.shapes.medium),
                     contentScale = ContentScale.Crop,
-                    alpha = 0.35f,
                 )
             }
         }
@@ -299,32 +293,10 @@ internal fun shouldShowProviderDecoration(
     networkPresent: Boolean,
 ): Boolean = sourceType == ImageSourceType.PROVIDER && networkPresent
 
-internal fun shouldShowNetworkBadge(networkPresent: Boolean): Boolean = networkPresent
-
-internal fun shouldShowBlades(sourceType: ImageSourceType): Boolean = sourceType == ImageSourceType.USER
-
-// ── 装饰：右上角斜条纹（锋锐风格） ───────────────────────────────
-
-@Composable
-private fun BoxScope.DecorationBlades() {
-    Box(
-        modifier =
-            Modifier
-                .align(Alignment.TopEnd)
-                .size(width = 96.dp, height = 22.dp)
-                .rotate(35f)
-                .background(Color.White.copy(alpha = 0.18f)),
-    )
-    Box(
-        modifier =
-            Modifier
-                .align(Alignment.TopEnd)
-                .padding(top = 18.dp, end = 6.dp)
-                .size(width = 64.dp, height = 12.dp)
-                .rotate(35f)
-                .background(Color.White.copy(alpha = 0.10f)),
-    )
-}
+internal fun shouldShowNetworkBadge(
+    sourceType: ImageSourceType,
+    networkPresent: Boolean,
+): Boolean = sourceType != ImageSourceType.USER && networkPresent
 
 // ── 卡面文字内容 ──────────────────────────────────────────────────
 

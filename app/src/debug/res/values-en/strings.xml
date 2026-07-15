@@ -4,7 +4,7 @@
     <string name="card_visual_showcase_pure">Pure color · Visa badge</string>
     <string name="card_visual_showcase_provider_long">Provider preset · Visa · long content</string>
     <string name="card_visual_showcase_compact">Compact 160dp · Mastercard / UnionPay</string>
-    <string name="card_visual_showcase_user">User image · Mastercard badge</string>
+    <string name="card_visual_showcase_user">User image · no added decoration</string>
     <string name="card_visual_showcase_portrait">Portrait provider preset · Visa</string>
     <string name="card_visual_sample_bank">CardRecord Bank</string>
     <string name="card_visual_sample_pure_name">Pure color</string>

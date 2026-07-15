@@ -13,9 +13,8 @@ import kotlin.math.hypot
 class CardVisualTest {
     @Test
     fun pureCard_hasBadgeButNoProviderDecorationOrBlades() {
-        assertTrue(shouldShowNetworkBadge(networkPresent = true))
+        assertTrue(shouldShowNetworkBadge(ImageSourceType.NONE, networkPresent = true))
         assertFalse(shouldShowProviderDecoration(ImageSourceType.NONE, networkPresent = true))
-        assertFalse(shouldShowBlades(ImageSourceType.NONE))
     }
 
     @Test
@@ -25,9 +24,9 @@ class CardVisualTest {
     }
 
     @Test
-    fun userImage_keepsImageDecorationAndMayShowBadge() {
-        assertTrue(shouldShowBlades(ImageSourceType.USER))
-        assertTrue(shouldShowNetworkBadge(networkPresent = true))
+    fun userImage_neverAddsNetworkVisuals() {
+        assertFalse(shouldShowProviderDecoration(ImageSourceType.USER, networkPresent = true))
+        assertFalse(shouldShowNetworkBadge(ImageSourceType.USER, networkPresent = true))
     }
 
     @Test
@@ -44,6 +43,10 @@ class CardVisualTest {
 
         assertEquals(36.dp, compact.badgeWidth)
         assertEquals(64.dp, large.badgeWidth)
+        assertEquals(6.dp, compact.badgeInset)
+        assertEquals(8.dp, large.badgeInset)
+        assertEquals(compact.badgeWidth + compact.badgeInset + 12.dp, compact.contentEndPadding)
+        assertEquals(large.badgeWidth + large.badgeInset + 12.dp, large.contentEndPadding)
         assertEquals(76.8.dp, compact.largeRing.diameter)
         assertEquals(54.4.dp, compact.smallRing.diameter)
         assertTrue(large.contentEndPadding > compact.contentEndPadding)

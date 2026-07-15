@@ -33,6 +33,7 @@ internal data class RingLayout(
 
 internal data class CardNetworkVisualLayout(
     val badgeWidth: Dp,
+    val badgeInset: Dp,
     val contentEndPadding: Dp,
     val watermarkWidth: Dp,
     val watermarkHeight: Dp,
@@ -44,11 +45,13 @@ internal data class CardNetworkVisualLayout(
 
 internal fun resolveCardNetworkVisualLayout(cardWidth: Dp): CardNetworkVisualLayout {
     val badgeWidth = (cardWidth * 0.22f).coerceIn(36.dp, 64.dp)
+    val badgeInset = (cardWidth * 0.025f).coerceIn(6.dp, 10.dp)
     val largeDiameter = cardWidth * 48f / 100f
     val smallDiameter = cardWidth * 34f / 100f
     return CardNetworkVisualLayout(
         badgeWidth = badgeWidth,
-        contentEndPadding = badgeWidth + 12.dp,
+        badgeInset = badgeInset,
+        contentEndPadding = badgeWidth + badgeInset + 12.dp,
         watermarkWidth = cardWidth * 0.35f,
         watermarkHeight = cardWidth * 0.24f,
         watermarkRight = cardWidth * 0.07f,
@@ -102,6 +105,7 @@ internal fun BoxScope.NetworkCornerBadge(
         modifier =
             Modifier
                 .align(Alignment.BottomEnd)
+                .padding(end = layout.badgeInset, bottom = layout.badgeInset)
                 .size(width = layout.badgeWidth, height = layout.badgeWidth * (2f / 3f))
                 .background(Color.White.copy(alpha = 0.14f), RoundedCornerShape(8.dp))
                 .padding(horizontal = 6.dp, vertical = 4.dp),

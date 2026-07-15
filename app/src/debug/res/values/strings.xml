@@ -4,7 +4,7 @@
     <string name="card_visual_showcase_pure">纯色卡 · Visa 徽标</string>
     <string name="card_visual_showcase_provider_long">卡组织预设 · Visa · 长文本</string>
     <string name="card_visual_showcase_compact">160dp 小卡 · Mastercard / 银联</string>
-    <string name="card_visual_showcase_user">用户图片 · Mastercard 徽标</string>
+    <string name="card_visual_showcase_user">用户图片 · 无附加装饰</string>
     <string name="card_visual_showcase_portrait">竖版卡组织预设 · Visa</string>
     <string name="card_visual_sample_bank">刷记银行</string>
     <string name="card_visual_sample_pure_name">纯色卡</string>
