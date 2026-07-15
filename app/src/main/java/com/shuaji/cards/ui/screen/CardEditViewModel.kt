@@ -150,6 +150,34 @@ class CardEditViewModel(
         }
     }
 
+    fun selectImageSource(type: ImageSourceType) {
+        update { state ->
+            state.copy(
+                imageSourceType = type,
+                imageProviderKey =
+                    if (type == ImageSourceType.PROVIDER) {
+                        state.imageProviderKey ?: CardNetworkProvider.VISA.key
+                    } else {
+                        state.imageProviderKey
+                    },
+            )
+        }
+    }
+
+    fun selectNetwork(network: CardNetworkProvider?) {
+        update { state ->
+            state.copy(
+                imageSourceType =
+                    if (network == null && state.imageSourceType == ImageSourceType.PROVIDER) {
+                        ImageSourceType.NONE
+                    } else {
+                        state.imageSourceType
+                    },
+                imageProviderKey = network?.key,
+            )
+        }
+    }
+
     fun selectUserImage(uri: String) {
         _uiState.update { current ->
             if (current.isSaving || current.isClosing || current.saveResult is CardEditSaveResult.Saved) {
@@ -205,7 +233,7 @@ class CardEditViewModel(
                         note = state.note,
                         imageUri = persistedImageUri(state.imageSourceType, state.imageUri),
                         imageSourceType = state.imageSourceType.name,
-                        imageProviderKey = state.imageProviderKey.takeIf { state.imageSourceType == ImageSourceType.PROVIDER },
+                        imageProviderKey = state.imageProviderKey,
                         cardOrientation = state.cardOrientation.name,
                         folderId = state.folderId,
                         createdAtMillis = preserved?.card?.createdAtMillis ?: clock.millis(),

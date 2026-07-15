@@ -169,6 +169,7 @@
     <string name="edit_image_permission_error_title">无法使用这张图片</string>
     <string name="edit_image_permission_error_message">图片来源未授予长期读取权限。请选择设备中的其他图片。</string>
     <string name="edit_section_choose_network">选择卡组织</string>
+    <string name="edit_network_none">不显示卡组织</string>
     <string name="edit_section_orientation">卡面朝向</string>
     <string name="edit_orientation_landscape">横版</string>
     <string name="edit_orientation_portrait">竖版</string>

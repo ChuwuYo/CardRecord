@@ -168,6 +168,7 @@
     <string name="edit_image_permission_error_title">Can’t use this image</string>
     <string name="edit_image_permission_error_message">The image provider didn’t grant persistent read access. Please choose another image stored on this device.</string>
     <string name="edit_section_choose_network">Choose network</string>
+    <string name="edit_network_none">No network badge</string>
     <string name="edit_section_orientation">Card orientation</string>
     <string name="edit_orientation_landscape">Landscape</string>
     <string name="edit_orientation_portrait">Portrait</string>

@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -77,6 +78,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
@@ -266,38 +268,19 @@ fun CardEditScreen(
                 providerLabel = providerLabel,
                 userLabel = userLabel,
                 noneLabel = noneLabel,
-                onSelect = { type ->
-                    viewModel.update { s ->
-                        s.copy(
-                            imageSourceType = type,
-                            imageProviderKey =
-                                if (type == ImageSourceType.PROVIDER) {
-                                    (s.imageProviderKey ?: CardNetworkProvider.VISA.key)
-                                } else {
-                                    null
-                                },
-                        )
-                    }
-                },
+                onSelect = viewModel::selectImageSource,
             )
 
-            if (state.imageSourceType == ImageSourceType.PROVIDER) {
-                Text(
-                    networkSection,
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                CardNetworkPicker(
-                    selectedKey = state.imageProviderKey,
-                    onSelect = { network ->
-                        viewModel.update {
-                            it.copy(
-                                imageProviderKey = network.key,
-                            )
-                        }
-                    },
-                )
-            }
+            Text(
+                networkSection,
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            CardNetworkPicker(
+                selectedKey = state.imageProviderKey,
+                includeNone = true,
+                onSelect = viewModel::selectNetwork,
+            )
 
             if (state.imageSourceType == ImageSourceType.USER) {
                 // 预览比例与卡片朝向一致，ContentScale.Fit 保留完整图片。
@@ -751,15 +734,24 @@ private fun FolderPicker(
 @Composable
 private fun CardNetworkPicker(
     selectedKey: String?,
-    onSelect: (CardNetworkProvider) -> Unit,
+    includeNone: Boolean,
+    onSelect: (CardNetworkProvider?) -> Unit,
 ) {
+    val networks =
+        buildList<CardNetworkProvider?> {
+            if (includeNone) add(null)
+            addAll(CardNetworkProvider.entries)
+        }
     LazyRow(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(10.dp),
         contentPadding = PaddingValues(horizontal = 4.dp, vertical = 4.dp),
     ) {
-        items(CardNetworkProvider.entries) { network ->
-            val selected = selectedKey == network.key
+        items(networks) { network ->
+            val selected = selectedKey == network?.key
+            val displayName =
+                network?.let { stringResource(it.displayNameRes) }
+                    ?: stringResource(R.string.edit_network_none)
             Column(
                 // 名字统一居中（American Express 2 行；其余 1 行居中显示在 2 行区域中部）
                 horizontalAlignment = Alignment.CenterHorizontally,
@@ -782,8 +774,11 @@ private fun CardNetworkPicker(
                                     Color.Transparent
                                 },
                             shape = MaterialTheme.shapes.medium,
-                        ).clickable { onSelect(network) }
-                        .padding(8.dp),
+                        ).selectable(
+                            selected = selected,
+                            onClick = { onSelect(network) },
+                            role = Role.RadioButton,
+                        ).padding(8.dp),
             ) {
                 // 白底 logo 框（确保 simple-icons 单色 logo 在白底上清晰可见）
                 Box(
@@ -795,12 +790,21 @@ private fun CardNetworkPicker(
                             .background(Color.White),
                     contentAlignment = Alignment.Center,
                 ) {
-                    Image(
-                        painter = painterResource(network.logoRes),
-                        contentDescription = stringResource(network.displayNameRes),
-                        contentScale = ContentScale.Fit,
-                        modifier = Modifier.padding(6.dp),
-                    )
+                    if (network == null) {
+                        Icon(
+                            imageVector = Icons.Default.LayersClear,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(36.dp),
+                        )
+                    } else {
+                        Image(
+                            painter = painterResource(network.logoRes),
+                            contentDescription = null,
+                            contentScale = ContentScale.Fit,
+                            modifier = Modifier.padding(6.dp),
+                        )
+                    }
                 }
                 Spacer(Modifier.height(6.dp))
                 // 名字区域：固定容纳 2 行（≈ 40.dp），单行名字上下居中、American Express 上下两行铺满
@@ -812,7 +816,7 @@ private fun CardNetworkPicker(
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(
-                        text = stringResource(network.displayNameRes),
+                        text = displayName,
                         style = MaterialTheme.typography.labelSmall,
                         color =
                             if (selected) {
