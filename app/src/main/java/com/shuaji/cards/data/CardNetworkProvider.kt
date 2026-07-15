@@ -18,41 +18,49 @@ enum class CardNetworkProvider(
     val key: String,
     @StringRes val displayNameRes: Int,
     @DrawableRes val logoRes: Int,
+    @DrawableRes val markRes: Int,
 ) {
     VISA(
         "visa",
         R.string.network_visa,
         R.drawable.visa,
+        R.drawable.visa_mark,
     ),
     MASTERCARD(
         "mastercard",
         R.string.network_mastercard,
         R.drawable.mastercard,
+        R.drawable.mastercard_mark,
     ),
     UNIONPAY(
         "unionpay",
         R.string.network_unionpay,
         R.drawable.unionpay,
+        R.drawable.unionpay_mark,
     ),
     JCB(
         "jcb",
         R.string.network_jcb,
         R.drawable.jcb,
+        R.drawable.jcb_mark,
     ),
     AMEX(
         "amex",
         R.string.network_amex,
         R.drawable.americanexpress,
+        R.drawable.americanexpress_mark,
     ),
     DINERS(
         "diners",
         R.string.network_diners,
         R.drawable.dinersclub,
+        R.drawable.dinersclub_mark,
     ),
     DISCOVER(
         "discover",
         R.string.network_discover,
         R.drawable.discover,
+        R.drawable.discover_mark,
     ),
     ;
 

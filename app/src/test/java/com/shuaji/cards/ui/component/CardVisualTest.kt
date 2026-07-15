@@ -3,7 +3,10 @@ package com.shuaji.cards.ui.component
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
+import kotlin.math.abs
+import kotlin.math.hypot
 
 class CardVisualTest {
     @Test
@@ -14,8 +17,29 @@ class CardVisualTest {
     }
 
     @Test
-    fun compactCardHeader_stacksIssuerAndNetwork() {
-        assertEquals(false, shouldStackCardHeader(220.dp))
-        assertEquals(true, shouldStackCardHeader(128.dp))
+    fun networkLayout_scalesBetweenCompactAndLargeCards() {
+        val compact = resolveCardNetworkVisualLayout(160.dp)
+        val large = resolveCardNetworkVisualLayout(320.dp)
+
+        assertEquals(36.dp, compact.badgeWidth)
+        assertEquals(64.dp, large.badgeWidth)
+        assertEquals(76.8.dp, compact.largeRing.diameter)
+        assertEquals(54.4.dp, compact.smallRing.diameter)
+        assertTrue(large.contentEndPadding > compact.contentEndPadding)
+    }
+
+    @Test
+    fun networkLayout_hasExactlyTwoPartiallyOverlappingRings() {
+        val layout = resolveCardNetworkVisualLayout(320.dp)
+        val distance =
+            hypot(
+                layout.largeRing.centerX.value - layout.smallRing.centerX.value,
+                layout.largeRing.centerY.value - layout.smallRing.centerY.value,
+            )
+        val sum = layout.largeRing.radius.value + layout.smallRing.radius.value
+        val difference = abs(layout.largeRing.radius.value - layout.smallRing.radius.value)
+
+        assertTrue(distance < sum)
+        assertTrue(distance > difference)
     }
 }
