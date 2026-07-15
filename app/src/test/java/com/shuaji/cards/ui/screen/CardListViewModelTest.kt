@@ -10,6 +10,7 @@ import com.shuaji.cards.data.local.AppDatabase
 import com.shuaji.cards.data.local.CardEntity
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import org.junit.After
@@ -98,7 +99,8 @@ class CardListViewModelTest {
             viewModel.requestDelete(card)
 
             viewModel.confirmDelete()
-            advanceUntilIdle()
+            db.cardDao().observeById(card.card.id).first { it == null }
+            db.transactionDao().observeAll().first { it.isEmpty() }
 
             assertNull(db.cardDao().getById(card.card.id))
             assertEquals(0, db.transactionDao().listAll().size)
