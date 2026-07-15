@@ -12,7 +12,7 @@ import kotlin.math.hypot
 
 class CardVisualTest {
     @Test
-    fun pureCard_hasBadgeButNoProviderDecorationOrBlades() {
+    fun pureCard_hasBadgeButNoProviderDecoration() {
         assertTrue(shouldShowNetworkBadge(ImageSourceType.NONE, networkPresent = true))
         assertFalse(shouldShowProviderDecoration(ImageSourceType.NONE, networkPresent = true))
     }

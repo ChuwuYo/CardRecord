@@ -26,8 +26,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.stringResource
@@ -52,6 +54,14 @@ private const val PORTRAIT_WIDTH_FRACTION = 0.6f
  * 卡面最小可视高度（避免在极窄容器下被压成扁条）。
  */
 private const val CARD_MIN_HEIGHT_DP = 96f
+
+/** 只作用于文字本身，确保浅色用户图片上可读，不改变上传图片像素。 */
+private val CardTextShadow =
+    Shadow(
+        color = Color.Black.copy(alpha = 0.65f),
+        offset = Offset(0f, 1f),
+        blurRadius = 3f,
+    )
 
 /**
  * 卡片视觉组件：渐变 + 反光 + 卡面图片。
@@ -315,7 +325,7 @@ private fun CardContent(
         if (showName) {
             Text(
                 text = card.name.ifBlank { stringResource(R.string.card_default_name) },
-                style = MaterialTheme.typography.titleLarge,
+                style = MaterialTheme.typography.titleLarge.copy(shadow = CardTextShadow),
                 color = Color.White,
                 fontWeight = FontWeight.ExtraBold,
                 maxLines = 1,
@@ -326,7 +336,7 @@ private fun CardContent(
             Spacer(Modifier.height(2.dp))
             Text(
                 card.cardNumberMasked,
-                style = MaterialTheme.typography.titleMedium,
+                style = MaterialTheme.typography.titleMedium.copy(shadow = CardTextShadow),
                 color = Color.White.copy(alpha = 0.85f),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -354,7 +364,7 @@ private fun BankLabel(
         Text(
             text = card.bank.ifBlank { stringResource(R.string.card_default_bank) },
             modifier = Modifier.weight(1f),
-            style = MaterialTheme.typography.labelMedium,
+            style = MaterialTheme.typography.labelMedium.copy(shadow = CardTextShadow),
             color = Color.White.copy(alpha = 0.85f),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
