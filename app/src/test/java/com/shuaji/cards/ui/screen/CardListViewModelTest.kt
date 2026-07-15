@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.shuaji.cards.MainDispatcherRule
+import com.shuaji.cards.data.AnnualFeeCycle
 import com.shuaji.cards.data.CardRepository
 import com.shuaji.cards.data.local.AppDatabase
 import com.shuaji.cards.data.local.CardEntity
@@ -121,6 +122,7 @@ class CardListViewModelTest {
             currentCount = 2,
             isExpired = false,
             lastSwipeAtMillis = null,
+            cycle = AnnualFeeCycle.resolve(null, Clock.systemUTC().instant(), ZoneOffset.UTC),
         )
     }
 }

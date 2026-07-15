@@ -98,6 +98,7 @@
     <string name="list_overall_progress">总进度</string>
     <string name="list_overall_progress_value">%1$d / %2$d 笔  ·  %3$d%%</string>
     <string name="list_overall_progress_done">🎉 全部达标</string>
+    <string name="list_overall_progress_empty">暂无进行中的统计</string>
     <string name="list_empty_title">还没有卡片</string>
     <string name="list_empty_subtitle">点击右下角添加你的第一张卡片\n支持自定义卡名、主题色、所需笔数与到期日</string>
     <string name="list_delete_dialog_title">删除 %1$s？</string>
@@ -122,6 +123,12 @@
     <string name="card_image_content_description">卡面</string>
     <string name="card_default_name">未命名卡片</string>
     <string name="card_default_bank">—</string>
+    <string name="card_counting_starts_later">统计尚未开始 · %1$s</string>
+    <string name="card_cycle_updating">正在更新统计周期</string>
+    <string name="card_record_disabled_upcoming">统计尚未开始，暂不可记一笔</string>
+    <string name="card_record_disabled_overdue">统计周期正在更新，暂不可记一笔</string>
+    <string name="card_record_not_started_feedback">统计尚未开始 · %1$s</string>
+    <string name="card_missing">卡片不存在或已被删除</string>
 
     <!-- ────── 详情页 ────── -->
     <string name="detail_title">卡片详情</string>
@@ -147,6 +154,7 @@
     <string name="detail_reset_dialog_confirm">重置</string>
     <string name="detail_delete_dialog_title">删除此卡片？</string>
     <string name="detail_delete_dialog_message">将同时删除这张卡的全部消费记录，操作不可撤销。</string>
+    <string name="detail_swipe_historical">历史（不计入本期）</string>
 
     <!-- ────── 编辑页 ────── -->
     <string name="edit_title_new">添加卡片</string>
@@ -181,6 +189,8 @@
     <string name="edit_color_hex_label">HEX</string>
     <string name="edit_save_new">保存并添加到列表</string>
     <string name="edit_save_existing">保存修改</string>
+    <string name="edit_next_due_must_be_future">下次年费结算日必须晚于今天</string>
+    <string name="edit_save_failed">保存失败，请重试</string>
 
     <!-- ────── 文件夹页 ────── -->
     <string name="folder_title">文件夹</string>

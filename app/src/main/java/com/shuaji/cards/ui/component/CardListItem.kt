@@ -36,16 +36,18 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.shuaji.cards.R
+import com.shuaji.cards.data.AnnualFeeCycle
+import com.shuaji.cards.data.AnnualFeeCycleState
+import com.shuaji.cards.data.DateToken
 import com.shuaji.cards.data.local.CardOrientation
 import com.shuaji.cards.data.local.cardOrientationEnum
 import com.shuaji.cards.ui.screen.CardUi
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
 /**
  * 列表单卡项。
@@ -106,18 +108,6 @@ private fun CardListItemContent(
     variant: CardListItemVariant,
     modifier: Modifier = Modifier,
 ) {
-    val progress =
-        if (card.card.requiredCount > 0) {
-            card.currentCount.toFloat() / card.card.requiredCount.toFloat()
-        } else {
-            0f
-        }
-    val animatedProgress by animateFloatAsState(
-        targetValue = progress.coerceIn(0f, 1f),
-        animationSpec = spring(dampingRatio = Spring.DampingRatioLowBouncy),
-        label = "progress",
-    )
-    val isDone = card.currentCount >= card.card.requiredCount
     val isPortrait = card.card.cardOrientationEnum == CardOrientation.PORTRAIT
 
     Surface(
@@ -164,14 +154,10 @@ private fun CardListItemContent(
                 CardListItemVariant.Compact ->
                     CompactInfoArea(
                         card = card,
-                        animatedProgress = animatedProgress,
-                        isDone = isDone,
                     )
                 is CardListItemVariant.Full ->
                     FullInfoArea(
                         card = card,
-                        animatedProgress = animatedProgress,
-                        isDone = isDone,
                         onSwipe = variant.onSwipe,
                         onDetail = variant.onDetail,
                     )
@@ -219,43 +205,17 @@ private fun ExpiredBanner() {
 }
 
 @Composable
-private fun CompactInfoArea(
-    card: CardUi,
-    animatedProgress: Float,
-    isDone: Boolean,
-) {
+private fun CompactInfoArea(card: CardUi) {
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween,
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Text(
-                text = stringResource(R.string.card_count_compact_format, card.currentCount, card.card.requiredCount),
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
-            Text(
-                text = stringResource(R.string.card_percent_format, (animatedProgress * 100).toInt()),
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        LinearProgressIndicator(
-            progress = { animatedProgress },
-            modifier =
-                Modifier
-                    .fillMaxWidth()
-                    .height(6.dp)
-                    .clip(MaterialTheme.shapes.extraSmall),
-            color = if (isDone) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.primary,
-            trackColor = MaterialTheme.colorScheme.surfaceVariant,
-            strokeCap = ProgressIndicatorDefaults.LinearStrokeCap,
+        CycleProgressContent(
+            cycle = card.cycle,
+            currentCount = card.currentCount,
+            requiredCount = card.card.requiredCount,
+            variant = CycleProgressVariant.COMPACT,
         )
         val dateText =
-            card.card.nextDueDateMillis?.let { stringResource(R.string.card_date_next_due, formatDate(it)) }
-                ?: card.card.validUntilMillis?.let { stringResource(R.string.card_date_valid_until, formatDate(it)) }
+            card.card.nextDueDateMillis?.let { stringResource(R.string.card_date_next_due, DateToken.format(it)) }
+                ?: card.card.validUntilMillis?.let { stringResource(R.string.card_date_valid_until, DateToken.format(it)) }
         if (dateText != null) {
             Text(
                 dateText,
@@ -271,54 +231,16 @@ private fun CompactInfoArea(
 @Composable
 private fun FullInfoArea(
     card: CardUi,
-    animatedProgress: Float,
-    isDone: Boolean,
     onSwipe: () -> Unit,
     onDetail: () -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         // 进度块
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween,
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = stringResource(R.string.card_count_format, card.currentCount, card.card.requiredCount),
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.ExtraBold,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
-                Spacer(Modifier.width(6.dp))
-                Text(
-                    text = stringResource(R.string.card_count_unit),
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            Text(
-                text =
-                    if (isDone) {
-                        stringResource(R.string.card_status_done)
-                    } else {
-                        stringResource(R.string.card_status_remaining, card.card.requiredCount - card.currentCount)
-                    },
-                style = MaterialTheme.typography.labelMedium,
-                color = if (isDone) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.onSurfaceVariant,
-                fontWeight = FontWeight.SemiBold,
-            )
-        }
-        LinearProgressIndicator(
-            progress = { animatedProgress },
-            modifier =
-                Modifier
-                    .fillMaxWidth()
-                    .height(8.dp)
-                    .clip(MaterialTheme.shapes.extraSmall),
-            color = if (isDone) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.primary,
-            trackColor = MaterialTheme.colorScheme.surfaceVariant,
-            strokeCap = ProgressIndicatorDefaults.LinearStrokeCap,
+        CycleProgressContent(
+            cycle = card.cycle,
+            currentCount = card.currentCount,
+            requiredCount = card.card.requiredCount,
+            variant = CycleProgressVariant.FULL,
         )
 
         // 日期行
@@ -328,7 +250,7 @@ private fun FullInfoArea(
                 DateRow(
                     icon = Icons.Default.CreditCard,
                     label = stringResource(R.string.card_label_valid_until),
-                    value = formatDate(card.card.validUntilMillis),
+                    value = DateToken.format(card.card.validUntilMillis),
                     isWarning = card.isExpired,
                 )
             }
@@ -336,7 +258,7 @@ private fun FullInfoArea(
                 DateRow(
                     icon = Icons.Default.Event,
                     label = stringResource(R.string.card_label_next_due),
-                    value = formatDate(card.card.nextDueDateMillis),
+                    value = DateToken.format(card.card.nextDueDateMillis),
                     isWarning = false,
                 )
             }
@@ -356,7 +278,17 @@ private fun FullInfoArea(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                TextButton(onClick = onSwipe) {
+                val disabledReason =
+                    when (card.cycle.state) {
+                        AnnualFeeCycleState.UPCOMING -> stringResource(R.string.card_record_disabled_upcoming)
+                        AnnualFeeCycleState.OVERDUE -> stringResource(R.string.card_record_disabled_overdue)
+                        else -> ""
+                    }
+                TextButton(
+                    onClick = onSwipe,
+                    enabled = card.cycle.canRecord,
+                    modifier = Modifier.semantics { if (!card.cycle.canRecord) stateDescription = disabledReason },
+                ) {
                     Text(text = stringResource(R.string.card_increment_one), fontWeight = FontWeight.SemiBold)
                 }
                 TextButton(onClick = onDetail) {
@@ -367,6 +299,104 @@ private fun FullInfoArea(
             }
         }
     }
+}
+
+enum class CycleProgressVariant { COMPACT, FULL, DETAIL }
+
+@Composable
+fun CycleProgressContent(
+    cycle: AnnualFeeCycle,
+    currentCount: Int,
+    requiredCount: Int,
+    variant: CycleProgressVariant,
+) {
+    when (cycle.state) {
+        AnnualFeeCycleState.UPCOMING ->
+            Text(
+                text = stringResource(R.string.card_counting_starts_later, cycle.startDate.toString()),
+                style =
+                    if (variant ==
+                        CycleProgressVariant.DETAIL
+                    ) {
+                        MaterialTheme.typography.titleMedium
+                    } else {
+                        MaterialTheme.typography.labelLarge
+                    },
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        AnnualFeeCycleState.OVERDUE ->
+            Text(
+                text = stringResource(R.string.card_cycle_updating),
+                style =
+                    if (variant ==
+                        CycleProgressVariant.DETAIL
+                    ) {
+                        MaterialTheme.typography.titleMedium
+                    } else {
+                        MaterialTheme.typography.labelLarge
+                    },
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        AnnualFeeCycleState.ACTIVE,
+        AnnualFeeCycleState.UNSCHEDULED,
+        -> ActiveProgressContent(currentCount, requiredCount, variant)
+    }
+}
+
+@Composable
+private fun ActiveProgressContent(
+    currentCount: Int,
+    requiredCount: Int,
+    variant: CycleProgressVariant,
+) {
+    val target = if (requiredCount > 0) (currentCount.toFloat() / requiredCount).coerceIn(0f, 1f) else 0f
+    val animatedProgress by animateFloatAsState(
+        targetValue = target,
+        animationSpec = spring(dampingRatio = Spring.DampingRatioLowBouncy),
+        label = "progress",
+    )
+    val isDone = requiredCount > 0 && currentCount >= requiredCount
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Text(
+            text = stringResource(R.string.card_count_format, currentCount, requiredCount),
+            style =
+                if (variant ==
+                    CycleProgressVariant.COMPACT
+                ) {
+                    MaterialTheme.typography.titleSmall
+                } else {
+                    MaterialTheme.typography.headlineSmall
+                },
+            fontWeight = FontWeight.ExtraBold,
+        )
+        Text(
+            text =
+                if (variant == CycleProgressVariant.COMPACT) {
+                    stringResource(R.string.card_percent_format, (animatedProgress * 100).toInt())
+                } else if (isDone) {
+                    stringResource(R.string.card_status_done)
+                } else {
+                    stringResource(R.string.card_status_remaining, (requiredCount - currentCount).coerceAtLeast(0))
+                },
+            style = MaterialTheme.typography.labelMedium,
+            color = if (isDone) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+    LinearProgressIndicator(
+        progress = { animatedProgress },
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .height(if (variant == CycleProgressVariant.COMPACT) 6.dp else 8.dp)
+                .clip(MaterialTheme.shapes.extraSmall),
+        color = if (isDone) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.primary,
+        trackColor = MaterialTheme.colorScheme.surfaceVariant,
+        strokeCap = ProgressIndicatorDefaults.LinearStrokeCap,
+    )
 }
 
 @Composable
@@ -399,9 +429,4 @@ private fun DateRow(
             fontWeight = if (isWarning) FontWeight.SemiBold else FontWeight.Medium,
         )
     }
-}
-
-private fun formatDate(millis: Long): String {
-    val fmt = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
-    return fmt.format(Date(millis))
 }

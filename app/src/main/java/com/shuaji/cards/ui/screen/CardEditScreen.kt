@@ -52,6 +52,8 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -83,14 +85,12 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.shuaji.cards.R
 import com.shuaji.cards.data.CardNetworkProvider
+import com.shuaji.cards.data.DateToken
 import com.shuaji.cards.data.local.CardOrientation
 import com.shuaji.cards.data.local.ImageSourceType
 import com.shuaji.cards.ui.ViewModelFactories
 import com.shuaji.cards.ui.component.ModernColorPicker
 import kotlinx.coroutines.launch
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -103,6 +103,7 @@ fun CardEditScreen(
     val folders by viewModel.folders.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val snackbarHostState = remember { SnackbarHostState() }
 
     fun releaseImagePermissions(uris: Set<String>) {
         uris.forEach { uri ->
@@ -127,11 +128,15 @@ fun CardEditScreen(
     LaunchedEffect(cardId) {
         if (cardId == null) viewModel.reset() else viewModel.load(cardId)
     }
-    LaunchedEffect(state.saved) {
-        if (state.saved) {
-            val releasable = runCatching { viewModel.releasableImageUris(state.imageUri) }.getOrDefault(emptySet())
-            releaseImagePermissions(releasable)
-            onBack()
+    LaunchedEffect(state.saveResult) {
+        when (state.saveResult) {
+            is CardEditSaveResult.Saved -> {
+                val releasable = runCatching { viewModel.releasableImageUris(state.imageUri) }.getOrDefault(emptySet())
+                releaseImagePermissions(releasable)
+                onBack()
+            }
+            CardEditSaveResult.Failed -> snackbarHostState.showSnackbar(context.getString(R.string.edit_save_failed))
+            else -> Unit
         }
     }
     BackHandler(onBack = closeWithoutSaving)
@@ -203,6 +208,7 @@ fun CardEditScreen(
     val noteLabel = stringResource(R.string.edit_field_note)
     val validUntilLabel = stringResource(R.string.edit_date_valid_until)
     val nextDueLabel = stringResource(R.string.edit_date_next_due)
+    val nextDueError = stringResource(R.string.edit_next_due_must_be_future)
     val providerLabel = stringResource(R.string.edit_image_provider)
     val userLabel = stringResource(R.string.edit_image_user)
     val noneLabel = stringResource(R.string.edit_image_none)
@@ -210,6 +216,7 @@ fun CardEditScreen(
     val portraitLabel = stringResource(R.string.edit_orientation_portrait)
 
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = {
@@ -222,7 +229,7 @@ fun CardEditScreen(
                 navigationIcon = {
                     IconButton(
                         onClick = closeWithoutSaving,
-                        enabled = !state.isSaving && !state.saved && !state.isClosing,
+                        enabled = !state.isSaving && state.saveResult !is CardEditSaveResult.Saved && !state.isClosing,
                     ) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = backCd)
                     }
@@ -494,6 +501,11 @@ fun CardEditScreen(
                 millis = state.nextDueDateMillis,
                 onClick = { dateDialogTarget = DateField.NEXT_DUE },
                 onClear = { viewModel.update { it.copy(nextDueDateMillis = null) } },
+                supportingText =
+                    nextDueError.takeIf {
+                        state.saveResult == CardEditSaveResult.ValidationError(CardEditValidation.NEXT_DUE_MUST_BE_FUTURE)
+                    },
+                isError = state.saveResult is CardEditSaveResult.ValidationError,
             )
 
             OutlinedTextField(
@@ -543,7 +555,13 @@ fun CardEditScreen(
                         viewModel.update {
                             when (target) {
                                 DateField.VALID_UNTIL -> it.copy(validUntilMillis = ms)
-                                DateField.NEXT_DUE -> it.copy(nextDueDateMillis = ms)
+                                DateField.NEXT_DUE ->
+                                    it.copy(
+                                        nextDueDateMillis =
+                                            DateToken.fromLocalDate(
+                                                normalizeAnnualDueDate(DateToken.toLocalDate(ms)),
+                                            ),
+                                    )
                             }
                         }
                     }
@@ -819,6 +837,8 @@ private fun DateRow(
     millis: Long?,
     onClick: () -> Unit,
     onClear: () -> Unit,
+    supportingText: String? = null,
+    isError: Boolean = false,
 ) {
     Surface(
         modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
@@ -841,10 +861,17 @@ private fun DateRow(
                 )
                 Spacer(Modifier.height(2.dp))
                 Text(
-                    if (millis != null) formatDate(millis) else unsetLabel,
+                    if (millis != null) DateToken.format(millis) else unsetLabel,
                     style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
+                    color = if (isError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
                 )
+                if (supportingText != null) {
+                    Text(
+                        text = supportingText,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
             }
             Row {
                 if (millis != null) {
@@ -854,9 +881,4 @@ private fun DateRow(
             }
         }
     }
-}
-
-private fun formatDate(millis: Long): String {
-    val fmt = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
-    return fmt.format(Date(millis))
 }

@@ -1,8 +1,5 @@
 package com.shuaji.cards.ui.screen
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -45,11 +42,14 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.MenuAnchorType
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -59,6 +59,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -87,8 +88,23 @@ fun CardListScreen(
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val pendingDelete by viewModel.pendingDelete.collectAsStateWithLifecycle()
     val defaultName = stringResource(R.string.card_default_name)
+    val snackbarHostState = remember { SnackbarHostState() }
+    val context = LocalContext.current
+
+    LaunchedEffect(viewModel) {
+        viewModel.swipeFeedback.collect { feedback ->
+            val message =
+                when (feedback) {
+                    is SwipeFeedback.CountingNotStarted ->
+                        context.getString(R.string.card_record_not_started_feedback, feedback.startDate.toString())
+                    SwipeFeedback.CardMissing -> context.getString(R.string.card_missing)
+                }
+            snackbarHostState.showSnackbar(message)
+        }
+    }
 
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             ListTopBar(
                 onLayoutToggle = viewModel::toggleLayoutMode,
@@ -113,10 +129,7 @@ fun CardListScreen(
                     .fillMaxSize()
                     .padding(padding),
         ) {
-            // 进度条（仅在有卡时显示）
-            AnimatedVisibility(visible = state.allCards.isNotEmpty(), enter = fadeIn(), exit = fadeOut()) {
-                OverallProgress(state = state)
-            }
+            OverallProgress(state = state)
             // 过滤栏
             FilterBar(
                 state = state,
@@ -222,12 +235,7 @@ private fun ListTopBar(
 
 @Composable
 private fun OverallProgress(state: ListUiState) {
-    val allCards = state.allCards
-    // 只依赖 allCards 的三次全量遍历用 remember 缓存，避免每帧重算（卡片量大时明显）。
-    val totalRequired = remember(allCards) { allCards.sumOf { it.card.requiredCount } }
-    val totalCurrent = remember(allCards) { allCards.sumOf { it.currentCount } }
-    val percent = if (totalRequired == 0) 100 else (totalCurrent * 100 / totalRequired).coerceIn(0, 100)
-    val allDone = remember(allCards) { allCards.isNotEmpty() && allCards.all { it.currentCount >= it.card.requiredCount } }
+    val progress = state.overallProgress
     Column(
         modifier =
             Modifier
@@ -243,10 +251,12 @@ private fun OverallProgress(state: ListUiState) {
             )
             Text(
                 text =
-                    if (allDone) {
+                    if (progress.isEmpty) {
+                        stringResource(R.string.list_overall_progress_empty)
+                    } else if (progress.allDone) {
                         stringResource(R.string.list_overall_progress_done)
                     } else {
-                        stringResource(R.string.list_overall_progress_value, totalCurrent, totalRequired, percent)
+                        stringResource(R.string.list_overall_progress_value, progress.current, progress.required, progress.percent)
                     },
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -254,13 +264,13 @@ private fun OverallProgress(state: ListUiState) {
         }
         Spacer(Modifier.height(6.dp))
         LinearProgressIndicator(
-            progress = { percent / 100f },
+            progress = { progress.percent / 100f },
             modifier =
                 Modifier
                     .fillMaxWidth()
                     .height(6.dp)
                     .clip(RoundedCornerShape(50)),
-            color = if (allDone) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.primary,
+            color = if (progress.allDone) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.primary,
             trackColor = MaterialTheme.colorScheme.surfaceVariant,
         )
     }

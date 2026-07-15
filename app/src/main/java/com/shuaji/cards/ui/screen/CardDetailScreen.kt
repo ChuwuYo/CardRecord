@@ -28,24 +28,28 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.disabled
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -53,8 +57,12 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.shuaji.cards.R
 import com.shuaji.cards.ShuajiApplication
+import com.shuaji.cards.data.AnnualFeeCycleState
+import com.shuaji.cards.data.DateToken
 import com.shuaji.cards.data.local.TransactionEntity
 import com.shuaji.cards.ui.component.CardVisual
+import com.shuaji.cards.ui.component.CycleProgressContent
+import com.shuaji.cards.ui.component.CycleProgressVariant
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -68,7 +76,7 @@ import java.util.Locale
  *
  * 流水表瘦到 2 字段（card_id, occurred_at_millis）后，**每一行流水
  * 都在 UI 有归宿**——「流水列表」section 把 `current.swipes` 全部按时间
- * 倒序展示出来，行数 == currentCount，零死数据。
+ * 倒序展示出来；历史行仍保留，因此行数可能大于 currentCount。
  *
  * 操作上只保留：记一笔（FAB） / 重置（顶部按钮） / 编辑 / 删除。
  *
@@ -101,8 +109,25 @@ fun CardDetailScreen(
     val editCd = stringResource(R.string.detail_action_edit)
     val loadingText = stringResource(R.string.detail_loading)
     val defaultName = stringResource(R.string.card_default_name)
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    LaunchedEffect(viewModel) {
+        viewModel.swipeFeedback.collect { feedback ->
+            val message =
+                when (feedback) {
+                    is SwipeFeedback.CountingNotStarted ->
+                        context.getString(R.string.card_record_not_started_feedback, feedback.startDate.toString())
+                    SwipeFeedback.CardMissing -> context.getString(R.string.card_missing)
+                }
+            snackbarHostState.showSnackbar(message)
+        }
+    }
+    LaunchedEffect(card?.cycle?.state) {
+        if (card?.cycle?.canRecord == false) showResetDialog = false
+    }
 
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = { Text(text = card?.card?.name?.ifBlank { defaultName } ?: titleLoading, fontWeight = FontWeight.Bold) },
@@ -115,8 +140,10 @@ fun CardDetailScreen(
                     IconButton(onClick = { showDeleteDialog = true }) {
                         Icon(Icons.Default.Delete, contentDescription = deleteCardCd)
                     }
-                    IconButton(onClick = { showResetDialog = true }) {
-                        Icon(Icons.Default.Refresh, contentDescription = resetCd)
+                    if (card?.cycle?.canRecord == true) {
+                        IconButton(onClick = { showResetDialog = true }) {
+                            Icon(Icons.Default.Refresh, contentDescription = resetCd)
+                        }
                     }
                     IconButton(onClick = onEdit) {
                         Icon(Icons.Default.Edit, contentDescription = editCd)
@@ -131,6 +158,13 @@ fun CardDetailScreen(
         floatingActionButton = {
             ExtendedFabRecord(
                 onClick = { viewModel.recordSwipe() },
+                enabled = card?.cycle?.canRecord == true,
+                disabledReason =
+                    when (card?.cycle?.state) {
+                        AnnualFeeCycleState.UPCOMING -> stringResource(R.string.card_record_disabled_upcoming)
+                        AnnualFeeCycleState.OVERDUE -> stringResource(R.string.card_record_disabled_overdue)
+                        else -> ""
+                    },
             )
         },
     ) { padding ->
@@ -166,6 +200,7 @@ fun CardDetailScreen(
             // 3. 进度块
             item {
                 ProgressBlock(
+                    cycle = current.cycle,
                     currentCount = current.currentCount,
                     requiredCount = current.requiredCount,
                 )
@@ -177,7 +212,7 @@ fun CardDetailScreen(
             // 5. 流水列表（按时间倒序，全部 N 行——零死数据，每行可单笔删除）
             item {
                 SwipeListSection(
-                    swipes = current.swipes,
+                    detail = current,
                     onRequestDelete = { swipeToDelete = it },
                 )
             }
@@ -239,9 +274,24 @@ fun CardDetailScreen(
 }
 
 @Composable
-private fun ExtendedFabRecord(onClick: () -> Unit) {
+private fun ExtendedFabRecord(
+    onClick: () -> Unit,
+    enabled: Boolean,
+    disabledReason: String,
+) {
     androidx.compose.material3.ExtendedFloatingActionButton(
-        onClick = onClick,
+        onClick = { if (enabled) onClick() },
+        modifier =
+            Modifier.semantics {
+                if (!enabled) {
+                    disabled()
+                    stateDescription = disabledReason
+                }
+            },
+        containerColor =
+            if (enabled) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
+        contentColor =
+            if (enabled) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
         icon = { Icon(Icons.Default.Add, contentDescription = null) },
         text = { Text(stringResource(R.string.detail_action_record)) },
     )
@@ -259,9 +309,10 @@ private fun ExtendedFabRecord(onClick: () -> Unit) {
  */
 @Composable
 private fun SwipeListSection(
-    swipes: List<TransactionEntity>,
+    detail: CardDetailUi,
     onRequestDelete: (TransactionEntity) -> Unit,
 ) {
+    val swipes = detail.swipes
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.medium,
@@ -314,13 +365,21 @@ private fun SwipeListSection(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.width(28.dp),
                         )
-                        Text(
-                            text = formatDateTime(txn.occurredAtMillis),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            fontWeight = FontWeight.Medium,
-                            modifier = Modifier.weight(1f),
-                        )
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = formatDateTime(txn.occurredAtMillis),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                fontWeight = FontWeight.Medium,
+                            )
+                            if (!detail.isCurrentPeriod(txn)) {
+                                Text(
+                                    text = stringResource(R.string.detail_swipe_historical),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
                         // 单笔删除按钮 —— 触发 onRequestDelete 弹出二次确认
                         IconButton(
                             onClick = { onRequestDelete(txn) },
@@ -373,12 +432,10 @@ private fun ExpiredBanner() {
 
 @Composable
 private fun ProgressBlock(
+    cycle: com.shuaji.cards.data.AnnualFeeCycle,
     currentCount: Int,
     requiredCount: Int,
 ) {
-    val progress =
-        if (requiredCount > 0) (currentCount.toFloat() / requiredCount.toFloat()).coerceIn(0f, 1f) else 0f
-    val isDone = currentCount >= requiredCount
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.medium,
@@ -388,45 +445,11 @@ private fun ProgressBlock(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = stringResource(R.string.card_count_format, currentCount, requiredCount),
-                        style = MaterialTheme.typography.headlineMedium,
-                        fontWeight = FontWeight.ExtraBold,
-                    )
-                    Spacer(Modifier.size(6.dp))
-                    Text(
-                        text = stringResource(R.string.card_count_unit),
-                        style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                Text(
-                    text =
-                        if (isDone) {
-                            stringResource(R.string.card_status_done)
-                        } else {
-                            stringResource(R.string.card_status_remaining, requiredCount - currentCount)
-                        },
-                    style = MaterialTheme.typography.labelLarge,
-                    color = if (isDone) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontWeight = FontWeight.SemiBold,
-                )
-            }
-            LinearProgressIndicator(
-                progress = { progress },
-                modifier =
-                    Modifier
-                        .fillMaxWidth()
-                        .height(10.dp)
-                        .clip(MaterialTheme.shapes.extraSmall),
-                color = if (isDone) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.primary,
-                trackColor = MaterialTheme.colorScheme.surfaceVariant,
+            CycleProgressContent(
+                cycle = cycle,
+                currentCount = currentCount,
+                requiredCount = requiredCount,
+                variant = CycleProgressVariant.DETAIL,
             )
         }
     }
@@ -467,7 +490,7 @@ private fun CardInfoSection(detail: CardDetailUi) {
                 InfoRow(
                     icon = Icons.Default.CreditCard,
                     label = stringResource(R.string.card_label_valid_until),
-                    value = formatDate(c.validUntilMillis),
+                    value = DateToken.format(c.validUntilMillis),
                     valueColor = if (detail.isExpired) MaterialTheme.colorScheme.error else null,
                 )
             }
@@ -476,7 +499,7 @@ private fun CardInfoSection(detail: CardDetailUi) {
                 InfoRow(
                     icon = Icons.Default.Event,
                     label = stringResource(R.string.card_label_next_due),
-                    value = formatDate(c.nextDueDateMillis),
+                    value = DateToken.format(c.nextDueDateMillis),
                 )
             }
             if (c.note.isNotBlank()) {
@@ -538,11 +561,6 @@ private fun InfoRow(
             )
         }
     }
-}
-
-private fun formatDate(millis: Long): String {
-    val fmt = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
-    return fmt.format(Date(millis))
 }
 
 private fun formatDateTime(millis: Long): String {

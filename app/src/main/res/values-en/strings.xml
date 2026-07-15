@@ -97,6 +97,7 @@
     <string name="list_overall_progress">Overall progress</string>
     <string name="list_overall_progress_value">%1$d / %2$d  ·  %3$d%%</string>
     <string name="list_overall_progress_done">🎉 All done</string>
+    <string name="list_overall_progress_empty">No active counting periods</string>
     <string name="list_empty_title">No cards yet</string>
     <string name="list_empty_subtitle">Tap the button at the bottom right to add your first card\nCustomize the name, theme color, required swipes, and due date</string>
     <string name="list_delete_dialog_title">Delete %1$s?</string>
@@ -121,6 +122,12 @@
     <string name="card_image_content_description">Card image</string>
     <string name="card_default_name">Unnamed card</string>
     <string name="card_default_bank">—</string>
+    <string name="card_counting_starts_later">Counting starts later · %1$s</string>
+    <string name="card_cycle_updating">Updating counting period</string>
+    <string name="card_record_disabled_upcoming">Counting has not started; recording is unavailable</string>
+    <string name="card_record_disabled_overdue">The counting period is updating; recording is unavailable</string>
+    <string name="card_record_not_started_feedback">Counting starts later · %1$s</string>
+    <string name="card_missing">This card no longer exists</string>
 
     <!-- ────── Details ────── -->
     <string name="detail_title">Card details</string>
@@ -146,6 +153,7 @@
     <string name="detail_reset_dialog_confirm">Reset</string>
     <string name="detail_delete_dialog_title">Delete this card?</string>
     <string name="detail_delete_dialog_message">This also deletes all spending records for this card. It cannot be undone.</string>
+    <string name="detail_swipe_historical">History (not counted in this period)</string>
 
     <!-- ────── Edit ────── -->
     <string name="edit_title_new">Add card</string>
@@ -180,6 +188,8 @@
     <string name="edit_color_hex_label">HEX</string>
     <string name="edit_save_new">Save and add to list</string>
     <string name="edit_save_existing">Save changes</string>
+    <string name="edit_next_due_must_be_future">The next annual-fee date must be after today</string>
+    <string name="edit_save_failed">Couldn’t save. Please try again.</string>
 
     <!-- ────── Folders ────── -->
     <string name="folder_title">Folders</string>

@@ -23,6 +23,8 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import java.time.Clock
+import java.time.Instant
+import java.time.LocalDate
 import java.time.ZoneOffset
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -106,6 +108,18 @@ class CardEditViewModelTest {
     }
 
     @Test
+    fun savedState_disablesAdditionalSaveAttempts() {
+        val state =
+            CardEditUiState(
+                name = "测试卡",
+                requiredCount = "6",
+                saveResult = CardEditSaveResult.Saved(1L),
+            )
+
+        assertEquals(false, state.canSave)
+    }
+
+    @Test
     fun repeatedSaveWhileInFlight_insertsOnlyOneCard() =
         runTest {
             val viewModel = CardEditViewModel(repository)
@@ -114,7 +128,7 @@ class CardEditViewModelTest {
             viewModel.save()
             viewModel.save()
             advanceUntilIdle()
-            viewModel.uiState.first { it.saved }
+            viewModel.uiState.first { it.saveResult is CardEditSaveResult.Saved }
 
             assertEquals(1, db.cardDao().listAll().size)
         }
@@ -141,7 +155,45 @@ class CardEditViewModelTest {
             viewModel.save()
 
             assertNull(viewModel.beginClosing())
-            viewModel.uiState.first { it.saved }
+            viewModel.uiState.first { it.saveResult is CardEditSaveResult.Saved }
             assertEquals(1, db.cardDao().listAll().size)
+        }
+
+    @Test
+    fun leapYearFebruary28_isNormalizedBeforeSave() {
+        assertEquals(LocalDate.of(2028, 2, 29), normalizeAnnualDueDate(LocalDate.of(2028, 2, 28)))
+    }
+
+    @Test
+    fun todayOrPastDueDate_isRejected() {
+        assertEquals(
+            CardEditValidation.NEXT_DUE_MUST_BE_FUTURE,
+            validateNextDue(LocalDate.of(2027, 6, 1), LocalDate.of(2027, 6, 1)),
+        )
+    }
+
+    @Test
+    fun invalidNextDueDate_keepsFormOpenAndDoesNotWrite() =
+        runTest {
+            val clock = Clock.fixed(Instant.parse("2027-06-01T12:00:00Z"), ZoneOffset.UTC)
+            val viewModel = CardEditViewModel(repository, clock)
+            viewModel.update {
+                it.copy(
+                    name = "日期错误卡",
+                    requiredCount = "6",
+                    nextDueDateMillis =
+                        com.shuaji.cards.data.DateToken
+                            .fromLocalDate(LocalDate.of(2027, 6, 1)),
+                )
+            }
+
+            viewModel.save()
+            advanceUntilIdle()
+
+            assertEquals(
+                CardEditSaveResult.ValidationError(CardEditValidation.NEXT_DUE_MUST_BE_FUTURE),
+                viewModel.uiState.value.saveResult,
+            )
+            assertEquals(0, db.cardDao().listAll().size)
         }
 }

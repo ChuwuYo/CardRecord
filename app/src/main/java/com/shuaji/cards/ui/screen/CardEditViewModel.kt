@@ -4,10 +4,12 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.shuaji.cards.data.CardNetworkProvider
 import com.shuaji.cards.data.CardRepository
+import com.shuaji.cards.data.DateToken
 import com.shuaji.cards.data.local.CardEntity
 import com.shuaji.cards.data.local.CardFolderEntity
 import com.shuaji.cards.data.local.CardOrientation
 import com.shuaji.cards.data.local.ImageSourceType
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -16,11 +18,31 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.time.Clock
+import java.time.LocalDate
+
+sealed interface CardEditSaveResult {
+    data object Idle : CardEditSaveResult
+
+    data class ValidationError(
+        val validation: CardEditValidation,
+    ) : CardEditSaveResult
+
+    data class Saved(
+        val id: Long,
+    ) : CardEditSaveResult
+
+    data object Failed : CardEditSaveResult
+}
+
+enum class CardEditValidation {
+    NEXT_DUE_MUST_BE_FUTURE,
+}
 
 /**
  * 表单状态：所有用户可控字段。
  *
- * 不再含 `currentCount`——它从 transactions 表 `COUNT(*)` 算，编辑表单
+ * 不再含 `currentCount`——它由 Repository 从 transactions 按周期派生，编辑表单
  * 也就没有"手动改笔数"这个 UI 入口了（用户唯一改笔数的方式就是
  * 详情页/主页"记一笔"按钮写一条流水）。
  */
@@ -44,15 +66,21 @@ data class CardEditUiState(
     val isLoading: Boolean = false,
     val isSaving: Boolean = false,
     val isClosing: Boolean = false,
-    val saved: Boolean = false,
+    val saveResult: CardEditSaveResult = CardEditSaveResult.Idle,
     val editingId: Long? = null,
 ) {
     val canSave: Boolean
-        get() = !isSaving && !isClosing && name.isNotBlank() && requiredCount.toIntOrNull()?.let { it > 0 } == true
+        get() =
+            !isSaving &&
+                !isClosing &&
+                saveResult !is CardEditSaveResult.Saved &&
+                name.isNotBlank() &&
+                requiredCount.toIntOrNull()?.let { it > 0 } == true
 }
 
 class CardEditViewModel(
     private val repository: CardRepository,
+    private val clock: Clock = Clock.systemDefaultZone(),
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(CardEditUiState())
     val uiState: StateFlow<CardEditUiState> = _uiState.asStateFlow()
@@ -114,13 +142,17 @@ class CardEditViewModel(
 
     fun update(transform: (CardEditUiState) -> CardEditUiState) {
         _uiState.update { current ->
-            if (current.isSaving || current.isClosing || current.saved) current else transform(current)
+            if (current.isSaving || current.isClosing || current.saveResult is CardEditSaveResult.Saved) {
+                current
+            } else {
+                transform(current).copy(saveResult = CardEditSaveResult.Idle)
+            }
         }
     }
 
     fun selectUserImage(uri: String) {
         _uiState.update { current ->
-            if (current.isSaving || current.isClosing || current.saved) {
+            if (current.isSaving || current.isClosing || current.saveResult is CardEditSaveResult.Saved) {
                 current
             } else {
                 current.copy(
@@ -136,6 +168,22 @@ class CardEditViewModel(
         val state = beginSaving() ?: return
         viewModelScope.launch {
             try {
+                val normalizedDue =
+                    state.nextDueDateMillis?.let { token ->
+                        val date = normalizeAnnualDueDate(DateToken.toLocalDate(token))
+                        val validation = validateNextDue(date, LocalDate.now(clock))
+                        if (validation != null) {
+                            _uiState.update {
+                                it.copy(
+                                    nextDueDateMillis = DateToken.fromLocalDate(date),
+                                    isSaving = false,
+                                    saveResult = CardEditSaveResult.ValidationError(validation),
+                                )
+                            }
+                            return@launch
+                        }
+                        DateToken.fromLocalDate(date)
+                    }
                 val required = state.requiredCount.toInt()
                 val existingId = state.editingId
                 val preserved =
@@ -152,7 +200,7 @@ class CardEditViewModel(
                         cardNumberMasked = state.cardNumberMasked.trim(),
                         requiredCount = required,
                         validUntilMillis = state.validUntilMillis,
-                        nextDueDateMillis = state.nextDueDateMillis,
+                        nextDueDateMillis = normalizedDue,
                         colorArgb = state.colorArgb,
                         note = state.note,
                         imageUri = persistedImageUri(state.imageSourceType, state.imageUri),
@@ -160,7 +208,7 @@ class CardEditViewModel(
                         imageProviderKey = state.imageProviderKey.takeIf { state.imageSourceType == ImageSourceType.PROVIDER },
                         cardOrientation = state.cardOrientation.name,
                         folderId = state.folderId,
-                        createdAtMillis = preserved?.card?.createdAtMillis ?: System.currentTimeMillis(),
+                        createdAtMillis = preserved?.card?.createdAtMillis ?: clock.millis(),
                     )
                 val id = repository.upsertCard(entity)
                 _uiState.update {
@@ -168,12 +216,18 @@ class CardEditViewModel(
                         imageUri = entity.imageUri,
                         imageProviderKey = entity.imageProviderKey,
                         isSaving = false,
-                        saved = true,
+                        saveResult = CardEditSaveResult.Saved(if (existingId == null) id else existingId),
                         editingId = if (existingId == null) id else existingId,
                     )
                 }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                _uiState.update { it.copy(isSaving = false, saveResult = CardEditSaveResult.Failed) }
             } finally {
-                _uiState.update { if (it.saved) it else it.copy(isSaving = false) }
+                _uiState.update {
+                    if (it.saveResult is CardEditSaveResult.Saved) it else it.copy(isSaving = false)
+                }
             }
         }
     }
@@ -182,7 +236,7 @@ class CardEditViewModel(
     fun beginClosing(): CardEditUiState? {
         while (true) {
             val current = _uiState.value
-            if (current.isSaving || current.isClosing || current.saved) return null
+            if (current.isSaving || current.isClosing || current.saveResult is CardEditSaveResult.Saved) return null
             if (_uiState.compareAndSet(current, current.copy(isClosing = true))) return current
         }
     }
@@ -202,6 +256,13 @@ class CardEditViewModel(
         }
     }
 }
+
+internal fun normalizeAnnualDueDate(date: LocalDate): LocalDate = DateToken.normalizeAnnualDate(date)
+
+internal fun validateNextDue(
+    date: LocalDate,
+    today: LocalDate,
+): CardEditValidation? = if (date.isAfter(today)) null else CardEditValidation.NEXT_DUE_MUST_BE_FUTURE
 
 internal fun persistedImageUri(
     sourceType: ImageSourceType,

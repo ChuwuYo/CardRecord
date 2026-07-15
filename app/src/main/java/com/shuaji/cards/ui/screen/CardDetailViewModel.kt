@@ -2,11 +2,16 @@ package com.shuaji.cards.ui.screen
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.shuaji.cards.data.AnnualFeeCycle
 import com.shuaji.cards.data.CardRepository
+import com.shuaji.cards.data.SwipeRecordResult
 import com.shuaji.cards.data.local.CardWithCount
 import com.shuaji.cards.data.local.TransactionEntity
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -28,9 +33,12 @@ data class CardDetailUi(
     val currentCount: Int,
     val isExpired: Boolean,
     val lastSwipeAtMillis: Long?,
+    val cycle: AnnualFeeCycle,
     val swipes: List<TransactionEntity> = emptyList(),
 ) {
     val requiredCount: Int get() = card.requiredCount
+
+    fun isCurrentPeriod(transaction: TransactionEntity): Boolean = cycle.includes(transaction.occurredAtMillis)
 }
 
 class CardDetailViewModel(
@@ -38,6 +46,9 @@ class CardDetailViewModel(
     private val cardId: Long,
 ) : ViewModel() {
     private val nowProvider: () -> Long = { System.currentTimeMillis() }
+
+    private val _swipeFeedback = MutableSharedFlow<SwipeFeedback>(extraBufferCapacity = 1)
+    val swipeFeedback: SharedFlow<SwipeFeedback> = _swipeFeedback.asSharedFlow()
 
     /**
      * 详情页主状态由 Repository 的单一派生快照提供，避免卡片计数与历史列表
@@ -49,11 +60,16 @@ class CardDetailViewModel(
             .map { snapshot -> snapshot?.let { it.card.toDetailUi(nowProvider(), it.swipes) } }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
-    /**
-     * 详情页"记一笔"：写一条流水，当前任务暂不消费显式结果状态。
-     */
+    /** 详情页"记一笔"：成功交给观察流刷新，拒绝原因通过一次性反馈交给页面。 */
     fun recordSwipe() {
-        viewModelScope.launch { repository.recordSwipe(cardId) }
+        viewModelScope.launch {
+            when (val result = repository.recordSwipe(cardId)) {
+                is SwipeRecordResult.Recorded -> Unit
+                is SwipeRecordResult.CountingNotStarted ->
+                    _swipeFeedback.emit(SwipeFeedback.CountingNotStarted(result.startDate))
+                SwipeRecordResult.CardMissing -> _swipeFeedback.emit(SwipeFeedback.CardMissing)
+            }
+        }
     }
 
     /**
@@ -88,5 +104,6 @@ private fun CardWithCount.toDetailUi(
         currentCount = currentCount,
         isExpired = card.validUntilMillis?.let { now > it } == true,
         lastSwipeAtMillis = lastSwipeAtMillis,
+        cycle = cycle,
         swipes = swipes,
     )
