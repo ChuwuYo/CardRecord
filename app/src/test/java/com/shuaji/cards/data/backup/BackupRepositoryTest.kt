@@ -363,6 +363,49 @@ class BackupRepositoryTest {
         }
 
     @Test
+    fun futureSchemaOne_replaceRoundtripPreservesEveryEntityField() =
+        runTest {
+            val folderId =
+                db.cardFolderDao().upsert(
+                    folder(
+                        name = "完整分组",
+                        colorArgb = 0xFF112233.toInt(),
+                        sortOrder = 7,
+                        createdAtMillis = 111L,
+                    ),
+                )
+            val cardId =
+                db.cardDao().upsert(
+                    card(
+                        name = "完整卡片",
+                        bank = "完整银行",
+                        cardNumberMasked = "**** 9876",
+                        validUntilMillis = 222L,
+                        nextDueDateMillis = DateToken.fromLocalDate(LocalDate.of(2029, 6, 1)),
+                        requiredCount = 9,
+                        colorArgb = 0xFF445566.toInt(),
+                        note = "完整备注",
+                        imageUri = "content://card/image",
+                        imageSourceType = "USER",
+                        imageProviderKey = "provider",
+                        cardOrientation = "PORTRAIT",
+                        folderId = folderId,
+                        createdAtMillis = 333L,
+                    ),
+                )
+            db.transactionDao().insert(transaction(cardId = cardId, occurredAtMillis = 444L))
+            val before = snapshotDatabase()
+            val file = tempJsonFile()
+            repo.export(Uri.fromFile(file))
+
+            seed(cards = listOf(card(name = "杂质")))
+            repo.import(Uri.fromFile(file), ImportMode.REPLACE)
+
+            assertEquals(BackupBundle.SCHEMA_VERSION, json().decodeFromString<BackupBundle>(file.readText()).version)
+            assertEquals(before, snapshotDatabase())
+        }
+
+    @Test
     fun importOverdueBackup_advancesDueAndPreservesEveryTransaction() =
         runTest {
             val originalCard =
@@ -548,6 +591,76 @@ class BackupRepositoryTest {
                     .id
             assertTrue(newCardId != 20L)
             assertTrue(transactions.all { it.cardId == newCardId })
+        }
+
+    @Test
+    fun mergeOverdueCard_remapsIdsAndOnlyAdvancesDueWhilePreservingAllTransactions() =
+        runTest {
+            val originalFolder =
+                folder(
+                    id = 10L,
+                    name = "历史分组",
+                    colorArgb = 0xFF102030.toInt(),
+                    sortOrder = 4,
+                    createdAtMillis = 111L,
+                )
+            val originalCard =
+                card(
+                    id = 20L,
+                    name = "历史卡",
+                    bank = "历史银行",
+                    cardNumberMasked = "**** 2468",
+                    validUntilMillis = 222L,
+                    nextDueDateMillis = DateToken.fromLocalDate(LocalDate.of(2024, 6, 1)),
+                    requiredCount = 6,
+                    colorArgb = 0xFF405060.toInt(),
+                    note = "历史备注",
+                    imageUri = "content://history/image",
+                    imageSourceType = "USER",
+                    imageProviderKey = "history-provider",
+                    cardOrientation = "PORTRAIT",
+                    folderId = 10L,
+                    createdAtMillis = 333L,
+                )
+            val originalTransactions =
+                listOf(
+                    transaction(id = 100L, cardId = 20L, occurredAtMillis = 444L),
+                    transaction(id = 101L, cardId = 20L, occurredAtMillis = 555L),
+                )
+            val file = tempJsonFile()
+            file.writeText(
+                json().encodeToString(
+                    BackupBundle(
+                        version = BackupBundle.SCHEMA_VERSION,
+                        folders = listOf(originalFolder),
+                        cards = listOf(originalCard),
+                        transactions = originalTransactions,
+                    ),
+                ),
+            )
+
+            val result = repo.import(Uri.fromFile(file), ImportMode.MERGE)
+
+            assertEquals(2, result.transactionsAdded)
+            val importedFolder = db.cardFolderDao().listAll().single()
+            assertEquals(originalFolder.copy(id = importedFolder.id), importedFolder)
+            val importedCard = db.cardDao().listAll().single()
+            assertEquals(LocalDate.of(2028, 6, 1), DateToken.toLocalDate(importedCard.nextDueDateMillis!!))
+            assertEquals(
+                originalCard.copy(
+                    id = importedCard.id,
+                    folderId = importedFolder.id,
+                    nextDueDateMillis = importedCard.nextDueDateMillis,
+                ),
+                importedCard,
+            )
+            val importedTransactions = db.transactionDao().listAll()
+            assertEquals(
+                originalTransactions.mapIndexed { index, transaction ->
+                    transaction.copy(id = importedTransactions[index].id, cardId = importedCard.id)
+                },
+                importedTransactions,
+            )
         }
 
     @Test

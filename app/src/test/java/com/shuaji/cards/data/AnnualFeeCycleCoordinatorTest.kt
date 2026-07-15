@@ -7,6 +7,7 @@ import com.shuaji.cards.MainDispatcherRule
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
@@ -16,7 +17,9 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withTimeoutOrNull
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -25,6 +28,29 @@ import org.junit.Test
 class AnnualFeeCycleCoordinatorTest {
     @get:Rule
     val mainDispatcherRule = MainDispatcherRule()
+
+    @Test
+    fun queuedEvent_isDeliveredOnceAndNotReplayedToLaterCollector() =
+        runTest {
+            val queue = AnnualFeeCycleEventQueue()
+            val event = AnnualFeeCycleEvent.Failed(IllegalStateException("旧失败"))
+            queue.emit(event)
+
+            val first =
+                queue.events
+                    .take(1)
+                    .toList()
+                    .single()
+            val second =
+                withTimeoutOrNull(1) {
+                    queue.events
+                        .take(1)
+                        .toList()
+                        .single()
+                }
+            assertEquals(event, first)
+            assertNull(second)
+        }
 
     @Test
     fun processLifecycle_startAndStopDriveForegroundFlow() =
@@ -46,6 +72,27 @@ class AnnualFeeCycleCoordinatorTest {
 
             collection.join()
             assertEquals(listOf(false, true, false), values)
+        }
+
+    @Test
+    fun processLifecycle_cancelledCollectionRemovesObserver() =
+        runTest(mainDispatcherRule.testDispatcher.scheduler) {
+            val owner = TestLifecycleOwner()
+            val values = mutableListOf<Boolean>()
+            val collection =
+                launch {
+                    processForegroundFlow(owner.lifecycle).toList(values)
+                }
+
+            runCurrent()
+            assertEquals(1, owner.registry.observerCount)
+            collection.cancelAndJoin()
+            runCurrent()
+            assertEquals(0, owner.registry.observerCount)
+
+            owner.registry.handleLifecycleEvent(Lifecycle.Event.ON_START)
+            runCurrent()
+            assertEquals(listOf(false), values)
         }
 
     @Test

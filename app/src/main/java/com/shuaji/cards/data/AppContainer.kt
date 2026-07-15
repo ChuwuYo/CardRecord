@@ -5,7 +5,7 @@ import com.shuaji.cards.data.backup.BackupRepository
 import com.shuaji.cards.data.local.AppDatabase
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
@@ -21,7 +21,7 @@ interface AppContainer {
      * 自动续期事件：前台首发或跨零时归一化成功/失败后 emit 到这里，
      * UI 层订阅后显示对应 Snackbar。归一化数量为 0 时不发成功事件，避免噪音。
      */
-    val annualFeeCycleEvents: SharedFlow<AnnualFeeCycleEvent>
+    val annualFeeCycleEvents: Flow<AnnualFeeCycleEvent>
 
     /**
      * 设置页结果事件流：ViewModel 发布 [SettingsDoneEvent]，
@@ -77,19 +77,8 @@ class DefaultAppContainer(
             normalizeInTransaction = repository::normalizeOverdueCyclesInTransaction,
         )
 
-    /**
-     * 前台首发可能早于 `ShuajiApp` 第一次组合后的 collector，因此保留最近事件。
-     *
-     * `replay = 1` 让新 collector 立即收到最近一次 emit；`DROP_OLDEST` 避免极小概率
-     * 的"两次重置"情况下 buffer 撑爆挂起。
-     */
-    private val _annualFeeCycleEvents =
-        MutableSharedFlow<AnnualFeeCycleEvent>(
-            replay = 1,
-            extraBufferCapacity = 4,
-            onBufferOverflow = BufferOverflow.DROP_OLDEST,
-        )
-    override val annualFeeCycleEvents: SharedFlow<AnnualFeeCycleEvent> = _annualFeeCycleEvents.asSharedFlow()
+    private val annualFeeCycleEventQueue = AnnualFeeCycleEventQueue()
+    override val annualFeeCycleEvents: Flow<AnnualFeeCycleEvent> = annualFeeCycleEventQueue.events
 
     /**
      * 设置页 Done 事件流：`SettingsViewModel.emitSettings` 推，`ShuajiApp` 顶层
@@ -105,7 +94,7 @@ class DefaultAppContainer(
             normalize = repository::normalizeOverdueCycles,
             boundaryTicks = boundaryTicks,
             foreground = processForegroundFlow(),
-            onEvent = _annualFeeCycleEvents::emit,
+            onEvent = annualFeeCycleEventQueue::emit,
         )
 
     override fun startAnnualFeeCycleCoordinator(scope: CoroutineScope): Job = annualFeeCycleCoordinator.start(scope)

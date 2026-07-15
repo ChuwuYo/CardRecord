@@ -16,6 +16,7 @@ import com.shuaji.cards.data.backup.ImportResult
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
@@ -84,7 +85,7 @@ class SettingsViewModelTest {
             override val repository: com.shuaji.cards.data.CardRepository by lazy { error("not used") }
             override val settings: com.shuaji.cards.data.SettingsRepository by lazy { error("not used") }
             override val backup: BackupRepository by lazy { error("not used in fake") }
-            override val annualFeeCycleEvents: SharedFlow<AnnualFeeCycleEvent> by lazy { error("not used") }
+            override val annualFeeCycleEvents: Flow<AnnualFeeCycleEvent> by lazy { error("not used") }
             override val settingsEvents: SharedFlow<SettingsDoneEvent> =
                 MutableSharedFlow<SettingsDoneEvent>().asSharedFlow()
 
