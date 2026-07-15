@@ -12,6 +12,11 @@ on:
 permissions:
   contents: write
 
+# 所有运行串行更新同一个 apk-latest；不中途取消，避免 tag 已移动但资产尚未覆盖。
+concurrency:
+  group: build-apk-release
+  cancel-in-progress: false
+
 jobs:
   build-apk:
     runs-on: ubuntu-latest

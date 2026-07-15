@@ -54,8 +54,8 @@ internal fun resolveCardNetworkVisualLayout(cardWidth: Dp): CardNetworkVisualLay
         contentEndPadding = badgeWidth + badgeInset + 12.dp,
         watermarkWidth = cardWidth * 0.35f,
         watermarkHeight = cardWidth * 0.24f,
-        watermarkRight = cardWidth * 0.07f,
-        watermarkTop = cardWidth * 0.08f,
+        watermarkRight = cardWidth * 0.05f,
+        watermarkTop = cardWidth * 0.06f,
         largeRing = RingLayout(largeDiameter, cardWidth * 0.85f, -cardWidth * 0.05f),
         smallRing = RingLayout(smallDiameter, cardWidth * 0.66f, cardWidth * 0.16f),
     )
