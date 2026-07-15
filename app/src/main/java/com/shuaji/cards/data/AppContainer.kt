@@ -7,6 +7,8 @@ import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import java.time.Clock
+import java.time.ZoneId
 
 interface AppContainer {
     val repository: CardRepository
@@ -14,8 +16,8 @@ interface AppContainer {
     val backup: BackupRepository
 
     /**
-     * 自动续期事件：值 = 本次启动时续期的卡数。
-     * Application.onCreate 跑 [CardRepository.resetOverdueCycles]，结果 emit 到这里；
+     * 自动续期事件：值 = 本次启动时推进结算日的卡数。
+     * Application.onCreate 跑 [CardRepository.normalizeOverdueCycles]，结果 emit 到这里；
      * UI 层订阅后弹 Snackbar 告知用户。值 = 0 不发事件（避免噪音）。
      */
     val cycleAutoResetEvents: SharedFlow<Int>
@@ -40,22 +42,29 @@ interface AppContainer {
     suspend fun emitSettings(event: SettingsDoneEvent)
 
     /**
-     * 启动时跑一次到期续期：把所有 nextDueDateMillis 已过的卡续期（删流水 + 推 1 年），
+     * 启动时跑一次到期续期：把所有已过的结算日推进到未来，保留完整流水历史，
      * 并将续期卡数 emit 到 [cycleAutoResetEvents]。逻辑收口到容器内，
      * [ShuajiApplication] 只依赖接口、不再向下转型到 [DefaultAppContainer]。
      */
-    suspend fun runStartupCycleReset(nowMillis: Long)
+    suspend fun runStartupCycleNormalization()
 }
 
 class DefaultAppContainer(
     context: Context,
 ) : AppContainer {
     private val database = AppDatabase.get(context)
+    private val clock = Clock.systemUTC()
+    private val zoneIdProvider: () -> ZoneId = { ZoneId.systemDefault() }
+    private val boundaryTicks = localMidnightTicks(clock, zoneIdProvider)
     override val repository: CardRepository =
         CardRepository(
+            database = database,
             cardDao = database.cardDao(),
             transactionDao = database.transactionDao(),
             folderDao = database.cardFolderDao(),
+            clock = clock,
+            zoneIdProvider = zoneIdProvider,
+            boundaryTicks = boundaryTicks,
         )
     override val settings: SettingsRepository = SettingsRepository(context.appDataStore)
     override val backup: BackupRepository =
@@ -68,7 +77,7 @@ class DefaultAppContainer(
         )
 
     /**
-     * 启动期竞争：[ShuajiApplication.onCreate] 调 [CardRepository.resetOverdueCycles] →
+     * 启动期竞争：[ShuajiApplication.onCreate] 调 [CardRepository.normalizeOverdueCycles] →
      * emit 到 `_cycleAutoResetEvents`；同时 `ShuajiApp` 的 `LaunchedEffect(cycleEvents)`
      * 在 Compose 第一次组合后订阅。Application.onCreate → DB init → 查询 → emit 是一
      * 串异步操作，emit 可能早于 collector 订阅。
@@ -97,9 +106,9 @@ class DefaultAppContainer(
         if (count > 0) _cycleAutoResetEvents.emit(count)
     }
 
-    override suspend fun runStartupCycleReset(nowMillis: Long) {
-        val resetCount = repository.resetOverdueCycles(nowMillis)
-        emitCycleAutoReset(resetCount)
+    override suspend fun runStartupCycleNormalization() {
+        val normalizedCount = repository.normalizeOverdueCycles()
+        emitCycleAutoReset(normalizedCount)
     }
 
     /** 把设置页结果事件发布到顶层 SnackbarHost。 */

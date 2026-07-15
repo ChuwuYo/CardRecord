@@ -7,7 +7,7 @@ import com.shuaji.cards.data.local.CardWithCount
 import com.shuaji.cards.data.local.TransactionEntity
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -20,8 +20,8 @@ import kotlinx.coroutines.launch
  * - [swipes] 该卡全部流水（按时间倒序）—— 详情页「流水列表」直接渲染这个序列，
  *   每行用 [TransactionEntity.id] 做单笔删除的 key
  *
- * 流水表瘦到 2 字段后，每行只剩时间戳 + id；UI 列表把 `swipes` 全部展示出来
- * （行数 == `currentCount`），保证「写一行就有 UI 一行」，不写死数据。
+ * 流水表瘦到 2 字段后，每行只剩时间戳 + id；UI 列表展示全部历史。
+ * 窗口外历史仍保留，因此列表行数不一定等于 [currentCount]。
  */
 data class CardDetailUi(
     val card: com.shuaji.cards.data.local.CardEntity,
@@ -40,26 +40,24 @@ class CardDetailViewModel(
     private val nowProvider: () -> Long = { System.currentTimeMillis() }
 
     /**
-     * 详情页主状态：把「卡本身 + 笔数」和「流水列表」两个流合并。
-     * 任何一个变化（记一笔 / 重置 / 单笔删除 / 编辑卡）都触发 UI 刷新。
+     * 详情页主状态由 Repository 的单一派生快照提供，避免卡片计数与历史列表
+     * 分属两个订阅而出现短暂不一致。
      */
     val card: StateFlow<CardDetailUi?> =
-        combine(
-            repository.observeCard(cardId),
-            repository.observeTransactions(cardId),
-        ) { cwc, swipes ->
-            cwc?.toDetailUi(nowProvider(), swipes)
-        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+        repository
+            .observeCardDetails(cardId)
+            .map { snapshot -> snapshot?.let { it.card.toDetailUi(nowProvider(), it.swipes) } }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     /**
-     * 详情页"记一笔"：写一条流水，currentCount 由 SQL COUNT 重算。
+     * 详情页"记一笔"：写一条流水，当前任务暂不消费显式结果状态。
      */
     fun recordSwipe() {
         viewModelScope.launch { repository.recordSwipe(cardId) }
     }
 
     /**
-     * 详情页"重置年度笔数"：删该卡所有流水。
+     * 详情页"重置年度笔数"：只删除当前统计窗口内流水。
      * UI 上有 AlertDialog 二次确认，到这一层是用户已确认。
      */
     fun resetCardCycle() {
@@ -68,7 +66,7 @@ class CardDetailViewModel(
 
     /**
      * 详情页"单笔删除"：流水列表每行垃圾桶按钮触发。
-     * 删完 SQL COUNT 重算 currentCount，流水列表自动少一行。
+     * 删完 Repository 重新派生 currentCount，流水列表自动少一行。
      */
     fun deleteSwipe(id: Long) {
         viewModelScope.launch { repository.deleteTransaction(id) }

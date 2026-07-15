@@ -8,6 +8,7 @@ import com.shuaji.cards.data.CardRepository
 import com.shuaji.cards.data.local.AppDatabase
 import com.shuaji.cards.data.local.ImageSourceType
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
@@ -21,6 +22,8 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import java.time.Clock
+import java.time.ZoneOffset
 
 @OptIn(ExperimentalCoroutinesApi::class)
 @RunWith(RobolectricTestRunner::class)
@@ -36,7 +39,16 @@ class CardEditViewModelTest {
     fun setUp() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         db = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java).build()
-        repository = CardRepository(db.cardDao(), db.transactionDao(), db.cardFolderDao())
+        repository =
+            CardRepository(
+                database = db,
+                cardDao = db.cardDao(),
+                transactionDao = db.transactionDao(),
+                folderDao = db.cardFolderDao(),
+                clock = Clock.systemUTC(),
+                zoneIdProvider = { ZoneOffset.UTC },
+                boundaryTicks = emptyFlow(),
+            )
     }
 
     @After

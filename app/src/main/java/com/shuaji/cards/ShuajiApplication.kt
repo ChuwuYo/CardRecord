@@ -11,8 +11,8 @@ import kotlinx.coroutines.launch
 /**
  * 应用入口。手动依赖容器，避免引入额外 DI 框架。
  *
- * onCreate 初始化容器，并运行一次 `resetOverdueCycles`：
- * 对已到结算日的卡清空周期流水并把结算日推进到未来。
+ * onCreate 初始化容器，并运行一次周期归一化：
+ * 对已到结算日的卡保留完整流水，只把结算日推进到未来。
  */
 class ShuajiApplication : Application() {
     lateinit var container: AppContainer
@@ -24,10 +24,10 @@ class ShuajiApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         container = DefaultAppContainer(this)
-        // 启动时自动续期检查（任何 nextDueDateMillis < now 的卡 → 删流水 + 推 1 年）。
+        // 启动时自动续期检查；Repository 使用自己的 Clock 统一日期边界。
         // 续期 + emit 收口在 AppContainer 内，这里只依赖接口、不向下转型。
         appScope.launch {
-            container.runStartupCycleReset(System.currentTimeMillis())
+            container.runStartupCycleNormalization()
         }
     }
 }

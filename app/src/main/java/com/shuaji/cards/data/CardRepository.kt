@@ -1,5 +1,7 @@
 package com.shuaji.cards.data
 
+import androidx.room.withTransaction
+import com.shuaji.cards.data.local.AppDatabase
 import com.shuaji.cards.data.local.CardDao
 import com.shuaji.cards.data.local.CardEntity
 import com.shuaji.cards.data.local.CardFolderDao
@@ -9,28 +11,75 @@ import com.shuaji.cards.data.local.ImageSourceType
 import com.shuaji.cards.data.local.TransactionDao
 import com.shuaji.cards.data.local.TransactionEntity
 import kotlinx.coroutines.flow.Flow
-import java.util.Calendar
-import java.util.Date
-import java.util.GregorianCalendar
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onStart
+import java.time.Clock
+import java.time.LocalDate
+import java.time.ZoneId
 
-/**
- * 仓库层：封装 DAO 访问和跨表业务规则。
- *
- * 收口原则：
- * - 卡片查询返回 [CardWithCount]，使 currentCount 由 SQL 实时聚合。
- * - 写入命令使用 [CardEntity] / [CardFolderEntity]，但 DAO 始终保持在仓库内部。
- * - 流水支持记录、查询历史、删除单笔和重置周期。
- */
+sealed interface SwipeRecordResult {
+    data class Recorded(
+        val transactionId: Long,
+    ) : SwipeRecordResult
+
+    data object CardMissing : SwipeRecordResult
+
+    data class CountingNotStarted(
+        val startDate: LocalDate,
+    ) : SwipeRecordResult
+}
+
+data class CardDetailsSnapshot(
+    val card: CardWithCount,
+    val swipes: List<TransactionEntity>,
+)
+
+/** 仓库层：封装 DAO 访问、周期派生和跨表事务规则。 */
 class CardRepository(
+    private val database: AppDatabase,
     private val cardDao: CardDao,
     private val transactionDao: TransactionDao,
     private val folderDao: CardFolderDao,
+    private val clock: Clock,
+    private val zoneIdProvider: () -> ZoneId,
+    boundaryTicks: Flow<Unit>,
 ) {
-    // ── 卡（带实时笔数） ──
+    /**
+     * 每个活跃 Repository 订阅固定观察 cards 与 transactions 两条查询。
+     * 这里保持冷流即可；当前本地数据量不需要做应用级共享。
+     */
+    private val derivedSnapshots: Flow<DerivedSnapshot> =
+        combine(
+            cardDao.observeAll(),
+            transactionDao.observeAll(),
+            boundaryTicks.onStart { emit(Unit) },
+        ) { cards, transactions, _ ->
+            DerivedSnapshot(
+                cards = deriveCards(cards, transactions),
+                transactions = transactions,
+            )
+        }
 
-    fun observeCards(): Flow<List<CardWithCount>> = cardDao.observeActiveWithCount()
+    fun observeCards(): Flow<List<CardWithCount>> = derivedSnapshots.map { it.cards }
 
-    fun observeCard(id: Long): Flow<CardWithCount?> = cardDao.observeByIdWithCount(id)
+    /** 编辑页兼容入口；同样从统一派生快照读取。 */
+    fun observeCard(id: Long): Flow<CardWithCount?> = derivedSnapshots.map { it.card(id) }
+
+    /** 详情卡片、有效计数与完整历史来自同一次派生快照。 */
+    fun observeCardDetails(id: Long): Flow<CardDetailsSnapshot?> =
+        derivedSnapshots.map { snapshot ->
+            val card = snapshot.cards.firstOrNull { it.card.id == id } ?: return@map null
+            CardDetailsSnapshot(
+                card = card,
+                swipes =
+                    snapshot.transactions
+                        .asSequence()
+                        .filter { it.cardId == id }
+                        .sortedByDescending(TransactionEntity::occurredAtMillis)
+                        .toList(),
+            )
+        }
 
     suspend fun upsertCard(card: CardEntity): Long = cardDao.upsert(card)
 
@@ -45,42 +94,48 @@ class CardRepository(
             .mapNotNull { it.imageUri }
             .toSet()
 
-    /**
-     * 记一笔消费：插一行流水。currentCount 由 SQL 实时算，无需 update。
-     *
-     * 返回新插入流水的 id（成功落库）或 null（卡不存在）。
-     */
-    suspend fun recordSwipe(cardId: Long): Long? {
-        // 校验卡存在 —— 防止外键插入失败的 silent 错误。
-        val card = cardDao.getById(cardId) ?: return null
-        return transactionDao.insert(
-            TransactionEntity(cardId = card.id, occurredAtMillis = System.currentTimeMillis()),
-        )
-    }
+    /** 在同一 Room 写事务中校验卡片、归一化周期并记录流水。 */
+    suspend fun recordSwipe(cardId: Long): SwipeRecordResult =
+        database.withTransaction {
+            val storedCard = cardDao.getById(cardId) ?: return@withTransaction SwipeRecordResult.CardMissing
+            val card = normalizeCardIfOverdue(storedCard)
+            val cycle = resolveCycle(card)
+            if (cycle.state == AnnualFeeCycleState.UPCOMING) {
+                return@withTransaction SwipeRecordResult.CountingNotStarted(cycle.startDate!!)
+            }
+            val transactionId =
+                transactionDao.insert(
+                    TransactionEntity(cardId = card.id, occurredAtMillis = clock.millis()),
+                )
+            SwipeRecordResult.Recorded(transactionId)
+        }
 
     /**
-     * 重置年度笔数 = 删该卡所有流水。currentCount 由 SQL 重算为 0。
+     * 手动重置只删除当前有效窗口；无日程卡保持兼容，全删该卡流水。
+     * 待开始或卡片不存在时不执行破坏性写入。
      */
-    suspend fun resetCardCycle(cardId: Long) {
-        transactionDao.deleteAllForCard(cardId)
-    }
+    suspend fun resetCardCycle(cardId: Long): Boolean =
+        database.withTransaction {
+            val storedCard = cardDao.getById(cardId) ?: return@withTransaction false
+            val card = normalizeCardIfOverdue(storedCard)
+            val cycle = resolveCycle(card)
+            when (cycle.state) {
+                AnnualFeeCycleState.UNSCHEDULED -> transactionDao.deleteAllForCard(cardId)
+                AnnualFeeCycleState.ACTIVE ->
+                    transactionDao.deleteForCardInRange(
+                        cardId = cardId,
+                        start = cycle.startBoundaryMillis!!,
+                        end = cycle.dueBoundaryMillis!!,
+                    )
+                AnnualFeeCycleState.UPCOMING -> return@withTransaction false
+                AnnualFeeCycleState.OVERDUE -> error("过期周期归一化后仍为 OVERDUE")
+            }
+            true
+        }
 
-    /**
-     * 详情页「流水列表」：按时间倒序拉该卡全部流水行。
-     * 流水表瘦到 2 字段后，每行只有 (card_id, occurred_at_millis)，
-     * UI 拿到的就是一个时间戳序列——按「刷一笔 = 一行」原则展示。
-     */
-    fun observeTransactions(cardId: Long): Flow<List<TransactionEntity>> = transactionDao.observeForCard(cardId)
-
-    /**
-     * 单笔删除：流水列表里每行垃圾桶按钮触发。
-     * 删完 SQL COUNT 重算 currentCount，UI 立刻刷新。
-     */
     suspend fun deleteTransaction(id: Long) {
         transactionDao.deleteById(id)
     }
-
-    // ── 文件夹 ──
 
     fun observeFolders(): Flow<List<CardFolderEntity>> = folderDao.observeAll()
 
@@ -89,48 +144,76 @@ class CardRepository(
     suspend fun updateFolder(folder: CardFolderEntity) = folderDao.update(folder)
 
     suspend fun deleteFolder(folder: CardFolderEntity) {
-        // 删文件夹后，该文件夹下卡片的 folder_id 由数据库外键
-        // `ON DELETE SET NULL` 自动置空 → 卡片归「未分类」。
-        // 外键在 cards 表与 CardEntity 上一致声明（见 AppDatabase.MIGRATION_6_7）。
+        // 外键 `ON DELETE SET NULL` 会把该文件夹下的卡片归入「未分类」。
         folderDao.delete(folder)
     }
 
     suspend fun countCardsInFolder(folderId: Long): Int = folderDao.countCardsInFolder(folderId)
 
-    // ── 自动续期（App 启动时跑） ──
-
-    /**
-     * 到达 `nextDueDateMillis` 的卡在应用启动时自动进入下一周期。
-     *
-     * 行为：
-     * 1. 找出所有 `nextDueDateMillis < now` 的卡（这些卡是上一周期到期后没重置的）
-     * 2. 对每张卡：
-     *    - 删该卡所有流水（`currentCount` 由 SQL COUNT 重算为 0）
-     *    - 把 `nextDueDateMillis` 推到 `> now`（while 循环：可能累积 N 年没开 app）
-     * 3. 返回续期卡数（0 = 这次没卡需要续期，调用方不弹 Snackbar）
-     *
-     * 用 [Calendar.add(YEAR, 1)] 而不是 +365 天——自动处理闰年 2-29。
-     */
-    suspend fun resetOverdueCycles(now: Long): Int {
-        val overdue = cardDao.findOverdue(now)
-        if (overdue.isEmpty()) return 0
-        overdue.forEach { card ->
-            // findOverdue 的 SQL 已用 IS NOT NULL 过滤；Entity 保留 nullable
-            // 是因为列本身允许空值。
-            val currentNext = card.nextDueDateMillis!!
-            // 一次性推 N 年：用户半年没开 app，nextDueDate 可能已经过 1+ 年。
-            // Calendar 实例提到循环外复用——推 N 年时不必每轮 new 一个。
-            val cal = GregorianCalendar()
-            var next = currentNext
-            while (next <= now) {
-                cal.time = Date(next)
-                cal.add(Calendar.YEAR, 1)
-                next = cal.timeInMillis
-            }
-            // 删流水 + 推 nextDueDate
-            transactionDao.deleteAllForCard(card.id)
-            cardDao.update(card.copy(nextDueDateMillis = next))
+    /** 事务入口：只推进过期日期，绝不删除历史流水。 */
+    suspend fun normalizeOverdueCycles(): Int =
+        database.withTransaction {
+            normalizeOverdueCyclesInTransaction()
         }
-        return overdue.size
+
+    /** 调用方必须已经持有 Room 写事务，供导入流程复用且避免嵌套事务。 */
+    internal suspend fun normalizeOverdueCyclesInTransaction(): Int {
+        var normalizedCount = 0
+        cardDao.listAll().forEach { card ->
+            if (resolveCycle(card).state == AnnualFeeCycleState.OVERDUE) {
+                normalizeCardIfOverdue(card)
+                normalizedCount += 1
+            }
+        }
+        return normalizedCount
+    }
+
+    private suspend fun normalizeCardIfOverdue(card: CardEntity): CardEntity {
+        val dueToken = card.nextDueDateMillis ?: return card
+        if (resolveCycle(card).state != AnnualFeeCycleState.OVERDUE) return card
+        val normalized =
+            card.copy(
+                nextDueDateMillis =
+                    AnnualFeeCycle.advanceDueDateUntilFuture(
+                        nextDueDateToken = dueToken,
+                        now = clock.instant(),
+                        zoneId = zoneIdProvider(),
+                    ),
+            )
+        cardDao.update(normalized)
+        return normalized
+    }
+
+    private fun resolveCycle(card: CardEntity): AnnualFeeCycle =
+        AnnualFeeCycle.resolve(
+            nextDueDateToken = card.nextDueDateMillis,
+            now = clock.instant(),
+            zoneId = zoneIdProvider(),
+        )
+
+    private fun deriveCards(
+        cards: List<CardEntity>,
+        transactions: List<TransactionEntity>,
+    ): List<CardWithCount> {
+        val byCard = transactions.groupBy(TransactionEntity::cardId)
+        val now = clock.instant()
+        val zone = zoneIdProvider()
+        return cards.map { card ->
+            val rows = byCard[card.id].orEmpty()
+            val cycle = AnnualFeeCycle.resolve(card.nextDueDateMillis, now, zone)
+            CardWithCount(
+                card = card,
+                currentCount = rows.count { cycle.includes(it.occurredAtMillis) },
+                lastSwipeAtMillis = rows.maxOfOrNull(TransactionEntity::occurredAtMillis),
+                cycle = cycle,
+            )
+        }
+    }
+
+    private data class DerivedSnapshot(
+        val cards: List<CardWithCount>,
+        val transactions: List<TransactionEntity>,
+    ) {
+        fun card(id: Long): CardWithCount? = cards.firstOrNull { it.card.id == id }
     }
 }

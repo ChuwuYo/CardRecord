@@ -5,31 +5,29 @@ import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.shuaji.cards.data.local.AppDatabase
 import com.shuaji.cards.data.local.CardEntity
+import com.shuaji.cards.data.local.TransactionEntity
+import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNull
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
-import java.util.Calendar
-import java.util.GregorianCalendar
+import java.time.Clock
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneOffset
 
-/**
- * [CardRepository] 核心业务流测试：刷卡计数（派生 currentCount）、重置、年费自动续期。
- *
- * 用 Robolectric + 内存 Room 跑 JVM 单测。重点验证：
- * - currentCount 由流水 COUNT 实时算（不存冗余字段）
- * - recordSwipe 对不存在的卡返回 null（外键防护）
- * - resetOverdueCycles 的「按整年推进 + 清流水」语义，含多年累积与边界
- */
+/** [CardRepository] 的 Room 数据流、统计窗口与事务写入回归测试。 */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34], manifest = Config.NONE)
 class CardRepositoryTest {
+    private val clock = Clock.fixed(Instant.parse("2027-06-01T12:00:00Z"), ZoneOffset.UTC)
     private lateinit var db: AppDatabase
     private lateinit var repo: CardRepository
 
@@ -37,7 +35,16 @@ class CardRepositoryTest {
     fun setUp() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         db = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java).build()
-        repo = CardRepository(db.cardDao(), db.transactionDao(), db.cardFolderDao())
+        repo =
+            CardRepository(
+                database = db,
+                cardDao = db.cardDao(),
+                transactionDao = db.transactionDao(),
+                folderDao = db.cardFolderDao(),
+                clock = clock,
+                zoneIdProvider = { ZoneOffset.UTC },
+                boundaryTicks = emptyFlow(),
+            )
     }
 
     @After
@@ -45,49 +52,27 @@ class CardRepositoryTest {
         db.close()
     }
 
-    private fun sampleCard(
-        name: String = "Visa",
-        nextDue: Long? = null,
-    ): CardEntity =
-        CardEntity(
-            name = name,
-            bank = "某银行",
-            cardNumberMasked = "**** 1234",
-            nextDueDateMillis = nextDue,
-            requiredCount = 6,
-            colorArgb = 0xFF1234,
-        )
-
-    private suspend fun currentCount(cardId: Long): Int =
-        repo
-            .observeCards()
-            .first()
-            .single { it.card.id == cardId }
-            .currentCount
-
     @Test
-    fun recordSwipe_incrementsDerivedCount() =
+    fun recordSwipe_unscheduledCardIncrementsDerivedCount() =
         runBlocking {
-            val id = repo.upsertCard(sampleCard())
-            assertEquals(0, currentCount(id))
+            val id = insertCard(due = null)
 
-            assertTrue(repo.recordSwipe(id) != null)
-            assertTrue(repo.recordSwipe(id) != null)
+            assertTrue(repo.recordSwipe(id) is SwipeRecordResult.Recorded)
+            assertTrue(repo.recordSwipe(id) is SwipeRecordResult.Recorded)
 
             assertEquals(2, currentCount(id))
         }
 
     @Test
-    fun upsert_existingCard_preservesTransactions() =
+    fun upsert_existingCardPreservesTransactions() =
         runBlocking {
-            val original = sampleCard(name = "修改前")
-            val id = repo.upsertCard(original)
+            val id = insertCard(due = null, name = "修改前")
             repo.recordSwipe(id)
             repo.recordSwipe(id)
 
+            val original = db.cardDao().getById(id)!!
             repo.upsertCard(
                 original.copy(
-                    id = id,
                     name = "修改后",
                     colorArgb = 0xFF2E7D32.toInt(),
                 ),
@@ -100,63 +85,173 @@ class CardRepositoryTest {
         }
 
     @Test
-    fun recordSwipe_onMissingCard_returnsNull() =
+    fun recordSwipe_missingCardReturnsExplicitResult() =
         runBlocking {
-            assertNull(repo.recordSwipe(cardId = 999L))
+            assertEquals(SwipeRecordResult.CardMissing, repo.recordSwipe(cardId = 999L))
         }
 
     @Test
-    fun resetCardCycle_clearsCount() =
+    fun upcomingCard_excludesOldTransactionsAndRejectsRecord() =
         runBlocking {
-            val id = repo.upsertCard(sampleCard())
-            repo.recordSwipe(id)
-            repo.recordSwipe(id)
-            assertEquals(2, currentCount(id))
-
-            repo.resetCardCycle(id)
+            val id = insertCard(due = "2028-06-02")
+            insertTransaction(id, "2026-07-01T00:00:00Z")
 
             assertEquals(0, currentCount(id))
+            val result = repo.recordSwipe(id)
+            assertTrue(result is SwipeRecordResult.CountingNotStarted)
+            assertEquals(LocalDate.of(2027, 6, 2), (result as SwipeRecordResult.CountingNotStarted).startDate)
+            assertEquals(1, db.transactionDao().listAll().size)
         }
 
     @Test
-    fun resetOverdueCycles_advancesByWholeYears_andClearsTransactions() =
+    fun activeCard_countsOnlyHalfOpenWindow() =
         runBlocking {
-            val now = System.currentTimeMillis()
-            // 设一个「约 2.2 年前」的结算日：续期应按整年推进到刚好 > now
-            val overdueDue =
-                GregorianCalendar()
-                    .apply {
-                        timeInMillis = now
-                        add(Calendar.DAY_OF_YEAR, -800)
-                    }.timeInMillis
-            val id = repo.upsertCard(sampleCard(nextDue = overdueDue))
-            repo.recordSwipe(id)
-            repo.recordSwipe(id)
+            val id = insertCard(due = "2028-06-01")
+            insertTransaction(id, "2027-05-31T23:59:59.999Z")
+            insertTransaction(id, "2027-06-01T00:00:00Z")
+            insertTransaction(id, "2028-05-31T23:59:59.999Z")
+            insertTransaction(id, "2028-06-01T00:00:00Z")
+
             assertEquals(2, currentCount(id))
-
-            val resetCount = repo.resetOverdueCycles(now)
-
-            assertEquals("应有 1 张卡被续期", 1, resetCount)
-            assertEquals("续期应清空该卡流水", 0, currentCount(id))
-
-            val newDue =
-                repo
-                    .observeCard(id)
-                    .first()!!
-                    .card.nextDueDateMillis!!
-            val oneYearMillis = 366L * 24 * 60 * 60 * 1000
-            assertTrue("新结算日应推到未来", newDue > now)
-            assertTrue("应按整年最小推进、不过冲超过一年", newDue - now <= oneYearMillis)
         }
 
     @Test
-    fun resetOverdueCycles_ignoresFutureAndNullDueDates() =
+    fun unscheduledCard_countsAllTransactions() =
         runBlocking {
-            val now = System.currentTimeMillis()
-            val futureDue = now + 30L * 24 * 60 * 60 * 1000
-            repo.upsertCard(sampleCard(name = "未来", nextDue = futureDue))
-            repo.upsertCard(sampleCard(name = "无结算日", nextDue = null))
+            val id = insertCard(due = null)
+            insertTransaction(id, "2020-01-01T00:00:00Z")
 
-            assertEquals(0, repo.resetOverdueCycles(now))
+            assertEquals(1, currentCount(id))
         }
+
+    @Test
+    fun resetUnscheduledCard_deletesAllCardTransactions() =
+        runBlocking {
+            val id = insertCard(due = null)
+            insertTransaction(id, "2020-01-01T00:00:00Z")
+            insertTransaction(id, "2027-01-01T00:00:00Z")
+
+            assertTrue(repo.resetCardCycle(id))
+            assertEquals(emptyList<String>(), storedInstants(id))
+        }
+
+    @Test
+    fun overdueNormalization_advancesDateWithoutDeletingHistory() =
+        runBlocking {
+            val id = insertCard(due = "2024-06-01")
+            insertTransaction(id, "2024-01-01T00:00:00Z")
+
+            assertEquals(1, repo.normalizeOverdueCycles())
+            assertEquals(1, db.transactionDao().listAll().size)
+            assertEquals(
+                LocalDate.of(2028, 6, 1),
+                DateToken.toLocalDate(db.cardDao().getById(id)!!.nextDueDateMillis!!),
+            )
+        }
+
+    @Test
+    fun overdueNormalization_ignoresFutureAndUnscheduledCards() =
+        runBlocking {
+            insertCard(due = "2028-06-01")
+            insertCard(due = null)
+
+            assertEquals(0, repo.normalizeOverdueCycles())
+        }
+
+    @Test
+    fun resetScheduledCard_deletesOnlyCurrentWindow() =
+        runBlocking {
+            val id = insertCard(due = "2028-06-01")
+            insertTransaction(id, "2026-01-01T00:00:00Z")
+            insertTransaction(id, "2027-07-01T00:00:00Z")
+
+            assertTrue(repo.resetCardCycle(id))
+            assertEquals(listOf("2026-01-01T00:00:00Z"), storedInstants(id))
+        }
+
+    @Test
+    fun resetUpcomingCard_isRejectedWithoutDeletingHistory() =
+        runBlocking {
+            val id = insertCard(due = "2029-06-01")
+            insertTransaction(id, "2026-01-01T00:00:00Z")
+
+            assertFalse(repo.resetCardCycle(id))
+            assertEquals(listOf("2026-01-01T00:00:00Z"), storedInstants(id))
+        }
+
+    @Test
+    fun resetMissingCard_returnsFalse() =
+        runBlocking {
+            assertFalse(repo.resetCardCycle(999L))
+        }
+
+    @Test
+    fun recordSwipe_normalizesOverdueCycleInSameTransaction() =
+        runBlocking {
+            val id = insertCard(due = "2024-06-01")
+
+            val result = repo.recordSwipe(id)
+
+            assertTrue(result is SwipeRecordResult.Recorded)
+            assertEquals(1, currentCount(id))
+            assertEquals(
+                LocalDate.of(2028, 6, 1),
+                DateToken.toLocalDate(db.cardDao().getById(id)!!.nextDueDateMillis!!),
+            )
+        }
+
+    @Test
+    fun observeCardDetails_usesDerivedCountAndKeepsSortedFullHistory() =
+        runBlocking {
+            val id = insertCard(due = "2028-06-01")
+            insertTransaction(id, "2026-01-01T00:00:00Z")
+            insertTransaction(id, "2027-07-01T00:00:00Z")
+
+            val details = repo.observeCardDetails(id).first()!!
+
+            assertEquals(1, details.card.currentCount)
+            assertEquals(
+                listOf("2027-07-01T00:00:00Z", "2026-01-01T00:00:00Z"),
+                details.swipes.map { Instant.ofEpochMilli(it.occurredAtMillis).toString() },
+            )
+        }
+
+    private suspend fun insertCard(
+        due: String?,
+        name: String = "Visa",
+    ): Long =
+        repo.upsertCard(
+            CardEntity(
+                name = name,
+                bank = "某银行",
+                cardNumberMasked = "**** 1234",
+                nextDueDateMillis = due?.let { DateToken.fromLocalDate(LocalDate.parse(it)) },
+                requiredCount = 6,
+                colorArgb = 0xFF1234,
+            ),
+        )
+
+    private suspend fun insertTransaction(
+        cardId: Long,
+        instant: String,
+    ) {
+        db.transactionDao().insert(
+            TransactionEntity(cardId = cardId, occurredAtMillis = Instant.parse(instant).toEpochMilli()),
+        )
+    }
+
+    private suspend fun storedInstants(cardId: Long): List<String> =
+        db
+            .transactionDao()
+            .listAll()
+            .filter { it.cardId == cardId }
+            .sortedBy(TransactionEntity::occurredAtMillis)
+            .map { Instant.ofEpochMilli(it.occurredAtMillis).toString() }
+
+    private suspend fun currentCount(cardId: Long): Int =
+        repo
+            .observeCards()
+            .first()
+            .single { it.card.id == cardId }
+            .currentCount
 }

@@ -91,7 +91,7 @@ class SettingsViewModelTest {
             }
 
             // 测试不涉及启动续期，留空实现满足接口即可。
-            override suspend fun runStartupCycleReset(nowMillis: Long) = Unit
+            override suspend fun runStartupCycleNormalization() = Unit
         }
 
     @Before
