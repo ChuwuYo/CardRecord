@@ -56,6 +56,7 @@ class BackupRepository(
     private val cardDao: CardDao,
     private val folderDao: CardFolderDao,
     private val transactionDao: TransactionDao,
+    private val normalizeInTransaction: suspend () -> Int,
 ) {
     private val json =
         Json {
@@ -179,10 +180,13 @@ class BackupRepository(
                 val result =
                     try {
                         database.withTransaction {
-                            when (mode) {
-                                ImportMode.REPLACE -> doReplace(bundle)
-                                ImportMode.MERGE -> doMerge(bundle)
-                            }
+                            val importResult =
+                                when (mode) {
+                                    ImportMode.REPLACE -> doReplace(bundle)
+                                    ImportMode.MERGE -> doMerge(bundle)
+                                }
+                            normalizeInTransaction()
+                            importResult
                         }
                     } catch (e: CancellationException) {
                         throw e

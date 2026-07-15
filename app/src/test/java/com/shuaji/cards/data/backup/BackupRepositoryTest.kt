@@ -4,6 +4,8 @@ import android.content.Context
 import android.net.Uri
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
+import com.shuaji.cards.data.CardRepository
+import com.shuaji.cards.data.DateToken
 import com.shuaji.cards.data.backup.TestData.card
 import com.shuaji.cards.data.backup.TestData.folder
 import com.shuaji.cards.data.backup.TestData.transaction
@@ -12,6 +14,7 @@ import com.shuaji.cards.data.local.CardEntity
 import com.shuaji.cards.data.local.CardFolderEntity
 import com.shuaji.cards.data.local.TransactionEntity
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.encodeToString
@@ -31,6 +34,10 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import java.io.File
+import java.time.Clock
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneOffset
 
 /**
  * [BackupRepository] 的核心场景测试。
@@ -95,6 +102,7 @@ class BackupRepositoryTest {
     private lateinit var context: Context
     private lateinit var db: AppDatabase
     private lateinit var repo: BackupRepository
+    private lateinit var cardRepository: CardRepository
 
     @Before
     fun setUp() {
@@ -104,6 +112,16 @@ class BackupRepositoryTest {
                 .inMemoryDatabaseBuilder(context, AppDatabase::class.java)
                 .allowMainThreadQueries() // 单元测试不需要跑在 IO 调度器上
                 .build()
+        cardRepository =
+            CardRepository(
+                database = db,
+                cardDao = db.cardDao(),
+                transactionDao = db.transactionDao(),
+                folderDao = db.cardFolderDao(),
+                clock = Clock.fixed(Instant.parse("2027-07-15T00:00:00Z"), ZoneOffset.UTC),
+                zoneIdProvider = { ZoneOffset.UTC },
+                boundaryTicks = flowOf(Unit),
+            )
         repo =
             BackupRepository(
                 context = context,
@@ -111,6 +129,7 @@ class BackupRepositoryTest {
                 cardDao = db.cardDao(),
                 folderDao = db.cardFolderDao(),
                 transactionDao = db.transactionDao(),
+                normalizeInTransaction = cardRepository::normalizeOverdueCyclesInTransaction,
             )
     }
 
@@ -139,6 +158,19 @@ class BackupRepositoryTest {
         cards.forEach { db.cardDao().upsert(it) }
         transactions.forEach { db.transactionDao().insert(it) }
     }
+
+    private suspend fun snapshotDatabase() =
+        DatabaseSnapshot(
+            folders = db.cardFolderDao().listAll(),
+            cards = db.cardDao().listAll(),
+            transactions = db.transactionDao().listAll(),
+        )
+
+    private data class DatabaseSnapshot(
+        val folders: List<CardFolderEntity>,
+        val cards: List<CardEntity>,
+        val transactions: List<TransactionEntity>,
+    )
 
     // ════════════════════════════════════════════════════════════
     // 导出
@@ -328,6 +360,83 @@ class BackupRepositoryTest {
             assertEquals(originalCard.imageSourceType, cards[0].imageSourceType)
             assertEquals(originalCard.imageProviderKey, cards[0].imageProviderKey)
             assertEquals(1, transactions.size)
+        }
+
+    @Test
+    fun importOverdueBackup_advancesDueAndPreservesEveryTransaction() =
+        runTest {
+            val originalCard =
+                card(
+                    id = 20L,
+                    name = "多年未打开",
+                    bank = "测试银行",
+                    cardNumberMasked = "**** 4321",
+                    nextDueDateMillis = DateToken.fromLocalDate(LocalDate.of(2024, 6, 1)),
+                    requiredCount = 8,
+                    colorArgb = 0xFF123456.toInt(),
+                    note = "其余字段必须保留",
+                    createdAtMillis = 123_456L,
+                )
+            val originalTransactions =
+                listOf(
+                    transaction(id = 100L, cardId = 20L, occurredAtMillis = 1_700_000_000_000L),
+                    transaction(id = 101L, cardId = 20L, occurredAtMillis = 1_800_000_000_000L),
+                )
+            val file = tempJsonFile()
+            file.writeText(
+                json().encodeToString(
+                    BackupBundle(
+                        version = BackupBundle.SCHEMA_VERSION,
+                        cards = listOf(originalCard),
+                        transactions = originalTransactions,
+                    ),
+                ),
+                Charsets.UTF_8,
+            )
+
+            val result = repo.import(Uri.fromFile(file), ImportMode.REPLACE)
+
+            assertEquals(2, result.transactionsAdded)
+            assertEquals(originalTransactions, db.transactionDao().listAll())
+            val imported = db.cardDao().listAll().single()
+            assertEquals(LocalDate.of(2028, 6, 1), DateToken.toLocalDate(imported.nextDueDateMillis!!))
+            assertEquals(originalCard.copy(nextDueDateMillis = imported.nextDueDateMillis), imported)
+        }
+
+    @Test
+    fun importNormalizationFailure_rollsBackWholeImport() =
+        runTest {
+            seed(
+                folders = listOf(folder(id = 1L, name = "原分组")),
+                cards = listOf(card(id = 2L, name = "原卡", folderId = 1L)),
+                transactions = listOf(transaction(id = 3L, cardId = 2L)),
+            )
+            val before = snapshotDatabase()
+            val file = tempJsonFile()
+            file.writeText(
+                json().encodeToString(
+                    BackupBundle(
+                        version = BackupBundle.SCHEMA_VERSION,
+                        cards = listOf(card(id = 20L, name = "备份卡")),
+                    ),
+                ),
+                Charsets.UTF_8,
+            )
+            val failingRepository =
+                BackupRepository(
+                    context = context,
+                    database = db,
+                    cardDao = db.cardDao(),
+                    folderDao = db.cardFolderDao(),
+                    transactionDao = db.transactionDao(),
+                    normalizeInTransaction = { error("归一化失败") },
+                )
+
+            assertThrows(BackupException::class.java) {
+                runBlocking { failingRepository.import(Uri.fromFile(file), ImportMode.REPLACE) }
+            }
+
+            assertEquals(before, snapshotDatabase())
         }
 
     // ════════════════════════════════════════════════════════════

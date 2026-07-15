@@ -147,7 +147,8 @@
     <string name="detail_action_delete_swipe">Delete this swipe</string>
     <string name="detail_delete_swipe_dialog_title">Delete this swipe?</string>
     <string name="detail_delete_swipe_dialog_message">This deletes the swipe record from %1$s. It cannot be undone.</string>
-    <string name="cycle_auto_reset_message">Auto-renewed %1$d cards; the new cycle\'s count has been reset to zero</string>
+    <string name="cycle_auto_reset_message">Automatically renewed annual fee cycles for %1$d cards</string>
+    <string name="cycle_auto_reset_error_message">Couldn\'t update annual fee cycles. Retrying while the app is open.</string>
     <string name="detail_reset_dialog_title">Reset this cycle?</string>
     <string name="detail_reset_dialog_message">This resets the current count to zero. It cannot be undone.</string>
     <string name="detail_reset_dialog_confirm">Reset</string>

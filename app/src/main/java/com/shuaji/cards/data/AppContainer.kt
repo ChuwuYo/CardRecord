@@ -3,6 +3,8 @@ package com.shuaji.cards.data
 import android.content.Context
 import com.shuaji.cards.data.backup.BackupRepository
 import com.shuaji.cards.data.local.AppDatabase
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -16,11 +18,10 @@ interface AppContainer {
     val backup: BackupRepository
 
     /**
-     * 自动续期事件：值 = 本次启动时推进结算日的卡数。
-     * Application.onCreate 跑 [CardRepository.normalizeOverdueCycles]，结果 emit 到这里；
-     * UI 层订阅后弹 Snackbar 告知用户。值 = 0 不发事件（避免噪音）。
+     * 自动续期事件：前台首发或跨零时归一化成功/失败后 emit 到这里，
+     * UI 层订阅后显示对应 Snackbar。归一化数量为 0 时不发成功事件，避免噪音。
      */
-    val cycleAutoResetEvents: SharedFlow<Int>
+    val annualFeeCycleEvents: SharedFlow<AnnualFeeCycleEvent>
 
     /**
      * 设置页结果事件流：ViewModel 发布 [SettingsDoneEvent]，
@@ -42,11 +43,10 @@ interface AppContainer {
     suspend fun emitSettings(event: SettingsDoneEvent)
 
     /**
-     * 启动时跑一次到期续期：把所有已过的结算日推进到未来，保留完整流水历史，
-     * 并将续期卡数 emit 到 [cycleAutoResetEvents]。逻辑收口到容器内，
-     * [ShuajiApplication] 只依赖接口、不再向下转型到 [DefaultAppContainer]。
+     * 启动应用级协调器：仅在进程前台消费边界时钟，失败时按规则重试。
+     * [ShuajiApplication] 只负责启动一次，不再额外执行一次性归一化。
      */
-    suspend fun runStartupCycleNormalization()
+    fun startAnnualFeeCycleCoordinator(scope: CoroutineScope): Job
 }
 
 class DefaultAppContainer(
@@ -74,24 +74,22 @@ class DefaultAppContainer(
             cardDao = database.cardDao(),
             folderDao = database.cardFolderDao(),
             transactionDao = database.transactionDao(),
+            normalizeInTransaction = repository::normalizeOverdueCyclesInTransaction,
         )
 
     /**
-     * 启动期竞争：[ShuajiApplication.onCreate] 调 [CardRepository.normalizeOverdueCycles] →
-     * emit 到 `_cycleAutoResetEvents`；同时 `ShuajiApp` 的 `LaunchedEffect(cycleEvents)`
-     * 在 Compose 第一次组合后订阅。Application.onCreate → DB init → 查询 → emit 是一
-     * 串异步操作，emit 可能早于 collector 订阅。
+     * 前台首发可能早于 `ShuajiApp` 第一次组合后的 collector，因此保留最近事件。
      *
      * `replay = 1` 让新 collector 立即收到最近一次 emit；`DROP_OLDEST` 避免极小概率
      * 的"两次重置"情况下 buffer 撑爆挂起。
      */
-    private val _cycleAutoResetEvents =
-        MutableSharedFlow<Int>(
+    private val _annualFeeCycleEvents =
+        MutableSharedFlow<AnnualFeeCycleEvent>(
             replay = 1,
             extraBufferCapacity = 4,
             onBufferOverflow = BufferOverflow.DROP_OLDEST,
         )
-    override val cycleAutoResetEvents: SharedFlow<Int> = _cycleAutoResetEvents.asSharedFlow()
+    override val annualFeeCycleEvents: SharedFlow<AnnualFeeCycleEvent> = _annualFeeCycleEvents.asSharedFlow()
 
     /**
      * 设置页 Done 事件流：`SettingsViewModel.emitSettings` 推，`ShuajiApp` 顶层
@@ -101,15 +99,16 @@ class DefaultAppContainer(
     private val _settingsEvents = MutableSharedFlow<SettingsDoneEvent>(extraBufferCapacity = 4)
     override val settingsEvents: SharedFlow<SettingsDoneEvent> = _settingsEvents.asSharedFlow()
 
-    /** 把仓库结果 emit 到 SharedFlow（count == 0 不发，避免噪音）。 */
-    private suspend fun emitCycleAutoReset(count: Int) {
-        if (count > 0) _cycleAutoResetEvents.emit(count)
-    }
+    /** 协调器与 Repository 共享同一个首发/跨零时 ticker，避免重复归一化。 */
+    private val annualFeeCycleCoordinator =
+        AnnualFeeCycleCoordinator(
+            normalize = repository::normalizeOverdueCycles,
+            boundaryTicks = boundaryTicks,
+            foreground = processForegroundFlow(),
+            onEvent = _annualFeeCycleEvents::emit,
+        )
 
-    override suspend fun runStartupCycleNormalization() {
-        val normalizedCount = repository.normalizeOverdueCycles()
-        emitCycleAutoReset(normalizedCount)
-    }
+    override fun startAnnualFeeCycleCoordinator(scope: CoroutineScope): Job = annualFeeCycleCoordinator.start(scope)
 
     /** 把设置页结果事件发布到顶层 SnackbarHost。 */
     override suspend fun emitSettings(event: SettingsDoneEvent) {

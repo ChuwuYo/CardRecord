@@ -6,8 +6,8 @@ import androidx.test.core.app.ApplicationProvider
 import com.shuaji.cards.data.local.AppDatabase
 import com.shuaji.cards.data.local.CardEntity
 import com.shuaji.cards.data.local.TransactionEntity
-import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -43,7 +43,7 @@ class CardRepositoryTest {
                 folderDao = db.cardFolderDao(),
                 clock = clock,
                 zoneIdProvider = { ZoneOffset.UTC },
-                boundaryTicks = emptyFlow(),
+                boundaryTicks = flowOf(Unit),
             )
     }
 

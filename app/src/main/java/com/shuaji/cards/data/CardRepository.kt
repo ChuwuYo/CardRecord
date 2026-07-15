@@ -13,7 +13,6 @@ import com.shuaji.cards.data.local.TransactionEntity
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.onStart
 import java.time.Clock
 import java.time.LocalDate
 import java.time.ZoneId
@@ -53,7 +52,7 @@ class CardRepository(
         combine(
             cardDao.observeAll(),
             transactionDao.observeAll(),
-            boundaryTicks.onStart { emit(Unit) },
+            boundaryTicks,
         ) { cards, transactions, _ ->
             DerivedSnapshot(
                 cards = deriveCards(cards, transactions),

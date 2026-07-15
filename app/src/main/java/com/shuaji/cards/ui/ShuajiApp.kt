@@ -19,6 +19,7 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.shuaji.cards.R
 import com.shuaji.cards.ShuajiApplication
+import com.shuaji.cards.data.AnnualFeeCycleEvent
 import com.shuaji.cards.data.SettingsDoneEvent
 import com.shuaji.cards.ui.screen.CardDetailScreen
 import com.shuaji.cards.ui.screen.CardEditScreen
@@ -43,8 +44,8 @@ object Routes {
  * 顶层 app 容器：Scaffold + NavHost + 全局 SnackbarHost。
  *
  * SnackbarHost 放在最外层，这样不论用户在哪个 page 都能弹消息：
- * - `ShuajiApplication` 启动时跑 `resetOverdueCycles`，结果通过
- *   `cycleAutoResetEvents` 推到 UI，**不论用户当前在 list / detail / edit
+ * - `ShuajiApplication` 启动生命周期协调器，归一化结果通过
+ *   `annualFeeCycleEvents` 推到 UI，**不论用户当前在 list / detail / edit
  *   都能看到「X 张卡已自动续期」提示**。
  * - `SettingsViewModel` 导出 / 导入完成时，**通过 `settingsEvents` 推到全局**——
  *   设置页离开组合树后，顶层收集器仍可在当前页面展示结果。
@@ -53,16 +54,22 @@ object Routes {
 fun ShuajiApp() {
     val context = LocalContext.current
     val app = context.applicationContext as ShuajiApplication
-    val cycleEvents = app.container.cycleAutoResetEvents
+    val cycleEvents = app.container.annualFeeCycleEvents
     val settingsEvents = app.container.settingsEvents
     val snackbarHostState = remember { SnackbarHostState() }
     val autoResetMessage = stringResource(R.string.cycle_auto_reset_message)
+    val autoResetErrorMessage = stringResource(R.string.cycle_auto_reset_error_message)
 
     // 订阅自动续期事件 → 弹 Snackbar
     LaunchedEffect(cycleEvents) {
-        cycleEvents.collect { count ->
+        cycleEvents.collect { event ->
+            val message =
+                when (event) {
+                    is AnnualFeeCycleEvent.Normalized -> autoResetMessage.format(event.count)
+                    is AnnualFeeCycleEvent.Failed -> autoResetErrorMessage
+                }
             snackbarHostState.showSnackbar(
-                message = autoResetMessage.format(count),
+                message = message,
                 duration = SnackbarDuration.Short,
             )
         }

@@ -3,6 +3,7 @@ package com.shuaji.cards.ui.screen
 import android.app.Application
 import androidx.test.core.app.ApplicationProvider
 import com.shuaji.cards.MainDispatcherRule
+import com.shuaji.cards.data.AnnualFeeCycleEvent
 import com.shuaji.cards.data.AppContainer
 import com.shuaji.cards.data.SettingsDoneEvent
 import com.shuaji.cards.data.SettingsRepository
@@ -12,7 +13,9 @@ import com.shuaji.cards.data.backup.BackupRepository
 import com.shuaji.cards.data.backup.ExportSummary
 import com.shuaji.cards.data.backup.ImportMode
 import com.shuaji.cards.data.backup.ImportResult
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
@@ -81,7 +84,7 @@ class SettingsViewModelTest {
             override val repository: com.shuaji.cards.data.CardRepository by lazy { error("not used") }
             override val settings: com.shuaji.cards.data.SettingsRepository by lazy { error("not used") }
             override val backup: BackupRepository by lazy { error("not used in fake") }
-            override val cycleAutoResetEvents: SharedFlow<Int> by lazy { error("not used") }
+            override val annualFeeCycleEvents: SharedFlow<AnnualFeeCycleEvent> by lazy { error("not used") }
             override val settingsEvents: SharedFlow<SettingsDoneEvent> =
                 MutableSharedFlow<SettingsDoneEvent>().asSharedFlow()
 
@@ -91,7 +94,7 @@ class SettingsViewModelTest {
             }
 
             // 测试不涉及启动续期，留空实现满足接口即可。
-            override suspend fun runStartupCycleNormalization() = Unit
+            override fun startAnnualFeeCycleCoordinator(scope: CoroutineScope): Job = error("not used")
         }
 
     @Before
