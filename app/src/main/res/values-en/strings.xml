@@ -109,10 +109,10 @@
     <string name="card_count_format">%1$d / %2$d</string>
     <string name="card_count_compact_format">%1$d / %2$d</string>
     <string name="card_percent_format">%1$d%%</string>
-    <string name="card_date_next_due">Next reset %1$s</string>
+    <string name="card_date_next_due">Next annual-fee settlement %1$s</string>
     <string name="card_date_valid_until">Valid until %1$s</string>
     <string name="card_label_valid_until">Valid until</string>
-    <string name="card_label_next_due">Next reset</string>
+    <string name="card_label_next_due">Next annual-fee settlement</string>
     <string name="card_status_done">Completed</string>
     <string name="card_status_remaining">%1$d more to go</string>
     <string name="card_status_expired">Expired</string>
@@ -134,7 +134,7 @@
     <string name="detail_title_loading">Card details</string>
     <string name="detail_loading">Loading…</string>
     <string name="detail_action_delete">Delete card</string>
-    <string name="detail_action_reset">Reset cycle</string>
+    <string name="detail_action_reset">Reset counted swipes</string>
     <string name="detail_action_edit">Edit</string>
     <string name="detail_action_record">Record swipe</string>
     <string name="detail_label_bank">Issuer</string>
@@ -149,8 +149,8 @@
     <string name="detail_delete_swipe_dialog_message">This deletes the swipe record from %1$s. It cannot be undone.</string>
     <string name="cycle_auto_reset_message">Automatically renewed annual fee cycles for %1$d cards</string>
     <string name="cycle_auto_reset_error_message">Couldn\'t update annual fee cycles. Retrying while the app is open.</string>
-    <string name="detail_reset_dialog_title">Reset this cycle?</string>
-    <string name="detail_reset_dialog_message">This resets the current count to zero. It cannot be undone.</string>
+    <string name="detail_reset_dialog_title">Reset counted swipes?</string>
+    <string name="detail_reset_dialog_message">For a scheduled card, this deletes only records in the current period and keeps history. For an unscheduled card, it deletes all records. This cannot be undone.</string>
     <string name="detail_reset_dialog_confirm">Reset</string>
     <string name="detail_delete_dialog_title">Delete this card?</string>
     <string name="detail_delete_dialog_message">This also deletes all spending records for this card. It cannot be undone.</string>
@@ -182,7 +182,7 @@
     <string name="edit_field_number_hint">****  ****  ****  1234</string>
     <string name="edit_field_required">Required swipes *</string>
     <string name="edit_date_valid_until">Card expiry</string>
-    <string name="edit_date_next_due">Next annual-fee reset date</string>
+    <string name="edit_date_next_due">Next annual-fee settlement date</string>
     <string name="edit_field_note">Note</string>
     <string name="edit_date_unset">Not set</string>
     <string name="edit_color_picker_title">Choose theme color</string>

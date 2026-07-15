@@ -15,7 +15,8 @@ import kotlinx.serialization.Serializable
  * - [nextDueDateMillis] 下次年费结算日
  * - [colorArgb] 卡片主题色
  *
- * `currentCount` 不存表，由 transactions 的 `COUNT(*)` 派生；
+ * `currentCount` 不存表。Repository 同时观察卡片与全部流水，并按该卡当前年费统计窗口
+ * 在 Kotlin 中派生有效笔数；未设置结算日的卡为兼容旧行为，仍统计全部流水。
  * 旧字段 `cycleStartMillis` 因没有读取路径已移除。
  *
  * 卡面图片来源：

@@ -12,8 +12,9 @@ import kotlinx.serialization.Serializable
  *
  * 字段极简化的原因：
  * - 金额 / 商户 / 备注在付款 App 里更详细，手动记只会更粗；
- * - 「当前已刷 N 笔」直接从本表 `COUNT(*)` 算，cards 表不再冗余存 currentCount；
- * - 撤销/重置操作 = `DELETE FROM transactions WHERE card_id = ?`。
+ * - cards 表不冗余存 currentCount；Repository 按当前年费统计窗口筛选本表流水后派生笔数；
+ * - 手动重置已排期卡片时只删除当前窗口内流水，历史窗口流水继续保留；未排期卡片兼容旧行为，
+ *   重置会删除该卡全部流水。
  *
  * 索引说明：保持 `Index("card_id")` 单列索引——一年最多几十条流水，
  * 排序走文件 sort 完全够用，避免引入 Room 复合索引在 migration 阶段

@@ -19,7 +19,8 @@ interface AppContainer {
 
     /**
      * 自动续期事件：前台首发或跨零时归一化成功/失败后 emit 到这里，
-     * UI 层订阅后显示对应 Snackbar。归一化数量为 0 时不发成功事件，避免噪音。
+     * UI 层订阅后显示对应 Snackbar。事件经单次消费队列交付，不会在 UI 重建后重放；
+     * 归一化数量为 0 时不发成功事件，避免噪音。
      */
     val annualFeeCycleEvents: Flow<AnnualFeeCycleEvent>
 

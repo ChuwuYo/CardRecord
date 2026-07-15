@@ -135,7 +135,7 @@
     <string name="detail_title_loading">卡片详情</string>
     <string name="detail_loading">正在加载…</string>
     <string name="detail_action_delete">删除卡片</string>
-    <string name="detail_action_reset">重置周期</string>
+    <string name="detail_action_reset">重置统计</string>
     <string name="detail_action_edit">编辑</string>
     <string name="detail_action_record">记一笔</string>
     <string name="detail_label_bank">发卡行</string>
@@ -150,8 +150,8 @@
     <string name="detail_delete_swipe_dialog_message">将删除 %1$s 的这笔刷卡记录，操作不可撤销。</string>
     <string name="cycle_auto_reset_message">已自动续期 %1$d 张卡的年费统计周期</string>
     <string name="cycle_auto_reset_error_message">年费统计周期更新失败，将在前台自动重试</string>
-    <string name="detail_reset_dialog_title">重置本周期？</string>
-    <string name="detail_reset_dialog_message">将清零当前笔数，操作不可撤销。</string>
+    <string name="detail_reset_dialog_title">重置已统计笔数？</string>
+    <string name="detail_reset_dialog_message">已设置结算日时，只删除本期记录并保留历史；未设置结算日时，会删除全部记录。操作不可撤销。</string>
     <string name="detail_reset_dialog_confirm">重置</string>
     <string name="detail_delete_dialog_title">删除此卡片？</string>
     <string name="detail_delete_dialog_message">将同时删除这张卡的全部消费记录，操作不可撤销。</string>

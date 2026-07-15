@@ -151,7 +151,7 @@ abstract class AppDatabase : RoomDatabase() {
          * 1. transactions 表瘦化：删 `amount_cents` / `merchant` / `note`
          *    只剩 `id` / `card_id` / `occurred_at_millis`
          * 2. cards 表删 `current_count` / `cycle_start_millis`
-         *    —— currentCount 从 transactions COUNT 算，cycleStartMillis 是死字段
+         *    —— currentCount 由 Repository 按统计窗口从 transactions 派生，cycleStartMillis 是死字段
          * 3. card_folders 表删 `icon_key` —— 历史从未被 UI 消费的写而不读字段
          *
          * 关键约束（**逐字符匹配 Room kapt 生成的 schema**）：

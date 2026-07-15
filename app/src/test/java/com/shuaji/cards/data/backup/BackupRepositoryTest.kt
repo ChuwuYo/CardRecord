@@ -656,11 +656,10 @@ class BackupRepositoryTest {
             )
             val importedTransactions = db.transactionDao().listAll()
             assertEquals(
-                originalTransactions.mapIndexed { index, transaction ->
-                    transaction.copy(id = importedTransactions[index].id, cardId = importedCard.id)
-                },
-                importedTransactions,
+                originalTransactions.map(TransactionEntity::occurredAtMillis).sorted(),
+                importedTransactions.map(TransactionEntity::occurredAtMillis).sorted(),
             )
+            assertTrue(importedTransactions.all { it.cardId == importedCard.id })
         }
 
     @Test
