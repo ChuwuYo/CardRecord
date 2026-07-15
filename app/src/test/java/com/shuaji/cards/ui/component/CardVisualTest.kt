@@ -30,10 +30,12 @@ class CardVisualTest {
     }
 
     @Test
-    fun cardSurfaceColor_usesSavedThemeColor() {
+    fun cardSurfaceColors_areOpaqueAndDerivedFromSavedThemeColor() {
         val savedThemeColor = 0xFF2E7D32.toInt()
+        val colors = resolveCardSurfaceColors(savedThemeColor)
 
-        assertEquals(Color(savedThemeColor), resolveCardSurfaceColor(savedThemeColor))
+        assertEquals(Color(savedThemeColor), colors.first())
+        assertTrue(colors.all { it.alpha == 1f })
     }
 
     @Test

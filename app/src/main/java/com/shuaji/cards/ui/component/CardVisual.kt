@@ -28,6 +28,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -250,19 +251,16 @@ private fun PortraitCardBody(
 
 /** 卡面来源只决定图片层；底色始终以用户保存的主题色为准。 */
 @Composable
-private fun cardSurfaceBrush(card: CardEntity): Brush {
-    val base = resolveCardSurfaceColor(card.colorArgb)
-    return Brush.linearGradient(
-        colors =
-            listOf(
-                base.copy(alpha = 1f),
-                base.copy(alpha = 0.75f),
-                base.copy(alpha = 0.95f),
-            ),
+private fun cardSurfaceBrush(card: CardEntity): Brush = Brush.linearGradient(colors = resolveCardSurfaceColors(card.colorArgb))
+
+internal fun resolveCardSurfaceColors(colorArgb: Int): List<Color> {
+    val base = Color(colorArgb).copy(alpha = 1f)
+    return listOf(
+        base,
+        lerp(base, Color.White, 0.06f).copy(alpha = 1f),
+        lerp(base, Color.Black, 0.04f).copy(alpha = 1f),
     )
 }
-
-internal fun resolveCardSurfaceColor(colorArgb: Int): Color = Color(colorArgb)
 
 // ── 卡面图片层 ────────────────────────────────────────────────────
 
