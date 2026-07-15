@@ -29,9 +29,8 @@ android {
             all {
                 // Robolectric 的 plugins-maven-dependency-resolver 不读 Gradle 代理配置，
                 // 走默认 Sonatype 直连会卡超时。本地开发环境：
-                //   提前用 `curl --proxy 127.0.0.1:18080` 把
-                //   android-all-instrumented-13-robolectric-9030017-i6.jar（**注意是 i6 不是 i7**）下到
-                //   `~/.m2/repository/org/robolectric/android-all-instrumented/13-robolectric-9030017-i6/`
+                //   提前按测试使用的 SDK 下载对应 android-all-instrumented 制品到本地 Maven 仓库；
+                //   例如 SDK 34 对应 `14-robolectric-10818077-i6`（注意是 i6）。
                 //   沙箱里 Robolectric 会先扫本地仓库命中，不会去网络下
                 //   本地能直连 Maven Central 时可删掉这一段
                 val mirror = System.getenv("ROBOLECTRIC_MIRROR")
