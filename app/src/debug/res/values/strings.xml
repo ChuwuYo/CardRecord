@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="card_visual_showcase_title">卡面视觉验收</string>
+    <string name="card_visual_showcase_pure">纯色卡 · Visa 徽标</string>
+    <string name="card_visual_showcase_provider_long">卡组织预设 · Visa · 长文本</string>
+    <string name="card_visual_showcase_compact">160dp 小卡 · Mastercard / 银联</string>
+    <string name="card_visual_showcase_user">用户图片 · Mastercard 徽标</string>
+    <string name="card_visual_showcase_portrait">竖版卡组织预设 · Visa</string>
+    <string name="card_visual_sample_bank">刷记银行</string>
+    <string name="card_visual_sample_pure_name">纯色卡</string>
+    <string name="card_visual_sample_provider_name">白金旅行奖励信用卡</string>
+    <string name="card_visual_sample_provider_bank">国际商业银行集团有限公司</string>
+    <string name="card_visual_sample_mastercard_name">Mastercard 卡</string>
+    <string name="card_visual_sample_unionpay_name">银联卡</string>
+    <string name="card_visual_sample_user_name">用户图片卡</string>
+    <string name="card_visual_sample_portrait_name">竖版卡</string>
+</resources>

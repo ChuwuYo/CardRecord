@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="card_visual_showcase_title">Card visual showcase</string>
+    <string name="card_visual_showcase_pure">Pure color · Visa badge</string>
+    <string name="card_visual_showcase_provider_long">Provider preset · Visa · long content</string>
+    <string name="card_visual_showcase_compact">Compact 160dp · Mastercard / UnionPay</string>
+    <string name="card_visual_showcase_user">User image · Mastercard badge</string>
+    <string name="card_visual_showcase_portrait">Portrait provider preset · Visa</string>
+    <string name="card_visual_sample_bank">CardRecord Bank</string>
+    <string name="card_visual_sample_pure_name">Pure color</string>
+    <string name="card_visual_sample_provider_name">Platinum travel rewards credit card</string>
+    <string name="card_visual_sample_provider_bank">International Commercial Banking Corporation</string>
+    <string name="card_visual_sample_mastercard_name">Mastercard</string>
+    <string name="card_visual_sample_unionpay_name">UnionPay</string>
+    <string name="card_visual_sample_user_name">User image</string>
+    <string name="card_visual_sample_portrait_name">Portrait</string>
+</resources>

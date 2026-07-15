@@ -1,6 +1,5 @@
 package com.shuaji.cards.ui.component
 
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
@@ -31,7 +30,6 @@ import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -55,8 +53,6 @@ private const val PORTRAIT_WIDTH_FRACTION = 0.6f
  */
 private const val CARD_MIN_HEIGHT_DP = 96f
 
-private val STACKED_HEADER_MAX_WIDTH = 180.dp
-
 /**
  * 卡片视觉组件：渐变 + 反光 + 卡面图片。
  *
@@ -68,7 +64,7 @@ private val STACKED_HEADER_MAX_WIDTH = 180.dp
  *
  * 三种卡面来源：
  * - USER：用户上传图片
- * - PROVIDER：simple-icons 官方品牌 logo
+ * - PROVIDER：卡组织预设装饰
  * - NONE：无图片层
  *
  * 三种来源都使用 [CardEntity.colorArgb] 作为底色。
@@ -137,6 +133,7 @@ private fun LandscapeCardBody(
         // 严格按 ISO 7810 ID-1 比例，比例单一来源是 CardOrientation.aspectRatio
         val height: Dp =
             (maxWidth / card.cardOrientationEnum.aspectRatio).coerceAtLeast(CARD_MIN_HEIGHT_DP.dp)
+        val networkLayout = resolveCardNetworkVisualLayout(maxWidth)
         Box(
             modifier =
                 Modifier
@@ -147,22 +144,40 @@ private fun LandscapeCardBody(
             CardImageLayer(
                 modifier = Modifier.fillMaxSize(),
                 card = card,
-                network = network,
                 sourceType = sourceType,
             )
-            DecorationBlades()
+            if (shouldShowBlades(sourceType)) {
+                DecorationBlades()
+            }
+            if (shouldShowProviderDecoration(sourceType, network != null)) {
+                ProviderNetworkDecoration(
+                    network = checkNotNull(network),
+                    layout = networkLayout,
+                )
+            }
             CardContent(
                 modifier =
                     Modifier
                         .align(Alignment.BottomStart)
                         .fillMaxWidth()
-                        .padding(16.dp),
+                        .padding(start = 16.dp, top = 16.dp, bottom = 16.dp),
                 card = card,
-                network = network,
+                contentEndPadding =
+                    if (shouldShowNetworkBadge(network != null)) {
+                        networkLayout.contentEndPadding
+                    } else {
+                        16.dp
+                    },
                 showNumber = showNumber,
                 showBank = showBank,
                 showName = showName,
             )
+            if (shouldShowNetworkBadge(network != null)) {
+                NetworkCornerBadge(
+                    network = checkNotNull(network),
+                    layout = networkLayout,
+                )
+            }
         }
     }
 }
@@ -186,6 +201,7 @@ private fun PortraitCardBody(
                 .coerceIn(100.dp, 180.dp)
         // 高度严格按 1.586:1 比例，比例单一来源是 CardOrientation.aspectRatio
         val height: Dp = (width * card.cardOrientationEnum.aspectRatio).coerceAtMost(280.dp)
+        val networkLayout = resolveCardNetworkVisualLayout(width)
         Box(
             modifier =
                 Modifier
@@ -197,22 +213,40 @@ private fun PortraitCardBody(
             CardImageLayer(
                 modifier = Modifier.fillMaxSize(),
                 card = card,
-                network = network,
                 sourceType = sourceType,
             )
-            DecorationBlades()
+            if (shouldShowBlades(sourceType)) {
+                DecorationBlades()
+            }
+            if (shouldShowProviderDecoration(sourceType, network != null)) {
+                ProviderNetworkDecoration(
+                    network = checkNotNull(network),
+                    layout = networkLayout,
+                )
+            }
             CardContent(
                 modifier =
                     Modifier
                         .align(Alignment.BottomStart)
                         .fillMaxWidth()
-                        .padding(14.dp),
+                        .padding(start = 14.dp, top = 14.dp, bottom = 14.dp),
                 card = card,
-                network = network,
+                contentEndPadding =
+                    if (shouldShowNetworkBadge(network != null)) {
+                        networkLayout.contentEndPadding
+                    } else {
+                        14.dp
+                    },
                 showNumber = showNumber,
                 showBank = showBank,
                 showName = showName,
             )
+            if (shouldShowNetworkBadge(network != null)) {
+                NetworkCornerBadge(
+                    network = checkNotNull(network),
+                    layout = networkLayout,
+                )
+            }
         }
     }
 }
@@ -241,7 +275,6 @@ internal fun resolveCardSurfaceColor(colorArgb: Int): Color = Color(colorArgb)
 private fun CardImageLayer(
     modifier: Modifier,
     card: CardEntity,
-    network: CardNetworkProvider?,
     sourceType: ImageSourceType,
 ) {
     when (sourceType) {
@@ -256,23 +289,19 @@ private fun CardImageLayer(
                 )
             }
         }
-        ImageSourceType.PROVIDER -> {
-            if (network != null) {
-                Image(
-                    painter = painterResource(network.logoRes),
-                    contentDescription = stringResource(network.displayNameRes),
-                    contentScale = ContentScale.Fit,
-                    modifier =
-                        modifier
-                            .padding(top = 10.dp, end = 12.dp, bottom = 32.dp),
-                    alignment = Alignment.TopEnd,
-                    alpha = 0.8f,
-                )
-            }
-        }
+        ImageSourceType.PROVIDER -> Unit
         ImageSourceType.NONE -> Unit
     }
 }
+
+internal fun shouldShowProviderDecoration(
+    sourceType: ImageSourceType,
+    networkPresent: Boolean,
+): Boolean = sourceType == ImageSourceType.PROVIDER && networkPresent
+
+internal fun shouldShowNetworkBadge(networkPresent: Boolean): Boolean = networkPresent
+
+internal fun shouldShowBlades(sourceType: ImageSourceType): Boolean = sourceType == ImageSourceType.USER
 
 // ── 装饰：右上角斜条纹（锋锐风格） ───────────────────────────────
 
@@ -303,33 +332,14 @@ private fun BoxScope.DecorationBlades() {
 private fun CardContent(
     modifier: Modifier,
     card: CardEntity,
-    network: CardNetworkProvider?,
+    contentEndPadding: Dp,
     showNumber: Boolean,
     showBank: Boolean,
     showName: Boolean,
 ) {
-    Column(modifier = modifier) {
+    Column(modifier = modifier.padding(end = contentEndPadding)) {
         if (showBank) {
-            BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-                if (network != null && shouldStackCardHeader(maxWidth)) {
-                    Column {
-                        BankLabel(card = card, modifier = Modifier.fillMaxWidth())
-                        Spacer(Modifier.height(3.dp))
-                        NetworkBadge(network)
-                    }
-                } else {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        BankLabel(card = card, modifier = Modifier.weight(1f))
-                        if (network != null) {
-                            Spacer(Modifier.width(6.dp))
-                            NetworkBadge(network)
-                        }
-                    }
-                }
-            }
+            BankLabel(card = card, modifier = Modifier.fillMaxWidth())
             Spacer(Modifier.height(4.dp))
         }
         if (showName) {
@@ -381,24 +391,3 @@ private fun BankLabel(
         )
     }
 }
-
-@Composable
-private fun NetworkBadge(network: CardNetworkProvider) {
-    Box(
-        modifier =
-            Modifier
-                .background(
-                    Color.White.copy(alpha = 0.18f),
-                    MaterialTheme.shapes.extraSmall,
-                ).padding(horizontal = 5.dp, vertical = 1.dp),
-    ) {
-        Text(
-            text = stringResource(network.displayNameRes),
-            style = MaterialTheme.typography.labelSmall,
-            color = Color.White,
-            maxLines = 1,
-        )
-    }
-}
-
-internal fun shouldStackCardHeader(availableWidth: Dp): Boolean = availableWidth < STACKED_HEADER_MAX_WIDTH

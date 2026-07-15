@@ -2,13 +2,34 @@ package com.shuaji.cards.ui.component
 
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import com.shuaji.cards.data.local.ImageSourceType
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import kotlin.math.abs
 import kotlin.math.hypot
 
 class CardVisualTest {
+    @Test
+    fun pureCard_hasBadgeButNoProviderDecorationOrBlades() {
+        assertTrue(shouldShowNetworkBadge(networkPresent = true))
+        assertFalse(shouldShowProviderDecoration(ImageSourceType.NONE, networkPresent = true))
+        assertFalse(shouldShowBlades(ImageSourceType.NONE))
+    }
+
+    @Test
+    fun providerCard_requiresValidNetworkForDecoration() {
+        assertTrue(shouldShowProviderDecoration(ImageSourceType.PROVIDER, networkPresent = true))
+        assertFalse(shouldShowProviderDecoration(ImageSourceType.PROVIDER, networkPresent = false))
+    }
+
+    @Test
+    fun userImage_keepsImageDecorationAndMayShowBadge() {
+        assertTrue(shouldShowBlades(ImageSourceType.USER))
+        assertTrue(shouldShowNetworkBadge(networkPresent = true))
+    }
+
     @Test
     fun cardSurfaceColor_usesSavedThemeColor() {
         val savedThemeColor = 0xFF2E7D32.toInt()
