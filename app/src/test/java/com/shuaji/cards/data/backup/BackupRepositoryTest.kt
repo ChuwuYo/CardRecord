@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.Uri
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
+import com.shuaji.cards.data.CardNetworkProvider
 import com.shuaji.cards.data.CardRepository
 import com.shuaji.cards.data.DateToken
 import com.shuaji.cards.data.backup.TestData.card
@@ -12,6 +13,7 @@ import com.shuaji.cards.data.backup.TestData.transaction
 import com.shuaji.cards.data.local.AppDatabase
 import com.shuaji.cards.data.local.CardEntity
 import com.shuaji.cards.data.local.CardFolderEntity
+import com.shuaji.cards.data.local.ImageSourceType
 import com.shuaji.cards.data.local.TransactionEntity
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.flowOf
@@ -161,9 +163,9 @@ class BackupRepositoryTest {
 
     private suspend fun snapshotDatabase() =
         DatabaseSnapshot(
-            folders = db.cardFolderDao().listAll(),
-            cards = db.cardDao().listAll(),
-            transactions = db.transactionDao().listAll(),
+            folders = db.cardFolderDao().listAll().sortedBy(CardFolderEntity::id),
+            cards = db.cardDao().listAll().sortedBy(CardEntity::id),
+            transactions = db.transactionDao().listAll().sortedBy(TransactionEntity::id),
         )
 
     private data class DatabaseSnapshot(
@@ -393,6 +395,22 @@ class BackupRepositoryTest {
                         createdAtMillis = 333L,
                     ),
                 )
+            val plainNetworkCard =
+                card(
+                    id = 0L,
+                    name = "纯色银联",
+                    imageSourceType = ImageSourceType.NONE.name,
+                    imageProviderKey = CardNetworkProvider.UNIONPAY.key,
+                )
+            val userNetworkCard =
+                card(
+                    id = 0L,
+                    name = "图片万事达",
+                    imageSourceType = ImageSourceType.USER.name,
+                    imageProviderKey = CardNetworkProvider.MASTERCARD.key,
+                )
+            db.cardDao().upsert(plainNetworkCard)
+            db.cardDao().upsert(userNetworkCard)
             db.transactionDao().insert(transaction(cardId = cardId, occurredAtMillis = 444L))
             val before = snapshotDatabase()
             val file = tempJsonFile()
@@ -402,7 +420,45 @@ class BackupRepositoryTest {
             repo.import(Uri.fromFile(file), ImportMode.REPLACE)
 
             assertEquals(BackupBundle.SCHEMA_VERSION, json().decodeFromString<BackupBundle>(file.readText()).version)
+            assertEquals(1, BackupBundle.SCHEMA_VERSION)
+            assertEquals(7, db.openHelper.readableDatabase.version)
             assertEquals(before, snapshotDatabase())
+
+            repo.import(Uri.fromFile(file), ImportMode.MERGE)
+
+            val mergedCards = db.cardDao().listAll()
+            assertEquals(
+                2,
+                mergedCards.count {
+                    it.name == plainNetworkCard.name &&
+                        it.imageSourceType == ImageSourceType.NONE.name &&
+                        it.imageProviderKey == CardNetworkProvider.UNIONPAY.key
+                },
+            )
+            assertEquals(
+                2,
+                mergedCards.count {
+                    it.name == userNetworkCard.name &&
+                        it.imageSourceType == ImageSourceType.USER.name &&
+                        it.imageProviderKey == CardNetworkProvider.MASTERCARD.key
+                },
+            )
+            assertEquals(
+                2,
+                mergedCards
+                    .filter { it.name == plainNetworkCard.name }
+                    .map(CardEntity::id)
+                    .distinct()
+                    .size,
+            )
+            assertEquals(
+                2,
+                mergedCards
+                    .filter { it.name == userNetworkCard.name }
+                    .map(CardEntity::id)
+                    .distinct()
+                    .size,
+            )
         }
 
     @Test

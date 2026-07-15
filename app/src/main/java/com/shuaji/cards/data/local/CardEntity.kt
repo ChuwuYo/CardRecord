@@ -19,10 +19,12 @@ import kotlinx.serialization.Serializable
  * 在 Kotlin 中派生有效笔数；未设置结算日的卡为兼容旧行为，仍统计全部流水。
  * 旧字段 `cycleStartMillis` 因没有读取路径已移除。
  *
- * 卡面图片来源：
- * - [imageSourceType] = "NONE"     → 不显示图片（纯色卡）
- * - [imageSourceType] = "PROVIDER" → 使用预设卡组织（imageProviderKey 存枚举 key）
- * - [imageSourceType] = "USER"     → 使用用户自定义图片（imageUri 存相册 URI）
+ * 卡面表现与卡组织是两个独立维度：
+ * - [imageSourceType] = "NONE"     → 纯色样式
+ * - [imageSourceType] = "PROVIDER" → 卡组织水印预设样式
+ * - [imageSourceType] = "USER"     → 用户自定义图片样式（imageUri 存相册 URI）
+ * - [imageProviderKey] 独立、可空，在以上任意样式中保存卡组织枚举 key；空值表示未选择卡组织
+ *   USER 样式仍保存该值供切换样式恢复，但卡面不叠加徽标或装饰
  *
  * 朝向：
  * - [cardOrientation] = "LANDSCAPE"（横版 1.586:1，标准卡片） / "PORTRAIT"（竖版）
