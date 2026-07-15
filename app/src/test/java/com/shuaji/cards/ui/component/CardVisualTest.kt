@@ -48,10 +48,10 @@ class CardVisualTest {
         assertEquals(64.dp, large.badgeWidth)
         assertEquals(6.dp, compact.badgeInset)
         assertEquals(8.dp, large.badgeInset)
-        assertTrue(abs(compact.watermarkRight.value - 8f) < 0.001f)
-        assertTrue(abs(compact.watermarkTop.value - 9.6f) < 0.001f)
-        assertTrue(abs(large.watermarkRight.value - 16f) < 0.001f)
-        assertTrue(abs(large.watermarkTop.value - 19.2f) < 0.001f)
+        assertTrue(abs(compact.watermarkRight.value - 3.2f) < 0.001f)
+        assertTrue(abs(compact.watermarkTop.value - 3.2f) < 0.001f)
+        assertTrue(abs(large.watermarkRight.value - 6.4f) < 0.001f)
+        assertTrue(abs(large.watermarkTop.value - 6.4f) < 0.001f)
         assertEquals(compact.badgeWidth + compact.badgeInset + 12.dp, compact.contentEndPadding)
         assertEquals(large.badgeWidth + large.badgeInset + 12.dp, large.contentEndPadding)
         assertEquals(76.8.dp, compact.largeRing.diameter)
@@ -113,6 +113,59 @@ class CardVisualTest {
                 sourceType = ImageSourceType.PROVIDER,
                 networkPresent = false,
                 cardWidth = 160.dp,
+            ),
+        )
+    }
+
+    @Test
+    fun compactLiftedText_expandsOnlyUpperRowsAndKeepsNumberClearOfBadge() {
+        val compactLayout = resolveCardNetworkVisualLayout(160.dp)
+        val largeLayout = resolveCardNetworkVisualLayout(320.dp)
+
+        assertEquals(
+            CardContentEndPaddings(upperRows = 16.dp, numberRow = compactLayout.contentEndPadding),
+            resolveCardContentEndPaddings(
+                sourceType = ImageSourceType.PROVIDER,
+                networkPresent = true,
+                networkLayout = compactLayout,
+                textLift = 8.dp,
+                defaultPadding = 16.dp,
+            ),
+        )
+        assertEquals(
+            CardContentEndPaddings(
+                upperRows = largeLayout.contentEndPadding,
+                numberRow = largeLayout.contentEndPadding,
+            ),
+            resolveCardContentEndPaddings(
+                sourceType = ImageSourceType.PROVIDER,
+                networkPresent = true,
+                networkLayout = largeLayout,
+                textLift = 0.dp,
+                defaultPadding = 16.dp,
+            ),
+        )
+        assertEquals(
+            CardContentEndPaddings(
+                upperRows = compactLayout.contentEndPadding,
+                numberRow = compactLayout.contentEndPadding,
+            ),
+            resolveCardContentEndPaddings(
+                sourceType = ImageSourceType.PROVIDER,
+                networkPresent = true,
+                networkLayout = compactLayout,
+                textLift = 0.dp,
+                defaultPadding = 14.dp,
+            ),
+        )
+        assertEquals(
+            CardContentEndPaddings(upperRows = 16.dp, numberRow = 16.dp),
+            resolveCardContentEndPaddings(
+                sourceType = ImageSourceType.USER,
+                networkPresent = true,
+                networkLayout = compactLayout,
+                textLift = 0.dp,
+                defaultPadding = 16.dp,
             ),
         )
     }

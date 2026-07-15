@@ -153,6 +153,14 @@ private fun LandscapeCardBody(
                 networkPresent = network != null,
                 cardWidth = maxWidth,
             )
+        val contentEndPaddings =
+            resolveCardContentEndPaddings(
+                sourceType = sourceType,
+                networkPresent = network != null,
+                networkLayout = networkLayout,
+                textLift = textLift,
+                defaultPadding = 16.dp,
+            )
         Box(
             modifier =
                 Modifier
@@ -179,12 +187,7 @@ private fun LandscapeCardBody(
                         .offset(y = -textLift)
                         .padding(start = 16.dp, top = 16.dp, bottom = 16.dp),
                 card = card,
-                contentEndPadding =
-                    if (shouldShowNetworkBadge(sourceType, network != null)) {
-                        networkLayout.contentEndPadding
-                    } else {
-                        16.dp
-                    },
+                contentEndPaddings = contentEndPaddings,
                 showNumber = showNumber,
                 showBank = showBank,
                 showName = showName,
@@ -226,6 +229,14 @@ private fun PortraitCardBody(
                 networkPresent = network != null,
                 cardWidth = width,
             )
+        val contentEndPaddings =
+            resolveCardContentEndPaddings(
+                sourceType = sourceType,
+                networkPresent = network != null,
+                networkLayout = networkLayout,
+                textLift = textLift,
+                defaultPadding = 14.dp,
+            )
         Box(
             modifier =
                 Modifier
@@ -254,12 +265,7 @@ private fun PortraitCardBody(
                         .offset(y = -textLift)
                         .padding(start = 14.dp, top = 14.dp, bottom = 14.dp),
                 card = card,
-                contentEndPadding =
-                    if (shouldShowNetworkBadge(sourceType, network != null)) {
-                        networkLayout.contentEndPadding
-                    } else {
-                        14.dp
-                    },
+                contentEndPaddings = contentEndPaddings,
                 showNumber = showNumber,
                 showBank = showBank,
                 showName = showName,
@@ -339,25 +345,56 @@ internal fun resolveCardTextLift(
         0.dp
     }
 
+internal data class CardContentEndPaddings(
+    val upperRows: Dp,
+    val numberRow: Dp,
+)
+
+internal fun resolveCardContentEndPaddings(
+    sourceType: ImageSourceType,
+    networkPresent: Boolean,
+    networkLayout: CardNetworkVisualLayout,
+    textLift: Dp,
+    defaultPadding: Dp,
+): CardContentEndPaddings {
+    val badgePadding =
+        if (shouldShowNetworkBadge(sourceType, networkPresent)) {
+            networkLayout.contentEndPadding
+        } else {
+            defaultPadding
+        }
+    return CardContentEndPaddings(
+        upperRows = if (textLift > 0.dp) defaultPadding else badgePadding,
+        numberRow = badgePadding,
+    )
+}
+
 // ── 卡面文字内容 ──────────────────────────────────────────────────
 
 @Composable
 private fun CardContent(
     modifier: Modifier,
     card: CardEntity,
-    contentEndPadding: Dp,
+    contentEndPaddings: CardContentEndPaddings,
     showNumber: Boolean,
     showBank: Boolean,
     showName: Boolean,
 ) {
-    Column(modifier = modifier.padding(end = contentEndPadding)) {
+    Column(modifier = modifier) {
         if (showBank) {
-            BankLabel(card = card, modifier = Modifier.fillMaxWidth())
+            BankLabel(
+                card = card,
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(end = contentEndPaddings.upperRows),
+            )
             Spacer(Modifier.height(4.dp))
         }
         if (showName) {
             Text(
                 text = card.name.ifBlank { stringResource(R.string.card_default_name) },
+                modifier = Modifier.padding(end = contentEndPaddings.upperRows),
                 style = MaterialTheme.typography.titleLarge.copy(shadow = CardTextShadow),
                 color = Color.White,
                 fontWeight = FontWeight.ExtraBold,
@@ -369,6 +406,7 @@ private fun CardContent(
             Spacer(Modifier.height(2.dp))
             Text(
                 card.cardNumberMasked,
+                modifier = Modifier.padding(end = contentEndPaddings.numberRow),
                 style = MaterialTheme.typography.titleMedium.copy(shadow = CardTextShadow),
                 color = Color.White.copy(alpha = 0.85f),
                 maxLines = 1,
