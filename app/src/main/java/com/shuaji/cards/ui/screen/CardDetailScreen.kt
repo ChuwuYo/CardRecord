@@ -499,7 +499,7 @@ private fun CardInfoSection(detail: CardDetailUi) {
                 InfoRow(
                     icon = Icons.Default.Event,
                     label = stringResource(R.string.card_label_next_due),
-                    value = DateToken.format(c.nextDueDateMillis),
+                    value = DateToken.formatAnnualDue(c.nextDueDateMillis),
                 )
             }
             if (c.note.isNotBlank()) {

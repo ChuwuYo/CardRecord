@@ -14,6 +14,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import java.time.Clock
+import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 
@@ -96,15 +97,18 @@ class CardRepository(
     /** 在同一 Room 写事务中校验卡片、归一化周期并记录流水。 */
     suspend fun recordSwipe(cardId: Long): SwipeRecordResult =
         database.withTransaction {
+            val now = clock.instant()
+            val zone = zoneIdProvider()
             val storedCard = cardDao.getById(cardId) ?: return@withTransaction SwipeRecordResult.CardMissing
-            val card = normalizeCardIfOverdue(storedCard)
-            val cycle = resolveCycle(card)
+            val card = normalizeCardIfOverdue(storedCard, now, zone)
+            val cycle = resolveCycle(card, now, zone)
             if (cycle.state == AnnualFeeCycleState.UPCOMING) {
                 return@withTransaction SwipeRecordResult.CountingNotStarted(cycle.startDate!!)
             }
+            check(cycle.canRecord) { "过期周期归一化后仍不可记录" }
             val transactionId =
                 transactionDao.insert(
-                    TransactionEntity(cardId = card.id, occurredAtMillis = clock.millis()),
+                    TransactionEntity(cardId = card.id, occurredAtMillis = now.toEpochMilli()),
                 )
             SwipeRecordResult.Recorded(transactionId)
         }
@@ -115,9 +119,11 @@ class CardRepository(
      */
     suspend fun resetCardCycle(cardId: Long): Boolean =
         database.withTransaction {
+            val now = clock.instant()
+            val zone = zoneIdProvider()
             val storedCard = cardDao.getById(cardId) ?: return@withTransaction false
-            val card = normalizeCardIfOverdue(storedCard)
-            val cycle = resolveCycle(card)
+            val card = normalizeCardIfOverdue(storedCard, now, zone)
+            val cycle = resolveCycle(card, now, zone)
             when (cycle.state) {
                 AnnualFeeCycleState.UNSCHEDULED -> transactionDao.deleteAllForCard(cardId)
                 AnnualFeeCycleState.ACTIVE ->
@@ -157,37 +163,47 @@ class CardRepository(
 
     /** 调用方必须已经持有 Room 写事务，供导入流程复用且避免嵌套事务。 */
     internal suspend fun normalizeOverdueCyclesInTransaction(): Int {
+        val now = clock.instant()
+        val zone = zoneIdProvider()
         var normalizedCount = 0
         cardDao.listAll().forEach { card ->
-            if (resolveCycle(card).state == AnnualFeeCycleState.OVERDUE) {
-                normalizeCardIfOverdue(card)
+            if (resolveCycle(card, now, zone).state == AnnualFeeCycleState.OVERDUE) {
+                normalizeCardIfOverdue(card, now, zone)
                 normalizedCount += 1
             }
         }
         return normalizedCount
     }
 
-    private suspend fun normalizeCardIfOverdue(card: CardEntity): CardEntity {
+    private suspend fun normalizeCardIfOverdue(
+        card: CardEntity,
+        now: Instant,
+        zone: ZoneId,
+    ): CardEntity {
         val dueToken = card.nextDueDateMillis ?: return card
-        if (resolveCycle(card).state != AnnualFeeCycleState.OVERDUE) return card
+        if (resolveCycle(card, now, zone).state != AnnualFeeCycleState.OVERDUE) return card
         val normalized =
             card.copy(
                 nextDueDateMillis =
                     AnnualFeeCycle.advanceDueDateUntilFuture(
                         nextDueDateToken = dueToken,
-                        now = clock.instant(),
-                        zoneId = zoneIdProvider(),
+                        now = now,
+                        zoneId = zone,
                     ),
             )
         cardDao.update(normalized)
         return normalized
     }
 
-    private fun resolveCycle(card: CardEntity): AnnualFeeCycle =
+    private fun resolveCycle(
+        card: CardEntity,
+        now: Instant,
+        zone: ZoneId,
+    ): AnnualFeeCycle =
         AnnualFeeCycle.resolve(
             nextDueDateToken = card.nextDueDateMillis,
-            now = clock.instant(),
-            zoneId = zoneIdProvider(),
+            now = now,
+            zoneId = zone,
         )
 
     private fun deriveCards(

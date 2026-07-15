@@ -214,7 +214,7 @@ private fun CompactInfoArea(card: CardUi) {
             variant = CycleProgressVariant.COMPACT,
         )
         val dateText =
-            card.card.nextDueDateMillis?.let { stringResource(R.string.card_date_next_due, DateToken.format(it)) }
+            card.card.nextDueDateMillis?.let { stringResource(R.string.card_date_next_due, DateToken.formatAnnualDue(it)) }
                 ?: card.card.validUntilMillis?.let { stringResource(R.string.card_date_valid_until, DateToken.format(it)) }
         if (dateText != null) {
             Text(
@@ -258,7 +258,7 @@ private fun FullInfoArea(
                 DateRow(
                     icon = Icons.Default.Event,
                     label = stringResource(R.string.card_label_next_due),
-                    value = DateToken.format(card.card.nextDueDateMillis),
+                    value = DateToken.formatAnnualDue(card.card.nextDueDateMillis),
                     isWarning = false,
                 )
             }

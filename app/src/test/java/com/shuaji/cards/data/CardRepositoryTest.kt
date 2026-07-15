@@ -21,6 +21,7 @@ import org.robolectric.annotation.Config
 import java.time.Clock
 import java.time.Instant
 import java.time.LocalDate
+import java.time.ZoneId
 import java.time.ZoneOffset
 
 /** [CardRepository] 的 Room 数据流、统计窗口与事务写入回归测试。 */
@@ -201,6 +202,51 @@ class CardRepositoryTest {
         }
 
     @Test
+    fun recordSwipe_crossingDueBoundaryUsesOneTimeSnapshot() =
+        runBlocking {
+            val boundaryClock = SteppingClock(Instant.parse("2028-05-31T23:59:59.999Z"))
+            repo = createRepository(boundaryClock)
+            val id = insertCard(due = "2028-06-01")
+
+            assertTrue(repo.recordSwipe(id) is SwipeRecordResult.Recorded)
+
+            val stored = db.transactionDao().listAll().single()
+            assertEquals(Instant.parse("2028-05-31T23:59:59.999Z").toEpochMilli(), stored.occurredAtMillis)
+            assertEquals(1, boundaryClock.instantCalls)
+        }
+
+    @Test
+    fun resetCardCycle_crossingDueBoundaryUsesOneTimeSnapshot() =
+        runBlocking {
+            val boundaryClock = SteppingClock(Instant.parse("2028-05-31T23:59:59.999Z"))
+            repo = createRepository(boundaryClock)
+            val id = insertCard(due = "2028-06-01")
+            insertTransaction(id, "2027-07-01T00:00:00Z")
+
+            assertTrue(repo.resetCardCycle(id))
+
+            assertEquals(emptyList<String>(), storedInstants(id))
+            assertEquals(1, boundaryClock.instantCalls)
+        }
+
+    @Test
+    fun normalizeOverdueCycles_crossingDueBoundaryDoesNotSplitIdenticalCards() =
+        runBlocking {
+            val boundaryClock = SteppingClock(Instant.parse("2028-05-31T23:59:59.999Z"))
+            repo = createRepository(boundaryClock)
+            insertCard(due = "2028-06-01", name = "A")
+            insertCard(due = "2028-06-01", name = "B")
+
+            assertEquals(0, repo.normalizeOverdueCycles())
+
+            assertEquals(
+                listOf(LocalDate.of(2028, 6, 1), LocalDate.of(2028, 6, 1)),
+                db.cardDao().listAll().map { DateToken.toLocalDate(it.nextDueDateMillis!!) },
+            )
+            assertEquals(1, boundaryClock.instantCalls)
+        }
+
+    @Test
     fun observeCardDetails_usesDerivedCountAndKeepsSortedFullHistory() =
         runBlocking {
             val id = insertCard(due = "2028-06-01")
@@ -254,4 +300,29 @@ class CardRepositoryTest {
             .first()
             .single { it.card.id == cardId }
             .currentCount
+
+    private fun createRepository(clock: Clock): CardRepository =
+        CardRepository(
+            database = db,
+            cardDao = db.cardDao(),
+            transactionDao = db.transactionDao(),
+            folderDao = db.cardFolderDao(),
+            clock = clock,
+            zoneIdProvider = { ZoneOffset.UTC },
+            boundaryTicks = flowOf(Unit),
+        )
+
+    private class SteppingClock(
+        private val first: Instant,
+        private val zone: ZoneId = ZoneOffset.UTC,
+    ) : Clock() {
+        var instantCalls: Int = 0
+            private set
+
+        override fun getZone(): ZoneId = zone
+
+        override fun withZone(zone: ZoneId): Clock = SteppingClock(first, zone)
+
+        override fun instant(): Instant = first.plusMillis(instantCalls++.toLong())
+    }
 }

@@ -501,6 +501,7 @@ fun CardEditScreen(
                 millis = state.nextDueDateMillis,
                 onClick = { dateDialogTarget = DateField.NEXT_DUE },
                 onClear = { viewModel.update { it.copy(nextDueDateMillis = null) } },
+                formatMillis = DateToken::formatAnnualDue,
                 supportingText =
                     nextDueError.takeIf {
                         state.saveResult == CardEditSaveResult.ValidationError(CardEditValidation.NEXT_DUE_MUST_BE_FUTURE)
@@ -837,6 +838,7 @@ private fun DateRow(
     millis: Long?,
     onClick: () -> Unit,
     onClear: () -> Unit,
+    formatMillis: (Long) -> String = DateToken::format,
     supportingText: String? = null,
     isError: Boolean = false,
 ) {
@@ -861,7 +863,7 @@ private fun DateRow(
                 )
                 Spacer(Modifier.height(2.dp))
                 Text(
-                    if (millis != null) DateToken.format(millis) else unsetLabel,
+                    if (millis != null) formatMillis(millis) else unsetLabel,
                     style = MaterialTheme.typography.titleMedium,
                     color = if (isError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
                 )

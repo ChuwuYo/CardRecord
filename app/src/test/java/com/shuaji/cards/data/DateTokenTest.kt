@@ -3,6 +3,7 @@ package com.shuaji.cards.data
 import org.junit.Assert.assertEquals
 import org.junit.Test
 import java.time.LocalDate
+import java.time.ZoneOffset
 
 class DateTokenTest {
     @Test
@@ -25,5 +26,18 @@ class DateTokenTest {
         val token = DateToken.fromLocalDate(LocalDate.of(2026, 12, 3))
 
         assertEquals("2026-12-03", DateToken.format(token))
+    }
+
+    @Test
+    fun annualDueToken_leapYearFebruary28IsFormattedAsMonthEnd() {
+        val legacyToken =
+            LocalDate
+                .of(2028, 2, 28)
+                .atStartOfDay(ZoneOffset.UTC)
+                .toInstant()
+                .toEpochMilli()
+
+        assertEquals("2028-02-29", DateToken.formatAnnualDue(legacyToken))
+        assertEquals("2028-02-28", DateToken.format(legacyToken))
     }
 }
