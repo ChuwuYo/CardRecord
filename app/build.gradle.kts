@@ -49,23 +49,25 @@ android {
     }
 
     signingConfigs {
-        // 本仓库尚未配置正式发布密钥库。
-        // release 构建复用 Android SDK 自带的 debug.keystore，
-        // 目的只是让产物可被 adb / 用户正常安装（未签名 APK 会因
-        // INSTALL_PARSE_FAILED_NO_CERTIFICATES 报错）。这不是生产级签名。
-        create("releaseDebugSigned") {
-            val debugKeystore = file("${System.getProperty("user.home")}/.android/debug.keystore")
-            storeFile = debugKeystore
-            storePassword = "android"
-            keyAlias = "androiddebugkey"
-            keyPassword = "android"
+        create("release") {
+            // 正式密钥只由本机环境变量或 GitHub Actions Secrets 注入，不进入仓库。
+            providers.environmentVariable("CARDRECORD_RELEASE_STORE_FILE").orNull?.let {
+                storeFile = file(it)
+            }
+            storePassword = providers.environmentVariable("CARDRECORD_RELEASE_STORE_PASSWORD").orNull
+            keyAlias = providers.environmentVariable("CARDRECORD_RELEASE_KEY_ALIAS").orNull
+            keyPassword = providers.environmentVariable("CARDRECORD_RELEASE_KEY_PASSWORD").orNull
+            enableV1Signing = true
+            enableV2Signing = true
+            enableV3Signing = true
+            enableV4Signing = true
         }
     }
 
     buildTypes {
         release {
             isMinifyEnabled = false
-            signingConfig = signingConfigs.getByName("releaseDebugSigned")
+            signingConfig = signingConfigs.getByName("release")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
@@ -115,7 +117,7 @@ dependencies {
     implementation("io.coil-kt.coil3:coil-compose:3.4.0")
     implementation("io.coil-kt.coil3:coil-network-okhttp:3.4.0")
     // 现代化调色板：HSV 圆形色环 + 多滑动条（BrightnessSlider / AlphaSlider / SaturationSlider）
-    // 1.1.2 是 Maven Central 上最新的 Kotlin 2.0 编译版本（Kotlin 2.1.20 兼容）
+    // 版本与当前 Kotlin / Compose 工具链兼容。
     implementation("com.github.skydoves:colorpicker-compose:1.1.2")
     // 种子色 → Material 3 配色：MaterialKolor 封装 Google material-color-utilities 的
     // HCT / tonal palette 官方算法（Material You）。2.1.1 用 Kotlin 2.1.20 + Compose 1.7.3 编译，

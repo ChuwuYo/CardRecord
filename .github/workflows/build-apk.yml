@@ -17,26 +17,24 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Set up JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@c1e323688fd81a25caa38c78aa6df2d33d3e20d9 # v4
         with:
           distribution: temurin
           java-version: '17'
 
       - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3
 
       - name: Install SDK packages
         run: |
           yes | sdkmanager "platforms;android-36" "build-tools;36.0.0" "platform-tools" > /dev/null
 
-      # 仓库里的 gradlew 是本地沙箱专用的桩（直接 exec mise 的 gradle），
-      # GitHub runner 上没有那条路径，所以这里改用官方 action 安装真正的 Gradle，
-      # 再用 `gradle` 命令构建，不碰仓库里的 gradlew。
+      # CI 显式安装与 Wrapper 相同的 Gradle 版本，便于 action 缓存和版本审计。
       - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@48b5f213c81028ace310571dc5ec0fbbca0b2947 # v4
         with:
           gradle-version: '8.14.4'
           dependency-graph: disabled
@@ -48,23 +46,41 @@ jobs:
         run: |
           sed -i -E '/^systemProp\.(http|https)\.(proxyHost|proxyPort|nonProxyHosts)=/d' gradle.properties
 
-      # release 构建复用 debug 签名密钥（见 app/build.gradle.kts 的 signingConfigs），
-      # 未签名 APK 装不上。这里用标准 debug 凭据重建一个 debug.keystore。
-      - name: Generate debug keystore
+      - name: Restore release keystore
+        env:
+          RELEASE_KEYSTORE_BASE64: ${{ secrets.CARDRECORD_RELEASE_KEYSTORE_BASE64 }}
+        shell: bash
         run: |
-          mkdir -p "$HOME/.android"
-          keytool -genkeypair -v \
-            -keystore "$HOME/.android/debug.keystore" \
-            -storepass android -keypass android \
-            -alias androiddebugkey \
-            -keyalg RSA -keysize 2048 -validity 10000 \
-            -dname "CN=Android Debug,O=Android,C=US"
+          set -euo pipefail
+          test -n "$RELEASE_KEYSTORE_BASE64"
+          printf '%s' "$RELEASE_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/cardrecord-release.p12"
+          chmod 600 "$RUNNER_TEMP/cardrecord-release.p12"
 
       - name: Build release APK
+        env:
+          CARDRECORD_RELEASE_STORE_FILE: ${{ runner.temp }}/cardrecord-release.p12
+          CARDRECORD_RELEASE_STORE_PASSWORD: ${{ secrets.CARDRECORD_RELEASE_STORE_PASSWORD }}
+          CARDRECORD_RELEASE_KEY_ALIAS: ${{ secrets.CARDRECORD_RELEASE_KEY_ALIAS }}
+          CARDRECORD_RELEASE_KEY_PASSWORD: ${{ secrets.CARDRECORD_RELEASE_KEY_PASSWORD }}
         run: gradle :app:assembleRelease --no-daemon --stacktrace
 
+      - name: Verify release signature
+        env:
+          EXPECTED_CERT_SHA256: ${{ secrets.CARDRECORD_RELEASE_CERT_SHA256 }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$EXPECTED_CERT_SHA256"
+          actual="$(keytool -printcert -jarfile app/build/outputs/apk/release/app-release.apk | awk -F': ' '/SHA256:/{print $2; exit}')"
+          test "$actual" = "$EXPECTED_CERT_SHA256"
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs app/build/outputs/apk/release/app-release.apk
+
+      - name: Delete release keystore
+        if: ${{ always() }}
+        run: rm -f "$RUNNER_TEMP/cardrecord-release.p12"
+
       - name: Upload APK artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: cardrecord-release-apk
           path: app/build/outputs/apk/release/app-release.apk
@@ -75,20 +91,37 @@ jobs:
         id: ver
         run: echo "name=$(grep -oP 'versionName = \"\K[^\"]+' app/build.gradle.kts)" >> "$GITHUB_OUTPUT"
 
+      - name: Move rolling tag to this build
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/apk-latest" >/dev/null 2>&1; then
+            gh api --method PATCH "repos/$GITHUB_REPOSITORY/git/refs/tags/apk-latest" \
+              -f sha="$GITHUB_SHA" -F force=true >/dev/null
+          else
+            gh api --method POST "repos/$GITHUB_REPOSITORY/git/refs" \
+              -f ref='refs/tags/apk-latest' -f sha="$GITHUB_SHA" >/dev/null
+          fi
+
       # 把 APK 发到滚动预发布「apk-latest」：每次构建把该 tag 移到当前提交并覆盖同名资产，
       # 下载直链固定不变：
       #   https://github.com/<owner>/<repo>/releases/download/apk-latest/app-release.apk
       - name: Publish APK to rolling pre-release (apk-latest)
-        uses: softprops/action-gh-release@v2
+        # v2 固定到完整 commit，避免第三方 tag 漂移。
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65
         with:
           tag_name: apk-latest
           name: 最新测试包 v${{ steps.ver.outputs.name }}
           prerelease: true
           body: |
-            自动构建的最新可安装 APK（**debug 签名，仅供测试**，非正式版本发布）。
+            自动构建的最新可安装 APK（使用 CardRecord 固定发布密钥签名；此 Release 仍是滚动测试渠道）。
             - 版本：v${{ steps.ver.outputs.name }}
             - 提交：${{ github.sha }}
             - 分支：${{ github.ref_name }}
+
+            ⚠️ 如果手机上安装的是 2026-07-15 之前的旧测试包，它使用不同的临时 debug 证书，不能直接覆盖安装。请先在旧 App 中导出 JSON 配置，再卸载旧包、安装本 APK，最后导入 JSON；直接卸载会清除本地数据。
 
             直接下载下方 Assets 里的 `app-release.apk` 即可安装。
           files: app/build/outputs/apk/release/app-release.apk

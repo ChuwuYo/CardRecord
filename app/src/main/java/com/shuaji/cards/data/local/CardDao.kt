@@ -8,6 +8,7 @@ import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Update
+import androidx.room.Upsert
 import kotlinx.coroutines.flow.Flow
 
 /**
@@ -20,13 +21,12 @@ import kotlinx.coroutines.flow.Flow
  *
  * 新实现：cards 表只存静态属性，currentCount 从 transactions 表
  * `COUNT(*)` 算（LEFT JOIN + GROUP BY 子查询一次拿完）。
- * Repository / UI 拿到的就是 [CardWithCount]，永远新鲜、不可能漂移。
+ * Repository / UI 只读取查询时派生的 [CardWithCount]，避免计数与流水形成两个写入源。
  *
  * 命名上 `current_count` / `last_swipe_at_millis` 是 SQL 列名，跟旧字段同名方便阅读，
  * 含义从「冗余计数」变成「由 SQL 实时算出的派生值」。
  *
- * [lastSwipeAtMillis] 是为了给流水表的 `occurred_at_millis` 一个 UI 消费路径
- * —— 详情页"最近一笔时间"显示，遵循「凡是存在的字段都要有 UI 消费路径」原则。
+ * [lastSwipeAtMillis] 由流水时间的 `MAX` 派生，供详情页显示最近一笔时间。
  */
 data class CardWithCount(
     @Embedded
@@ -92,7 +92,7 @@ interface CardDao {
     @Query("SELECT * FROM cards WHERE next_due_date_millis IS NOT NULL AND next_due_date_millis < :now")
     suspend fun findOverdue(now: Long): List<CardEntity>
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    @Upsert
     suspend fun upsert(card: CardEntity): Long
 
     @Update
@@ -110,13 +110,8 @@ interface CardDao {
 }
 
 /**
- * 流水表只做两件事：插一笔、删该卡全部。
- * 「撤销最后一笔」/「重置年度笔数」都是 `DELETE FROM transactions WHERE card_id = ?`。
- * 「当前笔数」从 COUNT 算，「最近一笔时间」从 MAX 算——流水表不再承担计数职责。
- *
- * 流水表瘦到 2 字段（card_id, occurred_at_millis）后，按时间倒序把全部
- * 时间戳暴露给详情页「流水列表」section——这才是流水行真正的归宿。
- * 凡是存在的行就要在 UI 里有消费，否则就是写而不读的脏数据。
+ * 流水支持新增、按卡查询、删除单笔和清空某卡周期。
+ * 「当前笔数」从 COUNT 派生，「最近一笔时间」从 MAX 派生；详情页按时间倒序展示流水。
  */
 @Dao
 interface TransactionDao {

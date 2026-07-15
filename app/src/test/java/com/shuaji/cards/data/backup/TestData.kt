@@ -4,14 +4,9 @@ import com.shuaji.cards.data.local.CardEntity
 import com.shuaji.cards.data.local.CardFolderEntity
 import com.shuaji.cards.data.local.TransactionEntity
 
-/**
- * 测试 fixtures：让测试用例构造数据时少写 boilerplate。
- *
- * 字段默认值用「招行 / 运通 / 5 笔 / 红色」——典型国内信用卡的最小集。
- * 不依赖 `System.currentTimeMillis()`，避免 CI 抖动。
- */
+/** 测试数据工厂。固定时间用于保证测试结果可重复。 */
 object TestData {
-    const val FIXED_TIME_MILLIS: Long = 1_700_000_000_000L // 2023-11-14 22:13:20 UTC，固定
+    const val FIXED_TIME_MILLIS: Long = 1_700_000_000_000L
 
     fun folder(
         id: Long = 0L,
@@ -38,6 +33,9 @@ object TestData {
         colorArgb: Int = 0xFFD32F2F.toInt(),
         note: String = "",
         imageUri: String? = null,
+        imageSourceType: String = "NONE",
+        imageProviderKey: String? = null,
+        cardOrientation: String = "LANDSCAPE",
         folderId: Long? = null,
         createdAtMillis: Long = FIXED_TIME_MILLIS,
     ) = CardEntity(
@@ -51,6 +49,9 @@ object TestData {
         colorArgb = colorArgb,
         note = note,
         imageUri = imageUri,
+        imageSourceType = imageSourceType,
+        imageProviderKey = imageProviderKey,
+        cardOrientation = cardOrientation,
         folderId = folderId,
         createdAtMillis = createdAtMillis,
     )

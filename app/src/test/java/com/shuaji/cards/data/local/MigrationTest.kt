@@ -19,7 +19,7 @@ import org.robolectric.annotation.Config
 /**
  * Room 迁移 / 外键 schema 一致性测试。
  *
- * 针对 P1-CRIT：历史上 `cards` 表的外键声明在「实体」与「迁移 SQL」之间不一致——
+ * 历史上 `cards` 表的外键声明在「实体」与「迁移 SQL」之间不一致：
  * - `MIGRATION_5_6` 的建表 SQL 写了 `ON DELETE SET NULL` 外键；
  * - 但 v7 之前的 `CardEntity` 没声明 `@ForeignKey`/`@Index`。
  *
@@ -45,7 +45,7 @@ class MigrationTest {
     /**
      * v5 → 最新：升级路径不崩 + 历史数据（含 folder_id 引用）保留。
      *
-     * 这条用例是 P1-CRIT 的回归测试：修复前，Room 打开时会因
+     * 修复前，Room 打开时会因
      * 「实体期望无外键 vs 迁移后磁盘有外键」校验失败抛异常。
      */
     @Test

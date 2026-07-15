@@ -37,14 +37,18 @@ data class CardEditUiState(
     val imageSourceType: ImageSourceType = ImageSourceType.PROVIDER,
     val imageProviderKey: String? = CardNetworkProvider.VISA.key,
     val imageUri: String? = null,
+    val originalImageUri: String? = null,
+    val acquiredImageUris: Set<String> = emptySet(),
     val cardOrientation: CardOrientation = CardOrientation.LANDSCAPE,
     val folderId: Long? = null,
     val isLoading: Boolean = false,
+    val isSaving: Boolean = false,
+    val isClosing: Boolean = false,
     val saved: Boolean = false,
     val editingId: Long? = null,
 ) {
     val canSave: Boolean
-        get() = name.isNotBlank() && requiredCount.toIntOrNull()?.let { it > 0 } == true
+        get() = !isSaving && !isClosing && name.isNotBlank() && requiredCount.toIntOrNull()?.let { it > 0 } == true
 }
 
 class CardEditViewModel(
@@ -91,6 +95,8 @@ class CardEditViewModel(
                             }.getOrDefault(ImageSourceType.NONE),
                         imageProviderKey = c.imageProviderKey,
                         imageUri = c.imageUri,
+                        originalImageUri = c.imageUri,
+                        acquiredImageUris = emptySet(),
                         cardOrientation =
                             runCatching {
                                 CardOrientation.valueOf(c.cardOrientation)
@@ -107,43 +113,108 @@ class CardEditViewModel(
     }
 
     fun update(transform: (CardEditUiState) -> CardEditUiState) {
-        _uiState.update(transform)
+        _uiState.update { current ->
+            if (current.isSaving || current.isClosing || current.saved) current else transform(current)
+        }
+    }
+
+    fun selectUserImage(uri: String) {
+        _uiState.update { current ->
+            if (current.isSaving || current.isClosing || current.saved) {
+                current
+            } else {
+                current.copy(
+                    imageUri = uri,
+                    imageSourceType = ImageSourceType.USER,
+                    acquiredImageUris = current.acquiredImageUris + uri,
+                )
+            }
+        }
     }
 
     fun save() {
-        val state = _uiState.value
-        if (!state.canSave) return
+        val state = beginSaving() ?: return
         viewModelScope.launch {
-            val required = state.requiredCount.toInt()
-            val existingId = state.editingId
-            // 编辑已有卡时保留 createdAtMillis（流水表用 card_id 关联，不依赖这个字段，
-            // 但 UI 列表排序还在用，所以保留）
-            val preserved =
-                if (existingId != null) {
-                    repository.observeCard(existingId).first()
-                } else {
-                    null
+            try {
+                val required = state.requiredCount.toInt()
+                val existingId = state.editingId
+                val preserved =
+                    if (existingId != null) {
+                        repository.observeCard(existingId).first()
+                    } else {
+                        null
+                    }
+                val entity =
+                    CardEntity(
+                        id = existingId ?: 0L,
+                        name = state.name.trim(),
+                        bank = state.bank.trim(),
+                        cardNumberMasked = state.cardNumberMasked.trim(),
+                        requiredCount = required,
+                        validUntilMillis = state.validUntilMillis,
+                        nextDueDateMillis = state.nextDueDateMillis,
+                        colorArgb = state.colorArgb,
+                        note = state.note,
+                        imageUri = persistedImageUri(state.imageSourceType, state.imageUri),
+                        imageSourceType = state.imageSourceType.name,
+                        imageProviderKey = state.imageProviderKey.takeIf { state.imageSourceType == ImageSourceType.PROVIDER },
+                        cardOrientation = state.cardOrientation.name,
+                        folderId = state.folderId,
+                        createdAtMillis = preserved?.card?.createdAtMillis ?: System.currentTimeMillis(),
+                    )
+                val id = repository.upsertCard(entity)
+                _uiState.update {
+                    it.copy(
+                        imageUri = entity.imageUri,
+                        imageProviderKey = entity.imageProviderKey,
+                        isSaving = false,
+                        saved = true,
+                        editingId = if (existingId == null) id else existingId,
+                    )
                 }
-            val entity =
-                CardEntity(
-                    id = existingId ?: 0L,
-                    name = state.name.trim(),
-                    bank = state.bank.trim(),
-                    cardNumberMasked = state.cardNumberMasked.trim(),
-                    requiredCount = required,
-                    validUntilMillis = state.validUntilMillis,
-                    nextDueDateMillis = state.nextDueDateMillis,
-                    colorArgb = state.colorArgb,
-                    note = state.note,
-                    imageUri = state.imageUri,
-                    imageSourceType = state.imageSourceType.name,
-                    imageProviderKey = state.imageProviderKey,
-                    cardOrientation = state.cardOrientation.name,
-                    folderId = state.folderId,
-                    createdAtMillis = preserved?.card?.createdAtMillis ?: System.currentTimeMillis(),
-                )
-            val id = repository.upsertCard(entity)
-            _uiState.update { it.copy(saved = true, editingId = if (existingId == null) id else existingId) }
+            } finally {
+                _uiState.update { if (it.saved) it else it.copy(isSaving = false) }
+            }
+        }
+    }
+
+    /** 保存和关闭竞争同一份原子状态，先开始的一方阻止另一方进入。 */
+    fun beginClosing(): CardEditUiState? {
+        while (true) {
+            val current = _uiState.value
+            if (current.isSaving || current.isClosing || current.saved) return null
+            if (_uiState.compareAndSet(current, current.copy(isClosing = true))) return current
+        }
+    }
+
+    /** 候选 URI 只有在全库没有其他 USER 卡片引用时才可释放。 */
+    suspend fun releasableImageUris(retainedUri: String?): Set<String> {
+        val state = _uiState.value
+        val candidates = obsoleteImageUris(state.originalImageUri, state.acquiredImageUris, retainedUri)
+        return releasableImageUris(candidates, repository.referencedUserImageUris())
+    }
+
+    private fun beginSaving(): CardEditUiState? {
+        while (true) {
+            val current = _uiState.value
+            if (!current.canSave) return null
+            if (_uiState.compareAndSet(current, current.copy(isSaving = true))) return current
         }
     }
 }
+
+internal fun persistedImageUri(
+    sourceType: ImageSourceType,
+    imageUri: String?,
+): String? = imageUri.takeIf { sourceType == ImageSourceType.USER }
+
+internal fun obsoleteImageUris(
+    originalUri: String?,
+    acquiredUris: Set<String>,
+    retainedUri: String?,
+): Set<String> = (acquiredUris + listOfNotNull(originalUri)) - setOfNotNull(retainedUri)
+
+internal fun releasableImageUris(
+    candidates: Set<String>,
+    referencedUris: Set<String>,
+): Set<String> = candidates - referencedUris

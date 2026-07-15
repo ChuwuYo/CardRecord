@@ -21,15 +21,8 @@ interface AppContainer {
     val cycleAutoResetEvents: SharedFlow<Int>
 
     /**
-     * 设置页 Done 事件流：值 = ViewModel 已经把消息拼好的 [SettingsDoneEvent]（id +
-     *   message + 优先级），推到顶层 `ShuajiApp` 全局 SnackbarHost。
-     *
-     * **P1 修**：原来 SettingsScreen 自己持有一个 `SnackbarHostState`，结果就是
-     * 用户在 SettingsScreen 点完「导出」→「已导出 N 条」提示弹出来，但只要他
-     * 跳到 Home 或者锁屏 / 通知就看不到——消息随页面销毁丢了。
-     * 现在改成 emit 到这里的 SharedFlow，顶层订阅，在任意页面 / 锁屏 / 通知
-     * 都能消费（Material3 Snackbar 内部就是基于 `SnackbarHostState` 队列，
-     * 不会因为 setContent 重组而丢）。
+     * 设置页结果事件流：ViewModel 发布 [SettingsDoneEvent]，
+     * `ShuajiApp` 顶层 SnackbarHost 负责在当前应用页面展示。
      *
      * **为什么 ViewModel 不直接 emit 字符串？**
      * 1) ViewModel 不该持有 Context，调 `getString(R.string.xxx, ...)` 需要
@@ -42,8 +35,7 @@ interface AppContainer {
     /**
      * 发送一条设置页事件（AppContainer 同时是发布者和容器）。
      *
-     * 暴露 [emitSettings] 给 ViewModel 写，比让 ViewModel 反射拿 `MutableSharedFlow`
-     * 干净——对外只发不可改的 read-only `SharedFlow`，写入端只在 [DefaultAppContainer] 内部。
+     * 对外仅暴露只读 [SharedFlow]，发布经过该接口收口。
      */
     suspend fun emitSettings(event: SettingsDoneEvent)
 
@@ -76,13 +68,10 @@ class DefaultAppContainer(
         )
 
     /**
-     * P1-1 修：用 `replay = 1` + `BufferOverflow.DROP_OLDEST`。
-     *
      * 启动期竞争：[ShuajiApplication.onCreate] 调 [CardRepository.resetOverdueCycles] →
      * emit 到 `_cycleAutoResetEvents`；同时 `ShuajiApp` 的 `LaunchedEffect(cycleEvents)`
      * 在 Compose 第一次组合后订阅。Application.onCreate → DB init → 查询 → emit 是一
-     * 串异步操作，**如果 emit 跑在 collector 订阅之前，无 `replay` 的话事件直接被丢**。
-     * 用户永远看不到「X 张卡已自动续期」提示。
+     * 串异步操作，emit 可能早于 collector 订阅。
      *
      * `replay = 1` 让新 collector 立即收到最近一次 emit；`DROP_OLDEST` 避免极小概率
      * 的"两次重置"情况下 buffer 撑爆挂起。
@@ -113,7 +102,7 @@ class DefaultAppContainer(
         emitCycleAutoReset(resetCount)
     }
 
-    /** P1 修：把设置页 Done 事件 emit 到 SharedFlow，顶层 SnackbarHost 消费。 */
+    /** 把设置页结果事件发布到顶层 SnackbarHost。 */
     override suspend fun emitSettings(event: SettingsDoneEvent) {
         _settingsEvents.emit(event)
     }
@@ -123,13 +112,8 @@ class DefaultAppContainer(
  * 设置页跨页面通知载荷。
  *
  * 用 `data class` 而不是 `sealed class` 因为所有事件最终都映射成「Snackbar
- * 文本」一个出口，UI 层不需要分类型做不同处理（dismiss vs action 等都在
- * 文本层面 + 默认 Snackbar 行为覆盖）。`isError = true` 让 UI 决定是否
- * 用错误主题色（红色）显示。
- *
- * 历史：早期 v1.5.0 draft 我用 `sealed class SettingsUiEvent { ... }`，
- * 但 SettingsScreen 内的 `state is SettingsUiState.Done` 已经把类型消
- * 化掉了；emit 到全局时再分类型就是双重抽象 + 没有 UI 差异点——直接平铺。
+ * 文本」一个出口，UI 层不需要按事件类型分流。
+ * `isError` 供 UI 区分错误与成功提示。
  */
 data class SettingsDoneEvent(
     val message: String,

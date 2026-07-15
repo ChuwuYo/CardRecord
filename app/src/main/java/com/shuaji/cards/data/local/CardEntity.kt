@@ -15,10 +15,8 @@ import kotlinx.serialization.Serializable
  * - [nextDueDateMillis] 下次年费结算日
  * - [colorArgb] 卡片主题色
  *
- * 字段精简原则（凡是存在的字段都必须有 UI 消费路径）：
- * - 删了 `currentCount` —— 从 transactions 表 `COUNT(*)` 算
- *   （GroupBy 一次拿，UI 拿到的视图模型自带 currentCount，详情见 [com.shuaji.cards.data.local.CardWithCount]）
- * - 删了 `cycleStartMillis` —— 从未被任何 UI/查询读取的纯死字段
+ * `currentCount` 不存表，由 transactions 的 `COUNT(*)` 派生；
+ * 旧字段 `cycleStartMillis` 因没有读取路径已移除。
  *
  * 卡面图片来源：
  * - [imageSourceType] = "NONE"     → 不显示图片（纯色卡）

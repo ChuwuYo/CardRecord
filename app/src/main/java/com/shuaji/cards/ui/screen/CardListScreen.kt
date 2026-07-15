@@ -31,6 +31,7 @@ import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
@@ -44,15 +45,11 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.MenuAnchorType
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SnackbarHost
-import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -65,10 +62,12 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.shuaji.cards.R
 import com.shuaji.cards.ui.ViewModelFactories
 import com.shuaji.cards.ui.component.CardListItem
+import com.shuaji.cards.ui.component.CompactCardListItem
 
 /**
  * 主页：搜索 + 文件夹过滤 + 卡片列表/网格切换。
@@ -85,35 +84,13 @@ fun CardListScreen(
     onManageFolders: () -> Unit = {},
     onOpenSettings: () -> Unit = {},
 ) {
-    val state by viewModel.uiState.collectAsState()
-    val deletedCardName by viewModel.deletedCardName.collectAsState()
-    val snackbarHostState = remember { SnackbarHostState() }
-
-    val undoMessage = stringResource(R.string.list_delete_dialog_message_undo)
-    val undoActionLabel = stringResource(R.string.list_delete_dialog_undo)
+    val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val pendingDelete by viewModel.pendingDelete.collectAsStateWithLifecycle()
     val defaultName = stringResource(R.string.card_default_name)
-
-    LaunchedEffect(deletedCardName) {
-        val name = deletedCardName
-        if (name != null) {
-            val result =
-                snackbarHostState.showSnackbar(
-                    message = undoMessage.format(name),
-                    actionLabel = undoActionLabel,
-                    withDismissAction = true,
-                )
-            if (result == SnackbarResult.ActionPerformed) {
-                viewModel.undoDelete()
-            } else {
-                viewModel.consumeDeletedEvent()
-            }
-        }
-    }
 
     Scaffold(
         topBar = {
             ListTopBar(
-                cardCount = state.visibleCards.size,
                 onLayoutToggle = viewModel::toggleLayoutMode,
                 onOpenSettings = onOpenSettings,
                 layoutMode = state.layoutMode,
@@ -128,7 +105,6 @@ fun CardListScreen(
                 contentColor = MaterialTheme.colorScheme.onPrimary,
             )
         },
-        snackbarHost = { SnackbarHost(snackbarHostState) },
         containerColor = MaterialTheme.colorScheme.background,
     ) { padding ->
         Column(
@@ -156,27 +132,44 @@ fun CardListScreen(
                         CardsList(
                             state = state,
                             onCardClick = onCardClick,
-                            onLongPress = { card ->
-                                viewModel.deleteCard(card)
-                                viewModel.markDeleted(card.card.name.ifBlank { defaultName })
-                            },
+                            onLongPress = viewModel::requestDelete,
                             onSwipe = viewModel::swipe,
                         )
                     ListLayoutMode.GRID ->
                         CardsGrid(
                             state = state,
                             onCardClick = onCardClick,
+                            onLongPress = viewModel::requestDelete,
                         )
                 }
             }
         }
+    }
+
+    pendingDelete?.let { target ->
+        AlertDialog(
+            onDismissRequest = viewModel::cancelDelete,
+            title = {
+                Text(stringResource(R.string.list_delete_dialog_title, target.card.name.ifBlank { defaultName }))
+            },
+            text = { Text(stringResource(R.string.list_delete_dialog_message)) },
+            confirmButton = {
+                TextButton(onClick = viewModel::confirmDelete) {
+                    Text(stringResource(R.string.common_delete))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = viewModel::cancelDelete) {
+                    Text(stringResource(R.string.common_cancel))
+                }
+            },
+        )
     }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ListTopBar(
-    cardCount: Int,
     onLayoutToggle: () -> Unit,
     onOpenSettings: () -> Unit,
     layoutMode: ListLayoutMode,
@@ -212,7 +205,7 @@ private fun ListTopBar(
                     )
                 }
             }
-            // 设置入口——按用户要求放在右上角最右边
+            // 设置入口固定在最右侧，避免布局切换后位置跳动。
             IconButton(onClick = onOpenSettings) {
                 Icon(
                     Icons.Default.Settings,
@@ -416,7 +409,7 @@ private fun CardsList(
                 FolderHeader(
                     title = group.title,
                     colorArgb = group.colorArgb,
-                    isAllGroup = group.isAllGroup,
+                    isUnfiledGroup = group.isUnfiledGroup,
                 )
             }
             items(group.cards, key = { it.card.id }) { card ->
@@ -436,7 +429,7 @@ private fun CardsList(
 private fun FolderHeader(
     title: String,
     colorArgb: Int,
-    isAllGroup: Boolean,
+    isUnfiledGroup: Boolean,
 ) {
     Row(
         modifier =
@@ -445,7 +438,7 @@ private fun FolderHeader(
                 .padding(top = 4.dp, bottom = 2.dp, start = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        if (!isAllGroup) {
+        if (!isUnfiledGroup) {
             Box(
                 modifier =
                     Modifier
@@ -456,9 +449,7 @@ private fun FolderHeader(
             Spacer(Modifier.width(8.dp))
         }
         Text(
-            // 「未分类」分组头（isAllGroup）走 stringResource 本地化，不用 ViewModel
-            // 传来的硬编码标题，避免英文环境露出中文「未分类」。
-            text = if (isAllGroup) stringResource(R.string.list_filter_unfiled) else title,
+            text = if (isUnfiledGroup) stringResource(R.string.list_filter_unfiled) else title,
             style = MaterialTheme.typography.titleSmall,
             fontWeight = FontWeight.SemiBold,
             color = MaterialTheme.colorScheme.onSurface,
@@ -469,10 +460,7 @@ private fun FolderHeader(
 /**
  * grid 模式 cell 类型：把 grouped 摊平到一个 grid 流里。
  *
- * 之前 v1.3.10 用 `LazyRow + 260dp` 实现 grid，本质是「横向滚动的固定宽列」，
- * 手机屏宽 360-420dp 下 260dp 占 2/3 屏宽，看起来只放得下 1.5 张卡——这就是
- * 你说的"2/3~3/4 大小"。这里改用 `LazyVerticalGrid(GridCells.Adaptive(160dp))`：
- * 屏宽 360dp → 2 列；420dp → 2 列；600dp+ → 3+ 列自适应。
+ * `GridCells.Adaptive(160.dp)` 在常见手机宽度显示两列，在大屏上自动增加列数。
  */
 private sealed interface CardGridCell {
     val key: String
@@ -480,7 +468,7 @@ private sealed interface CardGridCell {
     data class Header(
         val title: String,
         val colorArgb: Int,
-        val isAllGroup: Boolean,
+        val isUnfiledGroup: Boolean,
     ) : CardGridCell {
         override val key: String get() = "h-$title"
     }
@@ -496,6 +484,7 @@ private sealed interface CardGridCell {
 private fun CardsGrid(
     state: ListUiState,
     onCardClick: (Long) -> Unit,
+    onLongPress: (CardUi) -> Unit,
 ) {
     // 摊平 grouped → cell 流（header + cards）
     val cells =
@@ -505,7 +494,7 @@ private fun CardsGrid(
                     CardGridCell.Header(
                         title = group.title,
                         colorArgb = group.colorArgb,
-                        isAllGroup = group.isAllGroup,
+                        isUnfiledGroup = group.isUnfiledGroup,
                     ),
                 ) + group.cards.map { CardGridCell.Item(it) }
             }
@@ -530,16 +519,13 @@ private fun CardsGrid(
                     FolderHeader(
                         title = cell.title,
                         colorArgb = cell.colorArgb,
-                        isAllGroup = cell.isAllGroup,
+                        isUnfiledGroup = cell.isUnfiledGroup,
                     )
                 is CardGridCell.Item ->
-                    CardListItem(
+                    CompactCardListItem(
                         card = cell.card,
                         onClick = { onCardClick(cell.card.card.id) },
-                        onLongClick = {},
-                        onSwipe = {},
-                        onDetail = { onCardClick(cell.card.card.id) },
-                        compact = true,
+                        onLongClick = { onLongPress(cell.card) },
                     )
             }
         }

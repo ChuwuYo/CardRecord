@@ -46,15 +46,16 @@ import com.shuaji.cards.data.local.ImageSourceType
 import com.shuaji.cards.data.local.cardOrientationEnum
 
 /**
- * 竖版宽度占父容器比例 */
+ * 竖版宽度占父容器比例。
+ */
 private const val PORTRAIT_WIDTH_FRACTION = 0.6f
 
 /**
- * 卡面最小可视高度（避免在极窄容器下被压成扁条） */
+ * 卡面最小可视高度（避免在极窄容器下被压成扁条）。
+ */
 private const val CARD_MIN_HEIGHT_DP = 96f
 
-/** 卡面演示用淡灰反光色（当无品牌色时使用） */
-private val DEFAULT_GREY_BASE = 0xFF8A8E96.toInt()
+private val STACKED_HEADER_MAX_WIDTH = 180.dp
 
 /**
  * 卡片视觉组件：渐变 + 反光 + 卡面图片。
@@ -68,9 +69,9 @@ private val DEFAULT_GREY_BASE = 0xFF8A8E96.toInt()
  * 三种卡面来源：
  * - USER：用户上传图片
  * - PROVIDER：simple-icons 官方品牌 logo
- * - NONE：质感深灰卡（带反光高光）
+ * - NONE：无图片层
  *
- * 圆角：12.dp（与真实卡片 ID-1 圆角半径 3.18mm 保持一致）。
+ * 三种来源都使用 [CardEntity.colorArgb] 作为底色。
  */
 @Composable
 fun CardVisual(
@@ -84,9 +85,7 @@ fun CardVisual(
     val sourceType =
         runCatching { ImageSourceType.valueOf(card.imageSourceType) }
             .getOrDefault(ImageSourceType.NONE)
-    val orientation =
-        runCatching { CardOrientation.valueOf(card.cardOrientation) }
-            .getOrDefault(CardOrientation.LANDSCAPE)
+    val orientation = card.cardOrientationEnum
 
     Card(
         modifier = modifier.fillMaxWidth(),
@@ -143,7 +142,7 @@ private fun LandscapeCardBody(
                 Modifier
                     .fillMaxWidth()
                     .height(height)
-                    .background(cardSurfaceBrush(card, sourceType, network)),
+                    .background(cardSurfaceBrush(card)),
         ) {
             CardImageLayer(
                 modifier = Modifier.fillMaxSize(),
@@ -193,7 +192,7 @@ private fun PortraitCardBody(
                     .width(width)
                     .height(height)
                     .clip(MaterialTheme.shapes.medium)
-                    .background(cardSurfaceBrush(card, sourceType, network)),
+                    .background(cardSurfaceBrush(card)),
         ) {
             CardImageLayer(
                 modifier = Modifier.fillMaxSize(),
@@ -220,24 +219,10 @@ private fun PortraitCardBody(
 
 // ── 卡面背景（核心：决定用什么底色 + 反光） ────────────────────────
 
-/**
- * 根据卡面来源返回卡面背景 brush：
- * - USER：用户自定义颜色（来自 colorArgb）
- * - PROVIDER：品牌色渐变
- * - NONE：质感深灰渐变 + 顶部反光（无品牌色）
- */
+/** 卡面来源只决定图片层；底色始终以用户保存的主题色为准。 */
 @Composable
-private fun cardSurfaceBrush(
-    card: CardEntity,
-    sourceType: ImageSourceType,
-    network: CardNetworkProvider?,
-): Brush {
-    val base: Color =
-        when (sourceType) {
-            ImageSourceType.PROVIDER -> Color(network?.brandColor ?: card.colorArgb)
-            ImageSourceType.USER -> Color(card.colorArgb)
-            ImageSourceType.NONE -> Color(DEFAULT_GREY_BASE)
-        }
+private fun cardSurfaceBrush(card: CardEntity): Brush {
+    val base = resolveCardSurfaceColor(card.colorArgb)
     return Brush.linearGradient(
         colors =
             listOf(
@@ -247,6 +232,8 @@ private fun cardSurfaceBrush(
             ),
     )
 }
+
+internal fun resolveCardSurfaceColor(colorArgb: Int): Color = Color(colorArgb)
 
 // ── 卡面图片层 ────────────────────────────────────────────────────
 
@@ -323,38 +310,23 @@ private fun CardContent(
 ) {
     Column(modifier = modifier) {
         if (showBank) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    imageVector = Icons.Default.CreditCard,
-                    contentDescription = null,
-                    tint = Color.White.copy(alpha = 0.9f),
-                    modifier = Modifier.size(14.dp),
-                )
-                Spacer(Modifier.width(6.dp))
-                Text(
-                    text = card.bank.ifBlank { stringResource(R.string.card_default_bank) },
-                    style = MaterialTheme.typography.labelMedium,
-                    color = Color.White.copy(alpha = 0.85f),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                if (network != null) {
-                    Spacer(Modifier.width(6.dp))
-                    Box(
-                        modifier =
-                            Modifier
-                                .background(
-                                    Color.White.copy(alpha = 0.18f),
-                                    MaterialTheme.shapes.extraSmall,
-                                ).padding(horizontal = 5.dp, vertical = 1.dp),
+            BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+                if (network != null && shouldStackCardHeader(maxWidth)) {
+                    Column {
+                        BankLabel(card = card, modifier = Modifier.fillMaxWidth())
+                        Spacer(Modifier.height(3.dp))
+                        NetworkBadge(network)
+                    }
+                } else {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Text(
-                            text = stringResource(network.displayNameRes),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = Color.White,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
+                        BankLabel(card = card, modifier = Modifier.weight(1f))
+                        if (network != null) {
+                            Spacer(Modifier.width(6.dp))
+                            NetworkBadge(network)
+                        }
                     }
                 }
             }
@@ -383,9 +355,50 @@ private fun CardContent(
     }
 }
 
-/** 仅提取卡号后四位（脱敏显示）。当前文件未使用，保留以备未来 Activity 直接调用。 */
-@Suppress("unused")
-internal fun lastFourDigits(masked: String): String {
-    val digits = masked.filter(Char::isDigit)
-    return if (digits.length >= 4) digits.takeLast(4) else digits.ifBlank { "****" }
+@Composable
+private fun BankLabel(
+    card: CardEntity,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            imageVector = Icons.Default.CreditCard,
+            contentDescription = null,
+            tint = Color.White.copy(alpha = 0.9f),
+            modifier = Modifier.size(14.dp),
+        )
+        Spacer(Modifier.width(6.dp))
+        Text(
+            text = card.bank.ifBlank { stringResource(R.string.card_default_bank) },
+            modifier = Modifier.weight(1f),
+            style = MaterialTheme.typography.labelMedium,
+            color = Color.White.copy(alpha = 0.85f),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
 }
+
+@Composable
+private fun NetworkBadge(network: CardNetworkProvider) {
+    Box(
+        modifier =
+            Modifier
+                .background(
+                    Color.White.copy(alpha = 0.18f),
+                    MaterialTheme.shapes.extraSmall,
+                ).padding(horizontal = 5.dp, vertical = 1.dp),
+    ) {
+        Text(
+            text = stringResource(network.displayNameRes),
+            style = MaterialTheme.typography.labelSmall,
+            color = Color.White,
+            maxLines = 1,
+        )
+    }
+}
+
+internal fun shouldStackCardHeader(availableWidth: Dp): Boolean = availableWidth < STACKED_HEADER_MAX_WIDTH

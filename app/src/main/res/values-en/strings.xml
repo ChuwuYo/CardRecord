@@ -23,9 +23,9 @@
     <string name="settings_export_subtitle">Pack cards / folders / transactions into a JSON file</string>
     <string name="settings_import">Import config</string>
     <string name="settings_import_subtitle">Restore from a JSON backup (replace or merge)</string>
-    <string name="settings_privacy_note">Note: the exported file contains all your card info (name / note / image URI, etc.) as plaintext JSON—please don\'t share it with others. When restoring on another device, image URIs become invalid and card images must be re-uploaded.</string>
+    <string name="settings_privacy_note">Note: the exported file contains all your card info (name / note / image URI, etc.) as plaintext JSON—please don\'t share it with others. Image URIs usually cannot be reused across devices, so you may need to select card images again.</string>
     <string name="settings_import_dialog_title">Choose import mode</string>
-    <string name="settings_import_dialog_message">\"Replace\" clears all current data and writes the backup; \"Merge\" keeps existing data and merges the backup in. Neither reuses card IDs (they are auto-assigned).</string>
+    <string name="settings_import_dialog_message">\"Replace\" clears current data and restores the backup with its original IDs; \"Merge\" keeps existing data and assigns new IDs to imported items.</string>
     <string name="settings_import_mode_replace">Replace</string>
     <string name="settings_import_mode_merge">Merge</string>
     <string name="settings_import_replace_confirm_title">Confirm replace?</string>
@@ -43,12 +43,12 @@
     <string name="settings_result_extras_cards_invalid_folder">%1$d cards had an invalid folder reference and were moved to Unfiled</string>
     <string name="settings_result_extras_duplicate_folders">%1$d folders share a name with existing ones</string>
     <string name="settings_result_extras_duplicate_cards">%1$d cards share a name with existing ones</string>
-    <string name="settings_result_image_uri_potentially_broken">%1$d cards need their image re-uploaded (the image URI is not accessible on this device)</string>
+    <string name="settings_result_image_uri_potentially_broken">%1$d custom card images may need to be selected again (import cannot verify URI access)</string>
     <string name="settings_result_export_failed">Export failed: %1$s</string>
     <string name="settings_result_import_failed">Import failed: %1$s</string>
     <string name="settings_snackbar_error_prefix">"⚠️ "</string>
     <string name="settings_result_extras_separator">"; "</string>
-    <string name="settings_dialog_image_warning">Of these, %1$d cards\' images are not accessible on this device and need re-uploading</string>
+    <string name="settings_dialog_image_warning">%1$d cards use custom images; you may need to select them again after import</string>
     <string name="settings_import_persist_warning">⚠️ File access permission was not persisted; the file may be inaccessible after switching apps or restarting</string>
 
     <!-- Import / export low-level errors (interpolated as %1$s into settings_result_*_failed) -->
@@ -101,8 +101,6 @@
     <string name="list_empty_subtitle">Tap the button at the bottom right to add your first card\nCustomize the name, theme color, required swipes, and due date</string>
     <string name="list_delete_dialog_title">Delete %1$s?</string>
     <string name="list_delete_dialog_message">This also deletes all spending records for this card. It cannot be undone.</string>
-    <string name="list_delete_dialog_message_undo">Deleted %1$s</string>
-    <string name="list_delete_dialog_undo">Undo</string>
     <string name="list_filter_anchor_label">Folder filter</string>
 
     <!-- ────── Card item ────── -->
@@ -158,6 +156,8 @@
     <string name="edit_image_none">Solid color</string>
     <string name="edit_image_clear">Clear image</string>
     <string name="edit_image_pick_hint">Tap to choose a card image</string>
+    <string name="edit_image_permission_error_title">Can’t use this image</string>
+    <string name="edit_image_permission_error_message">The image provider didn’t grant persistent read access. Please choose another image stored on this device.</string>
     <string name="edit_section_choose_network">Choose network</string>
     <string name="edit_section_orientation">Card orientation</string>
     <string name="edit_orientation_landscape">Landscape</string>

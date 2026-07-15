@@ -9,6 +9,7 @@ import com.shuaji.cards.data.local.CardWithCount
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
@@ -53,7 +54,7 @@ data class CardListGroup(
     val title: String,
     val colorArgb: Int,
     val cards: List<CardUi>,
-    val isAllGroup: Boolean,
+    val isUnfiledGroup: Boolean,
 )
 
 /**
@@ -74,24 +75,17 @@ data class ListUiState(
 }
 
 /**
- * 列表页：聚合所有卡片 + 文件夹 + 整体进度统计 + 撤销删除的临时标记。
+ * 列表页：聚合所有卡片 + 文件夹 + 整体进度统计 + 删除确认状态。
  */
 class CardListViewModel(
     private val repository: CardRepository,
 ) : ViewModel() {
-    private val _filter = MutableStateFlow<FolderFilter>(FolderFilter.All)
-    val filter: StateFlow<FolderFilter> = _filter
+    private val selectedFilter = MutableStateFlow<FolderFilter>(FolderFilter.All)
 
-    private val _layoutMode = MutableStateFlow(ListLayoutMode.LIST)
-    val layoutMode: StateFlow<ListLayoutMode> = _layoutMode
+    private val selectedLayoutMode = MutableStateFlow(ListLayoutMode.LIST)
 
-    /** 最近一次被删除的卡名（用于 snackbar 撤销） */
-    private val _deletedCardName = MutableStateFlow<String?>(null)
-    val deletedCardName: StateFlow<String?> = _deletedCardName
-
-    // 暂存最近删除的卡，供 undoDelete 恢复；只在 ViewModel 内部流转，不对外暴露。
-    @Suppress("ktlint:standard:backing-property-naming")
-    private val pendingRestore = MutableStateFlow<CardEntity?>(null)
+    private val _pendingDelete = MutableStateFlow<CardUi?>(null)
+    val pendingDelete: StateFlow<CardUi?> = _pendingDelete.asStateFlow()
 
     private val nowProvider: () -> Long = { System.currentTimeMillis() }
 
@@ -105,8 +99,8 @@ class CardListViewModel(
         combine(
             observeCardUis(),
             repository.observeFolders(),
-            _filter,
-            _layoutMode,
+            selectedFilter,
+            selectedLayoutMode,
         ) { cards, folders, flt, mode ->
             val grouped = groupCardsForList(cards, folders, flt)
             ListUiState(
@@ -123,35 +117,29 @@ class CardListViewModel(
         )
 
     fun selectFilter(flt: FolderFilter) {
-        _filter.value = flt
+        selectedFilter.value = flt
     }
 
     fun toggleLayoutMode() {
-        _layoutMode.value =
-            if (_layoutMode.value == ListLayoutMode.LIST) ListLayoutMode.GRID else ListLayoutMode.LIST
+        selectedLayoutMode.value =
+            if (selectedLayoutMode.value == ListLayoutMode.LIST) ListLayoutMode.GRID else ListLayoutMode.LIST
     }
 
-    /** 长按删除：先复制一份存起来再删，给 [markDeleted] 触发 snackbar 留时间。 */
-    fun deleteCard(card: CardUi) {
-        pendingRestore.value = card.card
-        viewModelScope.launch { repository.deleteCard(card.card) }
+    /** 长按只发起确认，不在用户确认前写数据库。 */
+    fun requestDelete(card: CardUi) {
+        _pendingDelete.value = card
     }
 
-    fun markDeleted(name: String) {
-        _deletedCardName.value = name
+    fun cancelDelete() {
+        _pendingDelete.value = null
     }
 
-    fun undoDelete() {
-        val card = pendingRestore.value ?: return
+    fun confirmDelete() {
+        val card = _pendingDelete.value ?: return
+        _pendingDelete.value = null
         viewModelScope.launch {
-            repository.upsertCard(card)
-            pendingRestore.value = null
-            _deletedCardName.value = null
+            repository.deleteCard(card.card)
         }
-    }
-
-    fun consumeDeletedEvent() {
-        _deletedCardName.value = null
     }
 
     /**
@@ -187,7 +175,7 @@ private fun CardWithCount.toCardUi(now: Long): CardUi =
  * 排序：
  * - filter=All 时：每个文件夹一组 + "未分类"组（若有）
  * - filter=Folder/Unfiled 时：单组
- * - 组内：filter=All 按 progress 升序（最接近达标的在最上面），其他按更新时间倒序
+ * - 组内：filter=All 按 progress 降序（最接近达标的在最上面），其他按创建时间倒序
  */
 internal fun groupCardsForList(
     cards: List<CardUi>,
@@ -196,37 +184,33 @@ internal fun groupCardsForList(
 ): List<CardListGroup> {
     fun progressOf(c: CardUi): Float = if (c.card.requiredCount == 0) 100f else c.currentCount.toFloat() / c.card.requiredCount.toFloat()
 
-    fun orderForAll(c: CardUi): Float = -progressOf(c)
-
-    fun orderForFolder(c: CardUi): Long = -c.card.createdAtMillis
-
     return when (flt) {
         is FolderFilter.All -> {
             val groups = mutableListOf<CardListGroup>()
             folders.forEach { f ->
                 val inFolder = cards.filter { it.card.folderId == f.id }
                 if (inFolder.isNotEmpty()) {
-                    val sorted = inFolder.sortedBy { orderForAll(it) }
+                    val sorted = inFolder.sortedByDescending { progressOf(it) }
                     groups +=
                         CardListGroup(
                             key = "f-${f.id}",
                             title = f.name,
                             colorArgb = f.colorArgb,
                             cards = sorted,
-                            isAllGroup = false,
+                            isUnfiledGroup = false,
                         )
                 }
             }
             val unfiled = cards.filter { it.card.folderId == null }
             if (unfiled.isNotEmpty()) {
-                val sorted = unfiled.sortedBy { orderForAll(it) }
+                val sorted = unfiled.sortedByDescending { progressOf(it) }
                 groups +=
                     CardListGroup(
                         key = "unfiled",
-                        title = "", // 未分类组：标题在 UI 层按 isAllGroup 本地化渲染
+                        title = "",
                         colorArgb = 0,
                         cards = sorted,
-                        isAllGroup = true,
+                        isUnfiledGroup = true,
                     )
             }
             groups
@@ -238,14 +222,14 @@ internal fun groupCardsForList(
             val inFolder =
                 cards
                     .filter { it.card.folderId == flt.folderId }
-                    .sortedBy { orderForFolder(it) }
+                    .sortedByDescending { it.card.createdAtMillis }
             listOf(
                 CardListGroup(
                     key = "f-${flt.folderId}",
                     title = title,
                     colorArgb = color,
                     cards = inFolder,
-                    isAllGroup = false,
+                    isUnfiledGroup = false,
                 ),
             )
         }
@@ -253,14 +237,14 @@ internal fun groupCardsForList(
             val unfiled =
                 cards
                     .filter { it.card.folderId == null }
-                    .sortedBy { orderForFolder(it) }
+                    .sortedByDescending { it.card.createdAtMillis }
             listOf(
                 CardListGroup(
                     key = "unfiled",
-                    title = "", // 未分类组：标题在 UI 层按 isAllGroup 本地化渲染
+                    title = "",
                     colorArgb = 0,
                     cards = unfiled,
-                    isAllGroup = true,
+                    isUnfiledGroup = true,
                 ),
             )
         }

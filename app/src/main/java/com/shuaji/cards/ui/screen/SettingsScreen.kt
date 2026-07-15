@@ -101,25 +101,19 @@ import java.util.Locale
  * - Done：emit 到 [com.shuaji.cards.data.AppContainer.settingsEvents]，由
  *   `ShuajiApp` 顶层全局 `SnackbarHost` 消费（用户在任何页面都能看到）。
  *
- * **P1 修**：本页面**不**再自带 SnackbarHost——原来 SettingsScreen 自己持有一个
- * `SnackbarHostState`，结果就是用户在 SettingsScreen 点完「导出」→「已导出 N 条」
- * 提示弹出来，但只要他跳到 Home 或者锁屏 / 通知就看不到——消息随页面销毁丢了。
- * 现在改成 ViewModel emit 到 AppContainer.settingsEvents，顶层订阅，在任意
- * 页面 / 锁屏 / 通知都能消费。
+ * SnackbarHost 由 `ShuajiApp` 顶层持有，本页只发布操作结果。
  *
- * **P1 修**：所有用户可见的临时状态（[pendingImportUriString]、[ImportModeStep]）都用
+ * 用户可见的临时状态（[pendingImportUriString]、[ImportModeStep]）使用
  * [rememberSaveable] 而非 [androidx.compose.runtime.remember]，旋转屏幕 /
  * 进程恢复后状态不会丢。
  *
- * **P2 修**：导入文件后立刻用 `DocumentsContract.Document.COLUMN_LAST_MODIFIED` 拿文件
- * 最后修改时间，在二次确认对话框里显示给用户（「备份时间：2024-05-12 18:23」）——
- * 比 JSON 内的 `exportedAtMillis` 更权威（是文件实际写入时间，不是序列化时刻）。
+ * 导入文件后查询 `DocumentsContract.Document.COLUMN_LAST_MODIFIED`，
+ * 并在确认对话框中显示文件最后修改时间。
  *
- * **P1-2 修**：`readBackupFileInfo` 是 suspend，必须在 `Dispatchers.IO` 跑（不能阻塞主线程），
- * 只解析顶层 metadata（`cards.length` / `folders.length` / `transactions.length`）——
- * 不反序列化整棵树。
+ * `readBackupFileInfo` 在 `Dispatchers.IO` 运行，避免文件 I/O 阻塞主线程。
+ * 它会读取整个文件并构建 JSON 树，但不会反序列化为数据库 Entity。
  *
- * **P1-4 修**：导入文件 URI 调 `takePersistableUriPermission` 持久化；不导入时
+ * 导入文件 URI 调 `takePersistableUriPermission` 持久化；不导入时
  * `releasePersistableUriPermission` 释放——避免 grant slot 永久占用。
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -139,7 +133,7 @@ fun SettingsScreen(onBack: () -> Unit) {
         saver = BackupFileInfoStateSaver,
     ) { mutableStateOf<BackupFileInfo?>(null) }
 
-    // P1-5 修：记录 takePersistableUriPermission 是否成功，传给 ImportModeDialog
+    // 记录持久读权限是否获取成功，供 ImportModeDialog 显示警告。
     // 做 UI 警告。用 rememberSaveable 保证旋转屏幕后状态不丢。
     var tookPersistable by rememberSaveable { mutableStateOf(true) }
 
@@ -158,7 +152,7 @@ fun SettingsScreen(onBack: () -> Unit) {
     val importLauncher =
         rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
             if (uri != null) {
-                // P1-4 修：持久化读权限——OpenDocument 拿到的 URI 进程级读权限在
+                // 持久化读权限：OpenDocument 拿到的 URI 进程级读权限在
                 // 进程被 LMK 杀掉后会失效。持久化后 LMK 杀进程后用户回来仍能导入
                 val tookOk =
                     runCatching {
@@ -168,17 +162,17 @@ fun SettingsScreen(onBack: () -> Unit) {
                         )
                         true
                     }.getOrDefault(false)
-                tookPersistable = tookOk // P1-5 修：把状态写进 rememberSaveable，传给对话框
+                tookPersistable = tookOk
                 pendingImportUriString = uri.toString()
                 pendingImportInfo = null // 清掉旧的（如果有）
-                // P1-2 修：后台 IO 线程解析；只读顶层 metadata，不反序列化整棵 JSON 树
+                // 后台 IO 线程读取文件并解析摘要。
                 coroutineScope.launch {
                     val info =
                         withContext(Dispatchers.IO) {
                             readBackupFileInfo(context.contentResolver, uri)
                         }
                     pendingImportInfo = info
-                    // P1-5 修：take 失败时写 log（UI 警告在 ImportModeDialog 里显示）
+                    // 持久化失败时记录日志，并由 ImportModeDialog 显示警告。
                     if (!tookOk) {
                         android.util.Log.w(
                             "SettingsScreen",
@@ -197,14 +191,13 @@ fun SettingsScreen(onBack: () -> Unit) {
     }
 
     // 导入模式选择 + 二次确认
-    // P1-5 修：把 tookPersistable 状态传进对话框，让用户在二次确认时能看到
-    // 「⚠️ 文件访问权限未持久化」警告——之前只写 log，用户完全无感知。
+    // tookPersistable 用于在确认时提示文件访问权限未持久化。
     pendingImportUri?.let { uri ->
         ImportModeDialog(
             info = pendingImportInfo,
             tookPersistable = tookPersistable,
             onDismiss = {
-                // P1-4 修：用户取消时释放持久化读权限——避免 grant slot 永久占用
+                // 用户取消时释放持久化读权限，避免 grant slot 占用。
                 pendingImportUriString?.let { uriStr ->
                     runCatching {
                         context.contentResolver.releasePersistableUriPermission(
@@ -235,7 +228,7 @@ fun SettingsScreen(onBack: () -> Unit) {
                 },
             )
         },
-        // P1 修：snackbarHost 改顶层（ShuajiApp）——本页面不再带。
+        // SnackbarHost 由 ShuajiApp 顶层持有。
         containerColor = MaterialTheme.colorScheme.background,
     ) { padding ->
         Box(
@@ -540,7 +533,7 @@ fun SettingsScreen(onBack: () -> Unit) {
  *
  * - [cardCount] / [folderCount] / [transactionCount] 用于二次确认带计数
  * - [lastModifiedMillis] 用于「备份时间：xxx」展示
- * - [imageUriUserCount] 跨设备恢复时给用户「N 张卡需重新上传」警告（P2-6 修）
+ * - [imageUriUserCount] 跨设备恢复时给用户「N 张卡需重新上传」警告
  *
  * 任一字段缺失/解析失败就降级为 `null`，UI 显示「未知」。
  */
@@ -571,12 +564,9 @@ private val BackupFileInfoStateSaver: Saver<MutableState<BackupFileInfo?>, Strin
  * 读 SAF 选中的备份文件元数据。
  *
  * 用 [android.content.ContentResolver.query] 拿 `DocumentsContract.Document.COLUMN_LAST_MODIFIED` /
- * `DocumentsContract.Document.COLUMN_DISPLAY_NAME`；同时用 `Json.parseToJsonElement` **只**
- * 读顶层 cards / folders / transactions 三个数组的 `size`——**不**反序列化整棵 JSON 树。
- *
- * **P1-2 修**：原来 `decodeFromString<BackupBundle>(text)` 把整段 JSON 反序列化成完整对象
- * 树（卡 / 文件夹 / 流水的每个字段全部构造），对 100k+ 张卡的备份会主线程卡顿 + 2× 内存。
- * 改用 `parseToJsonElement` 只读顶层 → 不构造子树 → 内存稳定。
+ * `DocumentsContract.Document.COLUMN_DISPLAY_NAME`。文件会整体读入内存，
+ * `Json.parseToJsonElement` 也会构建完整 JSON 树；后续只从树中读取数组大小和
+ * USER 类型卡片数，不反序列化为 [com.shuaji.cards.data.backup.BackupBundle]。
  *
  * **`runCatching` 兜底**：文件 IO / 解析失败都返回 `null`，UI 降级「未知」文案。
  */
@@ -636,7 +626,7 @@ private suspend fun readBackupFileInfo(
     }.getOrNull()
 }
 
-/** 顶层单例 [Json]，避免 `readBackupFileInfo` 每次调用都 new 一个（warning 修）。 */
+/** 顶层共享 [Json] 实例，避免 `readBackupFileInfo` 每次调用都重建。 */
 private val BackupFileInfoJson =
     Json { ignoreUnknownKeys = true }
 
@@ -648,12 +638,12 @@ private val BackupFileInfoJson =
  * 2) "保留现在的，再把备份加进来" → MERGE
  * 这里把两种放一起给用户选，REPLACE 还弹一次二次确认（破坏性操作）。
  *
- * **P1 修**：REPLACE/MERGE 二次确认对话框都把 [BackupFileInfo]（行数 + 备份时间 +
+ * REPLACE/MERGE 确认对话框都把 [BackupFileInfo]（行数 + 备份时间 +
  * imageUriUserCount）拼进确认文案——「此备份包含 N 张卡 / M 个文件夹 / K 笔流水」+
  * 「其中 N 张卡的卡面需要重新上传」（跨设备恢复时）+ 「备份时间：xxx」，
  * 用户能看清要操作的数据规模 + 风险再点确认。
  *
- * **P1 修**：[step] 用 [rememberSaveable] + [Saver]，旋转屏幕不会丢。
+ * [step] 用 [rememberSaveable] + [Saver] 保存，避免旋转屏幕时重置。
  */
 @Composable
 private fun ImportModeDialog(
@@ -761,8 +751,7 @@ private fun confirmMessage(
         info?.takeIf { it.imageUriUserCount > 0 }?.let {
             stringResource(R.string.settings_dialog_image_warning, it.imageUriUserCount)
         } ?: ""
-    // P1-5 修：takePersistableUriPermission 失败时给用户显式警告——之前只写 log，
-    // 当 imageUriUserCount=0 时用户完全不知道持久化失败了。
+    // 持久化读权限失败时在确认内容中显示警告。
     val persistWarningLine =
         if (tookPersistable) "" else stringResource(R.string.settings_import_persist_warning)
     return listOf(template, timeLine, imageWarningLine, persistWarningLine)

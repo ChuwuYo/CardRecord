@@ -5,6 +5,7 @@ import com.shuaji.cards.data.local.CardEntity
 import com.shuaji.cards.data.local.CardFolderDao
 import com.shuaji.cards.data.local.CardFolderEntity
 import com.shuaji.cards.data.local.CardWithCount
+import com.shuaji.cards.data.local.ImageSourceType
 import com.shuaji.cards.data.local.TransactionDao
 import com.shuaji.cards.data.local.TransactionEntity
 import kotlinx.coroutines.flow.Flow
@@ -13,14 +14,12 @@ import java.util.Date
 import java.util.GregorianCalendar
 
 /**
- * 仓库层：**只暴露「业务用例」**，不暴露 Room Entity / DAO 给 ViewModel。
+ * 仓库层：封装 DAO 访问和跨表业务规则。
  *
  * 收口原则：
- * - ViewModel 拿到的都是 [CardWithCount]（自带 currentCount），不直接拿 CardEntity
- *   —— 这样 UI 不可能"漏算" currentCount，从源头杜绝 cards.currentCount 漂移的可能。
- * - 流水表的操作只有「记一笔」「重置」，没有「撤销最后一笔」「看历史流水列表」——
- *   详情页就是一个"当前笔数 + 重置按钮"，不需要流水列表 UI。
- * - 文件夹是辅助分组，接口与旧版基本保持一致。
+ * - 卡片查询返回 [CardWithCount]，使 currentCount 由 SQL 实时聚合。
+ * - 写入命令使用 [CardEntity] / [CardFolderEntity]，但 DAO 始终保持在仓库内部。
+ * - 流水支持记录、查询历史、删除单笔和重置周期。
  */
 class CardRepository(
     private val cardDao: CardDao,
@@ -36,6 +35,15 @@ class CardRepository(
     suspend fun upsertCard(card: CardEntity): Long = cardDao.upsert(card)
 
     suspend fun deleteCard(card: CardEntity) = cardDao.delete(card)
+
+    /** 当前数据库中仍被用户卡面引用的持久化 URI。 */
+    suspend fun referencedUserImageUris(): Set<String> =
+        cardDao
+            .listAll()
+            .asSequence()
+            .filter { it.imageSourceType == ImageSourceType.USER.name }
+            .mapNotNull { it.imageUri }
+            .toSet()
 
     /**
      * 记一笔消费：插一行流水。currentCount 由 SQL 实时算，无需 update。
@@ -83,8 +91,7 @@ class CardRepository(
     suspend fun deleteFolder(folder: CardFolderEntity) {
         // 删文件夹后，该文件夹下卡片的 folder_id 由数据库外键
         // `ON DELETE SET NULL` 自动置空 → 卡片归「未分类」。
-        // 外键自 v7 起在 cards 表与 CardEntity 上一致声明（见 AppDatabase.MIGRATION_6_7），
-        // 此前全新安装的 cards 表无外键、SET NULL 不生效，已修复。
+        // 外键在 cards 表与 CardEntity 上一致声明（见 AppDatabase.MIGRATION_6_7）。
         folderDao.delete(folder)
     }
 
@@ -93,8 +100,7 @@ class CardRepository(
     // ── 自动续期（App 启动时跑） ──
 
     /**
-     * **凡是填了 `nextDueDateMillis` 的卡，在到这天时都要自动续期**——
-     * 不然这个字段就是「写而不读」的纯死字段。
+     * 到达 `nextDueDateMillis` 的卡在应用启动时自动进入下一周期。
      *
      * 行为：
      * 1. 找出所有 `nextDueDateMillis < now` 的卡（这些卡是上一周期到期后没重置的）
@@ -109,21 +115,8 @@ class CardRepository(
         val overdue = cardDao.findOverdue(now)
         if (overdue.isEmpty()) return 0
         overdue.forEach { card ->
-            // P3-4 修：去掉防御性 `?: return@forEach`。
-            //
-            // 之前这里写 `val currentNext = card.nextDueDateMillis ?: return@forEach`，
-            // 是基于"card.nextDueDateMillis 可能是 null"的假设。但 SQL 端 [CardDao.findOverdue]
-            // 的 @Query 已经是 `WHERE next_due_date_millis IS NOT NULL AND next_due_date_millis < :now`——
-            // **SQL 层就保证非空**。这里再 elvis 一次只能让 Kotlin 编译器闭嘴（nullable type
-            // → non-null type 的窄化），**运行时永远走不到 `return@forEach` 分支**。
-            //
-            // 不可达的代码 = 死代码 = 给未来读者制造"这里可能 null 哦"的误解，让他们写出
-            // 防御性的 if 嵌套；越积越乱。
-            //
-            // Kotlin 的「platform type」在 Room 生成的 entity 上有时会标 `nextDueDateMillis: Long?`
-            // 是因为 SQLite 列本身 nullable；编译器**不知道** SQL 端已经 WHERE 滤过。
-            // 解决方案：用 `!!`（Kotlin 平台类型契约的「我保证非空」）配合注释，比 elvis 死代码
-            // 干净。
+            // findOverdue 的 SQL 已用 IS NOT NULL 过滤；Entity 保留 nullable
+            // 是因为列本身允许空值。
             val currentNext = card.nextDueDateMillis!!
             // 一次性推 N 年：用户半年没开 app，nextDueDate 可能已经过 1+ 年。
             // Calendar 实例提到循环外复用——推 N 年时不必每轮 new 一个。

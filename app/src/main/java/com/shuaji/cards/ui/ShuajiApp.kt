@@ -47,8 +47,7 @@ object Routes {
  *   `cycleAutoResetEvents` 推到 UI，**不论用户当前在 list / detail / edit
  *   都能看到「X 张卡已自动续期」提示**。
  * - `SettingsViewModel` 导出 / 导入完成时，**通过 `settingsEvents` 推到全局**——
- *   用户点完「导出」后即使立刻跳走，弹出来的「已导出 N 条」也能在 Home 看到
- *   （P1 修：原来 SettingsScreen 自带 SnackbarHost，跨页面即丢）。
+ *   设置页离开组合树后，顶层收集器仍可在当前页面展示结果。
  */
 @Composable
 fun ShuajiApp() {
@@ -69,13 +68,10 @@ fun ShuajiApp() {
         }
     }
 
-    // P1 修：订阅设置页 Done 事件 → 全局弹 Snackbar。
+    // 订阅设置页结果事件 → 全局弹 Snackbar。
     // 用 Long 持续时间——导出 / 导入这种"操作结果回执"用户多看一眼更稳
     // （SnackbarDuration.Long = 10s，Short = 4s）。
-    //
-    // **P1-6 修**：原 Snackbar 完全不看 `SettingsDoneEvent.isError`，错误消息跟成功消息
-    // 同色同 prefix——用户分不清。现在 `isError = true` 时给文案加 `⚠️ ` 前缀，**消费**
-    // 这个字段（"凡是存在就要有存在的意义"）。
+    // 错误事件加本地化前缀，便于与成功结果区分。
     val errorPrefix = stringResource(R.string.settings_snackbar_error_prefix)
     LaunchedEffect(settingsEvents) {
         settingsEvents.collect { event: SettingsDoneEvent ->

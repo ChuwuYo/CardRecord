@@ -78,6 +78,28 @@ class CardRepositoryTest {
         }
 
     @Test
+    fun upsert_existingCard_preservesTransactions() =
+        runBlocking {
+            val original = sampleCard(name = "修改前")
+            val id = repo.upsertCard(original)
+            repo.recordSwipe(id)
+            repo.recordSwipe(id)
+
+            repo.upsertCard(
+                original.copy(
+                    id = id,
+                    name = "修改后",
+                    colorArgb = 0xFF2E7D32.toInt(),
+                ),
+            )
+
+            val updated = repo.observeCard(id).first()!!
+            assertEquals("修改后", updated.card.name)
+            assertEquals(0xFF2E7D32.toInt(), updated.card.colorArgb)
+            assertEquals("编辑卡片不能删除已有流水", 2, updated.currentCount)
+        }
+
+    @Test
     fun recordSwipe_onMissingCard_returnsNull() =
         runBlocking {
             assertNull(repo.recordSwipe(cardId = 999L))

@@ -28,8 +28,8 @@ import java.io.InputStreamReader
  *
  * 导入两种模式（用户在 UI 选）：
  * - [ImportMode.REPLACE]：清空现有数据库，写入备份
- *   - 顺序：cards（顺带 CASCADE 删 transactions）→ folders → folders → cards → transactions
- *     注意要先删 cards 让 CASCADE 清掉 transactions，再删 folders，最后按依赖顺序写
+ *   - 清理顺序：cards（顺带 CASCADE 删 transactions）→ folders
+ *   - 写入顺序：folders → cards → transactions
  * - [ImportMode.MERGE]：保留现有数据，把备份追加
  *   - 写入顺序：folders → cards → transactions
  *   - 因为备份里的 cards / folders / transactions 自带 id，但 MERGE 模式下这些 id
@@ -38,18 +38,17 @@ import java.io.InputStreamReader
  *
  * 文件 I/O 走 ContentResolver（用 URI），用户通过 SAF 选位置——不申请任何存储权限。
  *
- * **事务保障**（P0-1 修）：所有 REPLACE / MERGE 的写库操作都包在
+ * **事务保障**：所有 REPLACE / MERGE 的写库操作都包在
  * [AppDatabase.withTransaction] 里。任意一步抛异常 / 协程被取消，SQLite 自动
  * ROLLBACK，DB 不会停在「半替换」状态。
  *
- * **取消语义**（P1-2 修）：[export] / [import] 协程启动时把 Job 存到 [activeJob]，
+ * **取消语义**：[export] / [import] 协程启动时把 Job 存到 [activeJob]，
  * UI 层可以调 [cancelActive] 取消。**取消时 REPLACE/MERGE 的写库事务自动回滚**，
  * 数据库回到 import 前。
  *
- * **OOM 防护**（P2-4 修）：[export] 用 [OutputStreamWriter] 包 [encodeToString]
- * 的「序列化 → 写流」走 streaming 路径——JSON 字符流直接喂给 OutputStream，
- * **不**先 `text.toByteArray` 把整段 JSON 加载到内存。理论上 100k+ 张卡也不
- * 会触发 OutOfMemoryError。
+ * **内存边界**：[export] 用 [encodeToStream] 直接写 [java.io.OutputStream]，
+ * 避免额外构造完整的 JSON 字符串；导出前查询的数据列表仍会常驻内存。
+ * [import] 目前仍会读取整个文件并反序列化，不属于全链路流式处理。
  */
 class BackupRepository(
     private val context: Context,
@@ -80,10 +79,8 @@ class BackupRepository(
      *
      * 整个 I/O 在 [Dispatchers.IO] 上跑，UI 线程不阻塞。
      *
-     * **P2-4 OOM 修复**：用 [Json.encodeToString] 的 streaming 重载——
-     * `encodeToString(serializer, value, writer)`，让序列化器直接把 JSON
-     * 字符流喂给 [OutputStreamWriter]，**不**经过「先拼成 String 再转 byte[]」
-     * 的双倍内存开销。100k+ 行的数据也不 OOM。
+     * 序列化通过 [encodeToStream] 直接写入目标流，不额外构造完整 JSON 字符串。
+     * 数据库查询返回的 cards / folders / transactions 列表仍会在导出期间常驻内存。
      */
     suspend fun export(uri: Uri): ExportSummary =
         withContext(Dispatchers.IO) {
@@ -101,11 +98,7 @@ class BackupRepository(
                         transactions = transactions,
                     )
                 context.contentResolver.openOutputStream(uri, "w")?.use { out ->
-                    // P2-4 OOM 修复：用 kotlinx-serialization 1.6+ 的 [encodeToStream]
-                    // 扩展函数——直接把 JSON 字符流喂给 OutputStream，**不**经过
-                    // 「先拼成 String 再转 byte[]」的双倍内存开销。100k+ 行的数据
-                    // 也不 OOM。注意：这是 [ExperimentalSerializationApi]，标记
-                    // `@OptIn` 后稳定可用——kotlinx-serialization 自己跨平台都这么用。
+                    // encodeToStream 避免为输出再构造一份完整 JSON 字符串。
                     @OptIn(ExperimentalSerializationApi::class)
                     json.encodeToStream(BackupBundle.serializer(), bundle, out)
                     out.flush()
@@ -219,9 +212,9 @@ class BackupRepository(
 
     /**
      * REPLACE 模式：先清空（含 CASCADE），再按依赖顺序写入。
-     * **P0-2 修**：写 cards 前校验 folderId，凡是不在 bundle.folders 里的 folderId 全部置 null，
-     * 避免 FK 约束违反 → 整个事务回滚 + 用户原数据已清空的灾难。
-     * 不会写入任何没经过校验的 card，**返回 cardsSkippedInvalidFolder = 被改写为 null 的数量**。
+     * 写 cards 前校验 folderId；不在 bundle.folders 中的引用置为 null，
+     * 避免外键约束导致整个导入事务失败。[ImportResult.cardsSkippedInvalidFolder]
+     * 记录被置空的卡片数。
      */
     private suspend fun doReplace(bundle: BackupBundle): ImportResult {
         val validFolderIds: Set<Long> = bundle.folders.map { it.id }.toSet()
@@ -259,29 +252,25 @@ class BackupRepository(
     /**
      * MERGE 模式：保留现有数据，把备份追加进去。
      *
-     * **P1-4 修**：检测与现库重名的 folder / card 数，写到返回值的 [ImportResult.duplicateFolderNames]
-     * / [ImportResult.duplicateCardNames]，让 UI 在成功消息里告诉用户「检测到 N 个 folder 与现库重名
-     * （已全部保留）」——用户不会突然发现列表里出现两个同名的 folder。
+     * 与现库重名的 folder / card 仍会保留，数量通过
+     * [ImportResult.duplicateFolderNames] / [ImportResult.duplicateCardNames] 返回给 UI。
      *
-     * **P1-5 修**：孤立 transaction（cardId 不在备份里也不在现库里）被跳过不写入，
+     * 孤立 transaction（cardId 在备份卡片中找不到映射）被跳过不写入，
      * 计入 [ImportResult.transactionsSkipped]，UI 提示用户「其中 N 笔因引用不存在的卡被跳过」。
      *
-     * **P1-7 修**：`Cards.folder_id` 是外键引用 `card_folders.id`，MERGE 写库时**必须**
+     * `Cards.folder_id` 是外键引用 `card_folders.id`，MERGE 写库时必须
      * 保证 `card.folderId` 指向合法 folder：要么在 backup 自身的 `bundle.folders` 里
      * （id 已被重新映射为新 id），要么在「写之前」的现库 folder 里（用户没导入这部分的
-     * folder，但希望引用原现库 folder）。原来 `folderRemap[it] ?: it` 的写法**没**做
-     * "在 validFolderIds / existingFolderIds 里"的校验——当 backup 里某 card 的
-     * `folderId` 既不在 backup 的 folders 里也不在现库时，会触发 `SQLiteConstraintException`，
-     * **整个事务 ROLLBACK**，备份里其他合法 card 一起被吞，用户体验是"导入失败但不知道为啥"。
+     * folder，但希望引用原现库 folder）。其他引用会置为 null，
+     * 避免外键约束导致整个导入事务失败。
      *
      * 校验语义跟 [doReplace] 对齐：folderId 不在合法集合里 → 置 null + 计入
      * [ImportResult.cardsSkippedInvalidFolder]，不抛异常、不回滚。
      *
      * **MERGE 永远走 INSERT 路径**（`id = 0L` + AUTOINCREMENT），**不**会覆盖现库同 id 的 folder / card。
      *
-     * 内部用 `folderRemap` / `cardRemap` 维护 old → new 映射，仅供 doMerge 自己写
-     * transactions 时用；**不**再把映射返回到 [ImportResult]（id 对用户无意义，
-     * 客户端从未消费过「导入前后 id 对应关系」）。
+     * 内部用 `folderRemap` / `cardRemap` 维护 old → new 映射，仅供
+     * doMerge 重写外键时使用。
      */
     private suspend fun doMerge(bundle: BackupBundle): ImportResult {
         // 1) **写之前**先抓现有 id / name 集合——重名检测不能包含本次刚追加的，
@@ -352,11 +341,7 @@ class BackupRepository(
 }
 
 /**
- * 导出结果摘要——UI 拼 Snackbar 用。
- *
- * 原来 export 返回 `Int`（总行数），UI 拼成「已导出 N 条」；问题是 N 把卡 / 文件夹 / 流水
- * 混在一起算，用户不知道是「5 张卡还是 5 笔流水」。「凡是存在就要有存在意义」→
- * 按三类分桶，UI 拼「已导出 N1 张卡 / N2 个文件夹 / N3 笔流水」。
+ * 导出结果摘要，按卡片、文件夹和流水分类提供给 UI。
  */
 data class ExportSummary(
     val cardCount: Int,

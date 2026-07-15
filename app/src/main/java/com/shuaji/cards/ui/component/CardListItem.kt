@@ -51,7 +51,7 @@ import java.util.Locale
  * 列表单卡项。
  *
  * 布局（自上而下）：
- *  1. 过期提示条（仅当 [CardUi.isExpired] = true 时显示 —— "凡存在必消费" 兜底）
+ *  1. 过期提示条（仅当 [CardUi.isExpired] = true 时显示）
  *  2. 卡面（由 [CardVisual] 绘制）
  *  3. 信息区：进度条 + 笔数 + 有效期 + 下次结算 + 操作行
  *
@@ -66,7 +66,45 @@ fun CardListItem(
     onSwipe: () -> Unit,
     onDetail: () -> Unit,
     modifier: Modifier = Modifier,
-    compact: Boolean = false,
+) = CardListItemContent(
+    card = card,
+    onClick = onClick,
+    onLongClick = onLongClick,
+    variant = CardListItemVariant.Full(onSwipe, onDetail),
+    modifier = modifier,
+)
+
+@Composable
+fun CompactCardListItem(
+    card: CardUi,
+    onClick: () -> Unit,
+    onLongClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) = CardListItemContent(
+    card = card,
+    onClick = onClick,
+    onLongClick = onLongClick,
+    variant = CardListItemVariant.Compact,
+    modifier = modifier,
+)
+
+private sealed interface CardListItemVariant {
+    data class Full(
+        val onSwipe: () -> Unit,
+        val onDetail: () -> Unit,
+    ) : CardListItemVariant
+
+    data object Compact : CardListItemVariant
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun CardListItemContent(
+    card: CardUi,
+    onClick: () -> Unit,
+    onLongClick: () -> Unit,
+    variant: CardListItemVariant,
+    modifier: Modifier = Modifier,
 ) {
     val progress =
         if (card.card.requiredCount > 0) {
@@ -110,31 +148,33 @@ fun CardListItem(
             ) {
                 val cardWidthFraction =
                     when {
-                        compact -> 1f
+                        variant is CardListItemVariant.Compact -> 1f
                         isPortrait -> 0.6f
                         else -> 0.88f
                     }
                 CardVisual(
                     card = card.card,
                     modifier = Modifier.fillMaxWidth(cardWidthFraction),
+                    showNumber = variant is CardListItemVariant.Full,
                 )
             }
 
             // 2. 信息区
-            if (compact) {
-                CompactInfoArea(
-                    card = card,
-                    animatedProgress = animatedProgress,
-                    isDone = isDone,
-                )
-            } else {
-                FullInfoArea(
-                    card = card,
-                    animatedProgress = animatedProgress,
-                    isDone = isDone,
-                    onSwipe = onSwipe,
-                    onDetail = onDetail,
-                )
+            when (variant) {
+                CardListItemVariant.Compact ->
+                    CompactInfoArea(
+                        card = card,
+                        animatedProgress = animatedProgress,
+                        isDone = isDone,
+                    )
+                is CardListItemVariant.Full ->
+                    FullInfoArea(
+                        card = card,
+                        animatedProgress = animatedProgress,
+                        isDone = isDone,
+                        onSwipe = variant.onSwipe,
+                        onDetail = variant.onDetail,
+                    )
             }
         }
     }

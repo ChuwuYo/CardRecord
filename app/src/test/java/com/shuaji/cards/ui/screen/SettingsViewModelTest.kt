@@ -191,8 +191,8 @@ class SettingsViewModelTest {
             val msg = collected[0].message
             assertTrue("消息应含「3 张卡」，实际：$msg", msg.contains("3 张卡"))
             assertTrue(
-                "imageUriUserCount=2 应触发「2 张卡...重新上传」，实际：$msg",
-                msg.contains("2 张卡") && msg.contains("重新上传"),
+                "imageUriUserCount=2 应触发自定义卡面可能需重新选择的提示，实际：$msg",
+                msg.contains("2 张") && msg.contains("重新选择"),
             )
         }
 
@@ -313,8 +313,8 @@ class SettingsViewModelTest {
             assertTrue("消息应含「2 个文件夹」，实际：$msg", msg.contains("2 个文件夹"))
             assertTrue("消息应含「10 笔流水」，实际：$msg", msg.contains("10 笔流水"))
             assertTrue(
-                "imageUriUserCount=3 应触发「3 张卡...重新上传」，实际：$msg",
-                msg.contains("3 张卡") && msg.contains("重新上传"),
+                "imageUriUserCount=3 应触发自定义卡面可能需重新选择的提示，实际：$msg",
+                msg.contains("3 张") && msg.contains("重新选择"),
             )
         }
 
@@ -369,8 +369,8 @@ class SettingsViewModelTest {
                 msg.contains("2 张卡") && msg.contains("重名"),
             )
             assertTrue(
-                "imageUriUserCount=4 应触发「4 张卡...重新上传」，实际：$msg",
-                msg.contains("4 张卡") && msg.contains("重新上传"),
+                "imageUriUserCount=4 应触发自定义卡面可能需重新选择的提示，实际：$msg",
+                msg.contains("4 张") && msg.contains("重新选择"),
             )
         }
 

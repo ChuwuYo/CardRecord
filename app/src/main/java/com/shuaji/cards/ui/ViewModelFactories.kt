@@ -30,10 +30,7 @@ object ViewModelFactories {
         viewModelFactory {
             initializer {
                 val container = app().container
-                // P1 修：把 AppContainer 注入到 ViewModel。
-                // ViewModel 拿到的是 AppContainer 接口（不是 DefaultAppContainer），
-                // 通过接口的 `emitSettings()` 推送事件——比让 ViewModel 反射拿
-                // MutableSharedFlow 干净，接口隔离原则也好。
+                // ViewModel 依赖 AppContainer 接口，通过 emitSettings 发布结果事件。
                 SettingsViewModel(
                     application = app(),
                     backup = container.backup,

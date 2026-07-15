@@ -23,14 +23,6 @@ import kotlinx.coroutines.launch
  * - [Idle] — 默认态，按钮可点
  * - [Working] — 导入 / 导出中，按钮 disable + 显示进度 + 可见「取消」按钮
  * - [Done] — 完成，**只是个标志位**——具体消息通过 [SettingsDoneEvent] 推到顶层全局 SnackbarHost
- *
- * **P2-1 / P2-2 修**：原 `data class Done(kind, message)` 携带枚举 + 文本，但 SettingsScreen
- * 只用 `state is Done`（`kind` 和 `message` 从来没被读）。死字段违反"凡是存在就要有存在意义"——
- * 简化成 [Done] data object，标志位即可。
- *
- * **P2-3 修**：原 `doneEvents: SharedFlow` 私有 MutableSharedFlow + 公开 read-only 视图，
- * 注释说是"给组件内嵌的 SnackbarHost 兜底"——但 SettingsScreen 已经没有 SnackbarHost 了
- * （P1-3 删过）。删除整条死流。
  */
 sealed interface SettingsUiState {
     data object Idle : SettingsUiState
@@ -49,8 +41,7 @@ sealed interface SettingsUiState {
  * Android 架构原则，但 [AndroidViewModel] 用 Application 是官方推荐豁免——Application
  * 跟进程同生命周期，不会泄露 Activity。
  *
- * **P3-5 修**：[settingsEventsSink] 不再 nullable——产线 [com.shuaji.cards.ui.ViewModelFactories.Settings]
- * 必传，null 入口已经不存在，保留 `?` + `?.` 徒增分支。
+ * [settingsEventsSink] 是必需依赖，由 [com.shuaji.cards.ui.ViewModelFactories.Settings] 注入。
  */
 class SettingsViewModel(
     application: Application,
@@ -143,15 +134,8 @@ class SettingsViewModel(
     }
 
     /**
-     * 用户关闭 / 看到 Snackbar 后回到 Idle。
-     *
-     * P3 修：acknowledge 改成"延迟到 Snackbar 显示完后"——避免快速来回：done
-     * 触发 Snackbar → 用户立刻 acknowledge → state 回 Idle → 但 SharedFlow emit
-     * 已经被外面 collect → 顶层 Snackbar 还是会弹，造成"消息和状态机对不上"的诡异感。
-     *
-     * 现在策略：acknowledge 只清 [state]；SharedFlow emit 在 launch 里 emitDone 时已经发出去，
-     * 跟 state 变化解耦。如果 Snackbar 没消费消息就 acknowledge 走人，事件会留在 SharedFlow 队列
-     * 里等下次订阅（buffer=4，不会丢）。
+     * SettingsScreen 观察到完成态后调用，仅重置页面状态；
+     * Snackbar 事件已独立发布到 [settingsEventsSink]。
      */
     fun acknowledge() {
         _state.value = SettingsUiState.Idle
@@ -185,10 +169,7 @@ class SettingsViewModel(
      * 拼接顺序：模式前缀 → 主体（卡/文件夹/流水）→ 副提示（跳过/重名/FK 校验失败 / 卡面 URI 跨设备失效）。
      * 任何副提示为 0 就不出现对应字段，让消息保持简洁。
      *
-     * **P2 国际化**：所有硬编码中文搬到 strings.xml，本函数用 `getString(resId, args)` 拼装。
-     *
-     * **P3-3 修**：分隔符「；」从硬编码搬到 `settings_result_extras_separator` 资源，多语言版
-     * 本可替换。
+     * 所有用户可见文案和分隔符都从字符串资源获取。
      */
     private fun formatImportMessage(
         result: ImportResult,

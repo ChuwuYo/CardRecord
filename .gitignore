@@ -26,6 +26,8 @@ Thumbs.db
 # Keystore（永远不要提交）
 *.jks
 *.keystore
+*.p12
+*.pfx
 release.keystore
 
 # 临时/日志

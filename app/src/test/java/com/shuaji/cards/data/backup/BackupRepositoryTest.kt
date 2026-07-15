@@ -42,9 +42,9 @@ import java.io.File
  *   ContentResolver.openInputStream/openOutputStream 在 Robolectric 下对 file:// 原生支持
  * - 用 `runTest`（kotlinx-coroutines-test）跑 suspend 函数
  *
- * 覆盖矩阵（按子代理审查优先级排）：
- * - REPLACE 5 条核心（P0-1 / P0-2 / P1-2）
- * - MERGE 5 条 id 重映射规则（P1-1 / P1-4 / P1-5）
+ * 覆盖矩阵：
+ * - REPLACE 的清空、校验和字段保留
+ * - MERGE 的主键、外键重映射和字段保留
  * - 异常路径（version 不匹配 / JSON 烂 / 取消）
  */
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -149,14 +149,21 @@ class BackupRepositoryTest {
         runTest {
             val f1 = folder(id = 0L, name = "商旅")
             val f1Id = db.cardFolderDao().upsert(f1)
-            val c1 = card(id = 0L, name = "招行", folderId = f1Id)
+            val c1 =
+                card(
+                    id = 0L,
+                    name = "招行",
+                    colorArgb = 0xFF2E7D32.toInt(),
+                    imageSourceType = "PROVIDER",
+                    imageProviderKey = "visa",
+                    folderId = f1Id,
+                )
             val c1Id = db.cardDao().upsert(c1)
             db.transactionDao().insert(transaction(cardId = c1Id))
 
             val out = tempJsonFile()
             val summary = repo.export(Uri.fromFile(out))
 
-            // P1 修：现在返回 ExportSummary（含分类计数），不是 Int（混在一起的总数）
             assertEquals(1, summary.cardCount)
             assertEquals(1, summary.folderCount)
             assertEquals(1, summary.transactionCount)
@@ -167,7 +174,9 @@ class BackupRepositoryTest {
             assertEquals(1, bundle.folders.size)
             assertEquals(1, bundle.cards.size)
             assertEquals(1, bundle.transactions.size)
-            // 关键：exportedAtMillis 已删除，schema 干净
+            assertEquals(0xFF2E7D32.toInt(), bundle.cards.single().colorArgb)
+            assertEquals("PROVIDER", bundle.cards.single().imageSourceType)
+            assertEquals("visa", bundle.cards.single().imageProviderKey)
             assertFalse(
                 "BackupBundle 不应再含 exportedAtMillis 字段",
                 out.readText(Charsets.UTF_8).contains("exportedAtMillis"),
@@ -179,8 +188,6 @@ class BackupRepositoryTest {
         runTest {
             val out = tempJsonFile()
             val summary = repo.export(Uri.fromFile(out))
-            // P1 修：空库时返回 ExportSummary(total=0, isEmpty=true)——UI 会用
-            // 「已导出空备份」文案（settings_result_export_empty），而不是说"已导出 0 条"
             assertEquals(0, summary.cardCount)
             assertEquals(0, summary.folderCount)
             assertEquals(0, summary.transactionCount)
@@ -194,7 +201,7 @@ class BackupRepositoryTest {
         }
 
     // ════════════════════════════════════════════════════════════
-    // 导入 — REPLACE 模式（P0-1 / P0-2）
+    // 导入 — REPLACE 模式
     // ════════════════════════════════════════════════════════════
 
     @Test
@@ -288,7 +295,16 @@ class BackupRepositoryTest {
         runTest {
             // 1) 准备数据并 export
             val folderId = db.cardFolderDao().upsert(folder(id = 0L, name = "F"))
-            val cardId = db.cardDao().upsert(card(id = 0L, name = "C", folderId = folderId))
+            val originalCard =
+                card(
+                    id = 0L,
+                    name = "C",
+                    colorArgb = 0xFF6A1B9A.toInt(),
+                    imageSourceType = "PROVIDER",
+                    imageProviderKey = "mastercard",
+                    folderId = folderId,
+                )
+            val cardId = db.cardDao().upsert(originalCard)
             db.transactionDao().insert(transaction(cardId = cardId))
 
             val out = tempJsonFile()
@@ -308,11 +324,14 @@ class BackupRepositoryTest {
             assertEquals("F", folders[0].name)
             assertEquals(1, cards.size)
             assertEquals("C", cards[0].name)
+            assertEquals(originalCard.colorArgb, cards[0].colorArgb)
+            assertEquals(originalCard.imageSourceType, cards[0].imageSourceType)
+            assertEquals(originalCard.imageProviderKey, cards[0].imageProviderKey)
             assertEquals(1, transactions.size)
         }
 
     // ════════════════════════════════════════════════════════════
-    // 导入 — MERGE 模式（P1-1 / P1-4 / P1-5）
+    // 导入 — MERGE 模式
     // ════════════════════════════════════════════════════════════
 
     @Test
@@ -335,16 +354,11 @@ class BackupRepositoryTest {
 
             val result = repo.import(Uri.fromFile(file), ImportMode.MERGE)
 
-            // 旧 id 10L / 20L 都被重新分配为新 id（不为 0，且 ≠ 旧值）
-            // P2 修：idRemap 字段已删；改用「现库存储的 id 不等于备份里的 id」+「name 集合」
-            // 这两个不变式替代——id 对用户无意义，关键是「name 保留 + 数对」。
             assertEquals(2, result.foldersAdded)
 
             val stored = db.cardFolderDao().listAll()
             assertEquals(2, stored.size)
             assertEquals(setOf("A", "B"), stored.map { it.name }.toSet())
-            // 关键：idRemap 字段已删，assertNotNull(result.idRemap) 改成"不能有 idRemap 字段"
-            // ——通过 ImportResult 类型本身保证（编译期检查）
         }
 
     @Test
@@ -356,7 +370,15 @@ class BackupRepositoryTest {
                     folders = listOf(folder(id = 10L, name = "A")),
                     cards =
                         listOf(
-                            card(id = 20L, name = "C1", folderId = 10L), // 指向 backup 内 folder
+                            card(
+                                id = 20L,
+                                name = "C1",
+                                colorArgb = 0xFF123456.toInt(),
+                                imageSourceType = "PROVIDER",
+                                imageProviderKey = "visa",
+                                cardOrientation = "PORTRAIT",
+                                folderId = 10L,
+                            ),
                             card(id = 21L, name = "C2", folderId = 9999L), // 指向不存在（应保留原值）
                         ),
                     transactions = emptyList(),
@@ -373,9 +395,11 @@ class BackupRepositoryTest {
             val folderAId = folders.first { it.name == "A" }.id
 
             val c1 = cards.first { it.name == "C1" }
-            // P2 修：idRemap 字段已删——改成「直接读 db 拿 folder A 的新 id」再验证 card.folderId
-            // 等于它（MERGE 后 card 内部的 folderId 必须被重写为新分配的 folderId）。
             assertEquals(folderAId, c1.folderId)
+            assertEquals(0xFF123456.toInt(), c1.colorArgb)
+            assertEquals("PROVIDER", c1.imageSourceType)
+            assertEquals("visa", c1.imageProviderKey)
+            assertEquals("PORTRAIT", c1.cardOrientation)
 
             val c2 = cards.first { it.name == "C2" }
             // 指向 backup 内不存在、现库也没有的 folder（9999）→ 置 null（避免悬空外键约束），
@@ -554,7 +578,7 @@ class BackupRepositoryTest {
         }
 
     // ════════════════════════════════════════════════════════════
-    // 跨设备 imageUri 提示（P1 修）
+    // 跨设备 imageUri 提示
     // ════════════════════════════════════════════════════════════
 
     @Test
@@ -619,8 +643,7 @@ class BackupRepositoryTest {
     @Test
     fun export_omits_idRemap_field_in_bundle() =
         runTest {
-            // P2 修：BackupBundle 删了 idRemap 字段（孤儿字段）。
-            // 验证：MERGE 导入 + 重新 export 后 JSON 不含 "idRemap" 字段。
+            // MERGE 后重新导出，兼容格式中不应重新出现已删除的字段。
             seed(cards = listOf(card(id = 0L, name = "现库卡")))
 
             val bundle =
@@ -639,7 +662,7 @@ class BackupRepositoryTest {
         }
 
     // ════════════════════════════════════════════════════════════
-    // 事务原子性（P0-1）— 验证事务中间失败时整段 ROLLBACK
+    // 事务原子性：中间失败时整段回滚
     // ════════════════════════════════════════════════════════════
 
     @Test

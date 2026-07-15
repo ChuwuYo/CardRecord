@@ -23,9 +23,9 @@
     <string name="settings_export_subtitle">把卡片 / 文件夹 / 流水打包成 JSON 文件</string>
     <string name="settings_import">导入配置</string>
     <string name="settings_import_subtitle">从 JSON 备份文件恢复（覆盖或追加）</string>
-    <string name="settings_privacy_note">提示：导出文件包含你的所有卡片信息（卡名 / 备注 / 卡面 URI 等），属于明文 JSON，请勿分享给他人。跨设备恢复时，图片 URI 会失效，需重新上传卡面。</string>
+    <string name="settings_privacy_note">提示：导出文件包含你的所有卡片信息（卡名 / 备注 / 卡面 URI 等），属于明文 JSON，请勿分享给他人。跨设备恢复时，图片 URI 通常不可直接使用，可能需要重新选择卡面。</string>
     <string name="settings_import_dialog_title">选择导入方式</string>
-    <string name="settings_import_dialog_message">"覆盖"会清空当前所有数据并写入备份；"追加"会保留现有数据，把备份合并进来。两种都不会重复卡 id（自增分配）。</string>
+    <string name="settings_import_dialog_message">"覆盖"会清空当前所有数据并按备份原样恢复；"追加"会保留现有数据，并为导入内容分配新 id 后合并。</string>
     <string name="settings_import_mode_replace">覆盖</string>
     <string name="settings_import_mode_merge">追加</string>
     <string name="settings_import_replace_confirm_title">确认覆盖？</string>
@@ -43,12 +43,12 @@
     <string name="settings_result_extras_cards_invalid_folder">%1$d 张卡的文件夹引用无效，已置为未分组</string>
     <string name="settings_result_extras_duplicate_folders">%1$d 个文件夹与现库重名</string>
     <string name="settings_result_extras_duplicate_cards">%1$d 张卡与现库重名</string>
-    <string name="settings_result_image_uri_potentially_broken">%1$d 张卡的卡面需要重新上传（图片 URI 在当前设备上不可访问）</string>
+    <string name="settings_result_image_uri_potentially_broken">%1$d 张自定义卡面可能需要重新选择（导入无法验证图片 URI 是否仍可访问）</string>
     <string name="settings_result_export_failed">导出失败：%1$s</string>
     <string name="settings_result_import_failed">导入失败：%1$s</string>
     <string name="settings_snackbar_error_prefix">"⚠️ "</string>
     <string name="settings_result_extras_separator">；</string>
-    <string name="settings_dialog_image_warning">其中 %1$d 张卡的卡面在当前设备上不可访问，需要重新上传</string>
+    <string name="settings_dialog_image_warning">其中 %1$d 张卡使用自定义图片；导入后可能需要重新选择卡面</string>
     <string name="settings_import_persist_warning">⚠️ 文件访问权限未持久化，切换应用或重启后可能无法访问该文件</string>
 
     <!-- 导入 / 导出底层错误（作为 %1$s 拼入 settings_result_*_failed） -->
@@ -102,8 +102,6 @@
     <string name="list_empty_subtitle">点击右下角添加你的第一张卡片\n支持自定义卡名、主题色、所需笔数与到期日</string>
     <string name="list_delete_dialog_title">删除 %1$s？</string>
     <string name="list_delete_dialog_message">将同时删除这张卡的全部消费记录，操作不可撤销。</string>
-    <string name="list_delete_dialog_message_undo">已删除 %1$s</string>
-    <string name="list_delete_dialog_undo">撤销</string>
     <string name="list_filter_anchor_label">文件夹筛选</string>
 
     <!-- ────── 卡片项 ────── -->
@@ -159,6 +157,8 @@
     <string name="edit_image_none">纯色卡</string>
     <string name="edit_image_clear">清除图片</string>
     <string name="edit_image_pick_hint">点击选择卡面图片</string>
+    <string name="edit_image_permission_error_title">无法使用这张图片</string>
+    <string name="edit_image_permission_error_message">图片来源未授予长期读取权限。请选择设备中的其他图片。</string>
     <string name="edit_section_choose_network">选择卡组织</string>
     <string name="edit_section_orientation">卡面朝向</string>
     <string name="edit_orientation_landscape">横版</string>

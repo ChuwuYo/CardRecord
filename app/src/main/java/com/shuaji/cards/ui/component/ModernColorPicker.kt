@@ -34,8 +34,7 @@ import com.shuaji.cards.R
 /**
  * 现代化调色板：HSV 圆形色环 + 下方 Brightness 滑动条 + 当前色预览 + HEX 实时显示。
  *
- * 基于 [skydoves/colorpicker-compose](https://github.com/skydoves/colorpicker-compose)
- * （730 stars，Kotlin Multiplatform 支持，活跃维护）。
+ * 基于 [skydoves/colorpicker-compose](https://github.com/skydoves/colorpicker-compose)。
  */
 @Composable
 fun ModernColorPicker(
