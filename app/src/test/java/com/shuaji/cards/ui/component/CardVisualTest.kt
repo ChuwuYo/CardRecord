@@ -2,6 +2,7 @@ package com.shuaji.cards.ui.component
 
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import com.shuaji.cards.data.local.CardOrientation
 import com.shuaji.cards.data.local.ImageSourceType
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -52,6 +53,64 @@ class CardVisualTest {
         assertEquals(76.8.dp, compact.largeRing.diameter)
         assertEquals(54.4.dp, compact.smallRing.diameter)
         assertTrue(large.contentEndPadding > compact.contentEndPadding)
+    }
+
+    @Test
+    fun compactTextLift_requiresLandscapeBadgeAndCompactWidth() {
+        assertEquals(
+            8.dp,
+            resolveCardTextLift(
+                orientation = CardOrientation.LANDSCAPE,
+                sourceType = ImageSourceType.NONE,
+                networkPresent = true,
+                cardWidth = 160.dp,
+            ),
+        )
+        assertEquals(
+            8.dp,
+            resolveCardTextLift(
+                orientation = CardOrientation.LANDSCAPE,
+                sourceType = ImageSourceType.PROVIDER,
+                networkPresent = true,
+                cardWidth = 180.dp,
+            ),
+        )
+        assertEquals(
+            0.dp,
+            resolveCardTextLift(
+                orientation = CardOrientation.LANDSCAPE,
+                sourceType = ImageSourceType.PROVIDER,
+                networkPresent = true,
+                cardWidth = 320.dp,
+            ),
+        )
+        assertEquals(
+            0.dp,
+            resolveCardTextLift(
+                orientation = CardOrientation.PORTRAIT,
+                sourceType = ImageSourceType.PROVIDER,
+                networkPresent = true,
+                cardWidth = 160.dp,
+            ),
+        )
+        assertEquals(
+            0.dp,
+            resolveCardTextLift(
+                orientation = CardOrientation.LANDSCAPE,
+                sourceType = ImageSourceType.USER,
+                networkPresent = true,
+                cardWidth = 160.dp,
+            ),
+        )
+        assertEquals(
+            0.dp,
+            resolveCardTextLift(
+                orientation = CardOrientation.LANDSCAPE,
+                sourceType = ImageSourceType.PROVIDER,
+                networkPresent = false,
+                cardWidth = 160.dp,
+            ),
+        )
     }
 
     @Test

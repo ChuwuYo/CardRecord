@@ -16,8 +16,10 @@ import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
@@ -131,6 +133,30 @@ class CardEditViewModelTest {
 
         viewModel.selectImageSource(ImageSourceType.USER)
         assertEquals(CardNetworkProvider.MASTERCARD.key, viewModel.uiState.value.imageProviderKey)
+    }
+
+    @Test
+    fun networkPickerPresentation_hidesUserImageWithoutDroppingSelection() {
+        val selectedKey = CardNetworkProvider.MASTERCARD.key
+
+        val presentation = resolveCardNetworkPickerPresentation(ImageSourceType.USER, selectedKey)
+
+        assertFalse(presentation.visible)
+        assertEquals(selectedKey, presentation.selectedKey)
+    }
+
+    @Test
+    fun networkPickerPresentation_restoresSelectionAfterUserImage() {
+        val selectedKey = CardNetworkProvider.MASTERCARD.key
+        val hidden = resolveCardNetworkPickerPresentation(ImageSourceType.USER, selectedKey)
+
+        val plain = resolveCardNetworkPickerPresentation(ImageSourceType.NONE, hidden.selectedKey)
+        val provider = resolveCardNetworkPickerPresentation(ImageSourceType.PROVIDER, hidden.selectedKey)
+
+        assertTrue(plain.visible)
+        assertEquals(selectedKey, plain.selectedKey)
+        assertTrue(provider.visible)
+        assertEquals(selectedKey, provider.selectedKey)
     }
 
     @Test

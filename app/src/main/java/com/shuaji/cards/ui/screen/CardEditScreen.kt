@@ -106,6 +106,8 @@ fun CardEditScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
+    val networkPickerPresentation =
+        resolveCardNetworkPickerPresentation(state.imageSourceType, state.imageProviderKey)
 
     fun releaseImagePermissions(uris: Set<String>) {
         uris.forEach { uri ->
@@ -271,16 +273,18 @@ fun CardEditScreen(
                 onSelect = viewModel::selectImageSource,
             )
 
-            Text(
-                networkSection,
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            CardNetworkPicker(
-                selectedKey = state.imageProviderKey,
-                includeNone = true,
-                onSelect = viewModel::selectNetwork,
-            )
+            if (networkPickerPresentation.visible) {
+                Text(
+                    networkSection,
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                CardNetworkPicker(
+                    selectedKey = networkPickerPresentation.selectedKey,
+                    includeNone = true,
+                    onSelect = viewModel::selectNetwork,
+                )
+            }
 
             if (state.imageSourceType == ImageSourceType.USER) {
                 // 预览比例与卡片朝向一致，ContentScale.Fit 保留完整图片。
@@ -605,6 +609,20 @@ fun CardEditScreen(
 }
 
 private enum class DateField { VALID_UNTIL, NEXT_DUE }
+
+internal data class CardNetworkPickerPresentation(
+    val visible: Boolean,
+    val selectedKey: String?,
+)
+
+internal fun resolveCardNetworkPickerPresentation(
+    sourceType: ImageSourceType,
+    selectedKey: String?,
+): CardNetworkPickerPresentation =
+    CardNetworkPickerPresentation(
+        visible = sourceType != ImageSourceType.USER,
+        selectedKey = selectedKey,
+    )
 
 // ── 子组件 ────────────────────────────────────────────────────────
 

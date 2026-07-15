@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -145,6 +146,13 @@ private fun LandscapeCardBody(
         val height: Dp =
             (maxWidth / card.cardOrientationEnum.aspectRatio).coerceAtLeast(CARD_MIN_HEIGHT_DP.dp)
         val networkLayout = resolveCardNetworkVisualLayout(maxWidth)
+        val textLift =
+            resolveCardTextLift(
+                orientation = CardOrientation.LANDSCAPE,
+                sourceType = sourceType,
+                networkPresent = network != null,
+                cardWidth = maxWidth,
+            )
         Box(
             modifier =
                 Modifier
@@ -168,6 +176,7 @@ private fun LandscapeCardBody(
                     Modifier
                         .align(Alignment.BottomStart)
                         .fillMaxWidth()
+                        .offset(y = -textLift)
                         .padding(start = 16.dp, top = 16.dp, bottom = 16.dp),
                 card = card,
                 contentEndPadding =
@@ -210,6 +219,13 @@ private fun PortraitCardBody(
         // 高度严格按 1.586:1 比例，比例单一来源是 CardOrientation.aspectRatio
         val height: Dp = (width * card.cardOrientationEnum.aspectRatio).coerceAtMost(280.dp)
         val networkLayout = resolveCardNetworkVisualLayout(width)
+        val textLift =
+            resolveCardTextLift(
+                orientation = CardOrientation.PORTRAIT,
+                sourceType = sourceType,
+                networkPresent = network != null,
+                cardWidth = width,
+            )
         Box(
             modifier =
                 Modifier
@@ -235,6 +251,7 @@ private fun PortraitCardBody(
                     Modifier
                         .align(Alignment.BottomStart)
                         .fillMaxWidth()
+                        .offset(y = -textLift)
                         .padding(start = 14.dp, top = 14.dp, bottom = 14.dp),
                 card = card,
                 contentEndPadding =
@@ -305,6 +322,22 @@ internal fun shouldShowNetworkBadge(
     sourceType: ImageSourceType,
     networkPresent: Boolean,
 ): Boolean = sourceType != ImageSourceType.USER && networkPresent
+
+internal fun resolveCardTextLift(
+    orientation: CardOrientation,
+    sourceType: ImageSourceType,
+    networkPresent: Boolean,
+    cardWidth: Dp,
+): Dp =
+    if (
+        orientation == CardOrientation.LANDSCAPE &&
+        shouldShowNetworkBadge(sourceType, networkPresent) &&
+        cardWidth <= 180.dp
+    ) {
+        8.dp
+    } else {
+        0.dp
+    }
 
 // ── 卡面文字内容 ──────────────────────────────────────────────────
 
