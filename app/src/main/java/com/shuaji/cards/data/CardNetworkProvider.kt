@@ -7,8 +7,9 @@ import com.shuaji.cards.R
 /**
  * 全球主流卡组织（Card Network / Card Scheme）。
  *
- * 资源来源：6 个来自 [simple-icons](https://simpleicons.org/)（CC0 1.0 公共领域，
- * 完全免授权），银联 simple-icons 未收录，使用自绘替代。
+ * Visa、Mastercard、JCB、American Express、Diners Club 与 Discover 的图形路径参考
+ * [Simple Icons](https://simpleicons.org/) 对应条目；银联图形在项目内维护。
+ * 品牌名称与标识归各自权利人所有，此处仅用于识别卡组织。
  *
  * 朝向（横/竖）由用户手动选择，不在卡组织枚举中预判。
  *

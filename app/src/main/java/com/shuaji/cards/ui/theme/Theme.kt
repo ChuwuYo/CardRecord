@@ -24,7 +24,7 @@ import com.shuaji.cards.data.ThemeSettings
  * primary/secondary/tertiary/中性面/容器色都符合 MD3 规范并随种子色协调变化。
  */
 
-/** 默认品牌主色（冷调深蓝，银行业务的「信任感」），用作动态色回退与默认种子色。 */
+/** 默认品牌主色，用作动态色回退与默认种子色。 */
 val DefaultBrandPrimary = Color(0xFF0061A4)
 
 @Composable
