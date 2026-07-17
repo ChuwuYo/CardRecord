@@ -39,7 +39,7 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@48b5f213c81028ace310571dc5ec0fbbca0b2947 # v4
         with:
-          gradle-version: '8.14.4'
+          gradle-version: '9.4.1'
           dependency-graph: disabled
 
       # gradle.properties 写死的本地代理在 runner 上不存在，运行时剥掉（不提交回仓库）。
