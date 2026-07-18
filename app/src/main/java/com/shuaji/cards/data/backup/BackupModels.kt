@@ -4,36 +4,180 @@ import com.shuaji.cards.data.local.CardEntity
 import com.shuaji.cards.data.local.CardFolderEntity
 import com.shuaji.cards.data.local.TransactionEntity
 import kotlinx.serialization.Required
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 /**
- * 导出文件 schema。
+ * 备份文件 schema 1。
  *
- * 顶层是 [BackupBundle]，包含 cards / folders / transactions 三个表的全量数据。
+ * 顶层必须显式包含 `version`、`cards`、`folders`、`transactions`。表内字段由独立的 V1 DTO
+ * 固定，不直接序列化 Room Entity，避免数据库模型的默认值或重构悄悄改变已经发布的文件协议。
+ * 破坏性格式变更必须提升 [version] 并在导入边界显式迁移。
  *
- * [version] 字段是 schema 版本号：导入时校验，不匹配直接拒绝（避免老格式 / 新格式混用导致
- * 静默丢字段）。改 schema 时升 [version]，并在导入处做迁移。
- *
- * `@Required` 要求 JSON 显式包含 `version`；缺失时反序列化失败，
- * 避免用默认版本解析格式不明的备份。
- *
- * imageProviderKey 是跨设备稳定的卡组织 key。只有 imageUri 依赖设备
- * （content:// URI 在另一台设备可能失效），但仍按现状导出，以保留同设备恢复的可能性；
- * UI 通过 [ImportResult.imageUriUserCount]
- * 提醒用户自定义卡面可能需要重新选择；导入过程不直接探测 URI 可访问性。
+ * `imageUri` 是设备相关的 `content://` 引用。仍按 schema 1 原样导出以支持同设备恢复；
+ * UI 通过 [ImportResult.imageUriUserCount] 提醒用户跨设备后可能需要重新选择图片。
  */
 @Serializable
 data class BackupBundle(
     @Required
+    @SerialName("version")
     val version: Int = SCHEMA_VERSION,
-    val cards: List<CardEntity> = emptyList(),
-    val folders: List<CardFolderEntity> = emptyList(),
-    val transactions: List<TransactionEntity> = emptyList(),
+    @Required
+    @SerialName("cards")
+    val cards: List<BackupCardV1> = emptyList(),
+    @Required
+    @SerialName("folders")
+    val folders: List<BackupFolderV1> = emptyList(),
+    @Required
+    @SerialName("transactions")
+    val transactions: List<BackupTransactionV1> = emptyList(),
 ) {
     companion object {
         const val SCHEMA_VERSION: Int = 1
     }
 }
+
+/** schema 1 的卡片记录。所有字段都是已发布协议中的必填字段，包括可空字段。 */
+@Serializable
+data class BackupCardV1(
+    @SerialName("id")
+    val id: Long,
+    @SerialName("name")
+    val name: String,
+    @SerialName("bank")
+    val bank: String,
+    @SerialName("cardNumberMasked")
+    val cardNumberMasked: String,
+    @SerialName("validUntilMillis")
+    val validUntilMillis: Long?,
+    @SerialName("nextDueDateMillis")
+    val nextDueDateMillis: Long?,
+    @SerialName("requiredCount")
+    val requiredCount: Int,
+    @SerialName("colorArgb")
+    val colorArgb: Int,
+    @SerialName("note")
+    val note: String,
+    @SerialName("imageUri")
+    val imageUri: String?,
+    @SerialName("imageSourceType")
+    val imageSourceType: String,
+    @SerialName("imageProviderKey")
+    val imageProviderKey: String?,
+    @SerialName("cardOrientation")
+    val cardOrientation: String,
+    @SerialName("folderId")
+    val folderId: Long?,
+    @SerialName("createdAtMillis")
+    val createdAtMillis: Long,
+)
+
+/** schema 1 的文件夹记录。 */
+@Serializable
+data class BackupFolderV1(
+    @SerialName("id")
+    val id: Long,
+    @SerialName("name")
+    val name: String,
+    @SerialName("colorArgb")
+    val colorArgb: Int,
+    @SerialName("sortOrder")
+    val sortOrder: Int,
+    @SerialName("createdAtMillis")
+    val createdAtMillis: Long,
+)
+
+/** schema 1 的消费记录。 */
+@Serializable
+data class BackupTransactionV1(
+    @SerialName("id")
+    val id: Long,
+    @SerialName("cardId")
+    val cardId: Long,
+    @SerialName("occurredAtMillis")
+    val occurredAtMillis: Long,
+)
+
+internal fun CardEntity.toBackupV1(): BackupCardV1 =
+    BackupCardV1(
+        id = id,
+        name = name,
+        bank = bank,
+        cardNumberMasked = cardNumberMasked,
+        validUntilMillis = validUntilMillis,
+        nextDueDateMillis = nextDueDateMillis,
+        requiredCount = requiredCount,
+        colorArgb = colorArgb,
+        note = note,
+        imageUri = imageUri,
+        imageSourceType = imageSourceType,
+        imageProviderKey = imageProviderKey,
+        cardOrientation = cardOrientation,
+        folderId = folderId,
+        createdAtMillis = createdAtMillis,
+    )
+
+internal fun BackupCardV1.toEntity(): CardEntity =
+    CardEntity(
+        id = id,
+        name = name,
+        bank = bank,
+        cardNumberMasked = cardNumberMasked,
+        validUntilMillis = validUntilMillis,
+        nextDueDateMillis = nextDueDateMillis,
+        requiredCount = requiredCount,
+        colorArgb = colorArgb,
+        note = note,
+        imageUri = imageUri,
+        imageSourceType = imageSourceType,
+        imageProviderKey = imageProviderKey,
+        cardOrientation = cardOrientation,
+        folderId = folderId,
+        createdAtMillis = createdAtMillis,
+    )
+
+internal fun CardFolderEntity.toBackupV1(): BackupFolderV1 =
+    BackupFolderV1(
+        id = id,
+        name = name,
+        colorArgb = colorArgb,
+        sortOrder = sortOrder,
+        createdAtMillis = createdAtMillis,
+    )
+
+internal fun BackupFolderV1.toEntity(): CardFolderEntity =
+    CardFolderEntity(
+        id = id,
+        name = name,
+        colorArgb = colorArgb,
+        sortOrder = sortOrder,
+        createdAtMillis = createdAtMillis,
+    )
+
+internal fun TransactionEntity.toBackupV1(): BackupTransactionV1 =
+    BackupTransactionV1(
+        id = id,
+        cardId = cardId,
+        occurredAtMillis = occurredAtMillis,
+    )
+
+internal fun BackupTransactionV1.toEntity(): TransactionEntity =
+    TransactionEntity(
+        id = id,
+        cardId = cardId,
+        occurredAtMillis = occurredAtMillis,
+    )
+
+/** SAF 文件确认页使用的可信摘要；只由完整解码并校验过的 [BackupBundle] 生成。 */
+data class BackupFileInfo(
+    val cardCount: Int,
+    val folderCount: Int,
+    val transactionCount: Int,
+    val imageUriUserCount: Int,
+    val lastModifiedMillis: Long?,
+    /** 预览时所读原始文件的 SHA-256，用于确认后阻止导入已被替换的内容。 */
+    val contentSha256: String,
+)
 
 /**
  * 导入模式。导入前用户选一个：
@@ -42,13 +186,20 @@ data class BackupBundle(
  */
 enum class ImportMode { REPLACE, MERGE }
 
+/** [BackupRepository.cancelActive] 的阶段化结果，避免把“无操作”和“已经开始提交”混成同一个布尔值。 */
+enum class BackupCancelResult {
+    CANCELLED,
+    COMMIT_IN_PROGRESS,
+    NO_ACTIVE_OPERATION,
+}
+
 /**
  * 导入结果。返回给 UI 用：
  * - [cardsAdded] / [foldersAdded] / [transactionsAdded] — 实际插入条数
  * - [transactionsSkipped] — MERGE 模式下因 cardId 找不到映射被跳过的孤立 transaction 数
  * - [cardsSkippedInvalidFolder] — REPLACE 模式下被置为未分组的 card 数（folder 引用失效）
  * - [duplicateFolderNames] / [duplicateCardNames] — MERGE 模式下与现库重名的 folder / card 数
- * - [imageUriUserCount] — 备份里 `imageSourceType == USER` 的卡数；UI 据此提示用户
+ * - [imageUriUserCount] — 备份里 `imageSourceType == USER` 且确有图片 URI 的卡数；UI 据此提示用户
  *   自定义卡面可能需要重新选择，不等同于已确认 URI 失效
  * - 出错时抛 [BackupException]，UI 层 try-catch 转 Snackbar
  */

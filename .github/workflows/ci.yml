@@ -1,7 +1,6 @@
 name: CI
 
-# 验证关：对所有分支的 push 和 PR 跑 ktlint + JVM 单元测试。
-# 与 build-apk.yml 分工：本工作流只做静态检查 + 测试，不出 APK。
+# 验证关：对所有分支的 push 和 PR 跑格式、单测和 Android Lint，不出 APK。
 on:
   push:
   pull_request:
@@ -21,6 +20,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
 
       - name: Set up JDK 17
         uses: actions/setup-java@c1e323688fd81a25caa38c78aa6df2d33d3e20d9 # v4
@@ -35,21 +36,20 @@ jobs:
         run: |
           yes | sdkmanager "platforms;android-36" "build-tools;36.0.0" "platform-tools" > /dev/null
 
-      # CI 显式安装与 Wrapper 相同的 Gradle 版本，便于 action 缓存和版本审计。
-      - name: Set up Gradle
+      # 仅提供缓存和构建报告；Gradle 版本由 Wrapper 唯一决定。
+      - name: Set up Gradle cache
         uses: gradle/actions/setup-gradle@48b5f213c81028ace310571dc5ec0fbbca0b2947 # v4
         with:
-          gradle-version: '9.4.1'
           dependency-graph: disabled
 
       # gradle.properties 写死的本地代理在 runner 上不存在，运行时剥掉（不提交回仓库）。
-      - name: Disable sandbox-only Maven proxy
+      - name: Disable local Maven proxy
         run: |
           sed -i -E '/^systemProp\.(http|https)\.(proxyHost|proxyPort|nonProxyHosts)=/d' gradle.properties
 
       - name: ktlint
         run: |
-          gradle ktlintCheck --no-daemon || {
+          ./gradlew ktlintCheck --no-daemon || {
             echo "::group::ktlint violation reports"
             find app/build/reports/ktlint -name '*.txt' -exec sh -c 'echo "== $1 =="; cat "$1"' _ {} \;
             echo "::endgroup::"
@@ -57,7 +57,10 @@ jobs:
           }
 
       - name: Unit tests
-        run: gradle :app:testDebugUnitTest --no-daemon --stacktrace
+        run: ./gradlew :app:testDebugUnitTest --no-daemon --stacktrace
+
+      - name: Android Lint
+        run: ./gradlew :app:lintDebug --no-daemon --stacktrace
 
       # 测试报告留档，失败时方便排查
       - name: Upload test report

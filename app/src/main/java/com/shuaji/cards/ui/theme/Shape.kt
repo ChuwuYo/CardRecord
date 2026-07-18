@@ -7,10 +7,9 @@ import androidx.compose.ui.unit.dp
 /**
  * 圆角标准（与真实卡片圆角一致）。
  *
- * 依据：ISO/IEC 7810 ID-1 卡的圆角半径为 3.18 mm。
- * - 在 xhdpi (1mm ≈ 3dp)：3.18 × 3 ≈ 9.5dp
- * - 在 xxhdpi (1mm ≈ 4dp)：3.18 × 4 ≈ 12.7dp
- * 综合中端设备取 12dp 作为卡面与大部分组件的标准圆角。
+ * Compose 的 dp 是物理尺寸无关单位，不能按屏幕密度把毫米直接换算成不同 dp。
+ * 这里的 12dp 是产品视觉 token：接近实体卡的克制圆角，并让卡面与主要容器一致；
+ * 它不是对 ISO/IEC 7810 物理半径的精确换算。
  *
  * - [extraSmall] = 4dp  → chip、状态点
  * - [small]      = 8dp  → 小型 surface、小图标容器

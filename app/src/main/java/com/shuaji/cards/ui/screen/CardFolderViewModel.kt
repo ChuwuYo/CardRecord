@@ -2,55 +2,51 @@ package com.shuaji.cards.ui.screen
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.shuaji.cards.core.OneShotEventQueue
 import com.shuaji.cards.data.CardRepository
 import com.shuaji.cards.data.local.CardFolderEntity
-import kotlinx.coroutines.flow.MutableStateFlow
+import com.shuaji.cards.data.local.FolderWithCardCount
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
-/**
- * 文件夹管理：增、删、改、查。
- */
+sealed interface CardFolderUiState {
+    data object Loading : CardFolderUiState
+
+    data class Ready(
+        val folders: List<FolderWithCardCount>,
+    ) : CardFolderUiState
+}
+
+sealed interface CardFolderEvent {
+    data object WriteFailed : CardFolderEvent
+}
+
+/** 文件夹管理：增、删、改、查。 */
 class CardFolderViewModel(
     private val repository: CardRepository,
 ) : ViewModel() {
-    val folders: StateFlow<List<CardFolderEntity>> =
+    private val eventQueue = OneShotEventQueue<CardFolderEvent>()
+    val events: Flow<CardFolderEvent> = eventQueue.events
+
+    val uiState: StateFlow<CardFolderUiState> =
         repository
-            .observeFolders()
-            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
-
-    private val _counts = MutableStateFlow<Map<Long, Int>>(emptyMap())
-    val counts: StateFlow<Map<Long, Int>> = _counts.asStateFlow()
-
-    fun refreshCounts() {
-        viewModelScope.launch {
-            val list = folders.value
-            val map = HashMap<Long, Int>(list.size)
-            for (f in list) {
-                map[f.id] = repository.countCardsInFolder(f.id)
-            }
-            _counts.value = map
-        }
-    }
+            .observeFoldersWithCardCounts()
+            .map<List<FolderWithCardCount>, CardFolderUiState>(CardFolderUiState::Ready)
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), CardFolderUiState.Loading)
 
     fun create(
         name: String,
         colorArgb: Int,
     ) {
         if (name.isBlank()) return
-        viewModelScope.launch {
-            val order = (folders.value.maxOfOrNull { it.sortOrder } ?: -1) + 1
-            repository.insertFolder(
-                CardFolderEntity(
-                    name = name.trim(),
-                    colorArgb = colorArgb,
-                    sortOrder = order,
-                ),
-            )
-            refreshCounts()
+        launchWrite {
+            repository.createFolder(name.trim(), colorArgb)
+            true
         }
     }
 
@@ -64,15 +60,21 @@ class CardFolderViewModel(
         newColor: Int,
     ) {
         if (newName.isBlank()) return
-        viewModelScope.launch {
-            repository.updateFolder(folder.copy(name = newName.trim(), colorArgb = newColor))
-        }
+        launchWrite { repository.updateFolder(folder.copy(name = newName.trim(), colorArgb = newColor)) }
     }
 
     fun delete(folder: CardFolderEntity) {
+        launchWrite { repository.deleteFolder(folder) }
+    }
+
+    private fun launchWrite(block: suspend () -> Boolean) {
         viewModelScope.launch {
-            repository.deleteFolder(folder)
-            refreshCounts()
+            try {
+                if (!block()) eventQueue.emit(CardFolderEvent.WriteFailed)
+            } catch (exception: Exception) {
+                if (exception is CancellationException) throw exception
+                eventQueue.emit(CardFolderEvent.WriteFailed)
+            }
         }
     }
 }

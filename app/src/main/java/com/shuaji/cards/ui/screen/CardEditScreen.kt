@@ -1,7 +1,6 @@
 package com.shuaji.cards.ui.screen
 
 import android.net.Uri
-import android.util.Log
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -19,6 +18,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -40,6 +40,7 @@ import androidx.compose.material.icons.filled.Rotate90DegreesCw
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -68,7 +69,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -93,8 +93,7 @@ import com.shuaji.cards.data.local.CardOrientation
 import com.shuaji.cards.data.local.ImageSourceType
 import com.shuaji.cards.ui.ViewModelFactories
 import com.shuaji.cards.ui.component.ModernColorPicker
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.launch
+import java.time.LocalDate
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -106,80 +105,44 @@ fun CardEditScreen(
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val folders by viewModel.folders.collectAsStateWithLifecycle()
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
+    var showImagePermissionError by remember { mutableStateOf(false) }
     val networkPickerPresentation =
         resolveCardNetworkPickerPresentation(state.imageSourceType, state.imageProviderKey)
 
-    fun releaseImagePermissions(uris: Set<String>) {
-        uris.forEach { uri ->
-            runCatching {
-                context.contentResolver.releasePersistableUriPermission(
-                    Uri.parse(uri),
-                    android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION,
-                )
-            }.onFailure { error ->
-                Log.w("CardEditScreen", "释放卡面图片 URI 权限失败：$uri", error)
-            }
-        }
-    }
-
-    val closeWithoutSaving = close@{
-        val closingState = viewModel.beginClosing() ?: return@close
-        scope.launch {
-            val releasable = viewModel.releasableImageUrisOrEmpty(closingState.originalImageUri)
-            releaseImagePermissions(releasable)
-            onBack()
-        }
-    }
+    val closeWithoutSaving = viewModel::closeWithoutSaving
 
     LaunchedEffect(cardId) {
-        if (cardId == null) viewModel.reset() else viewModel.load(cardId)
+        viewModel.initialize(cardId)
     }
     LaunchedEffect(state.saveResult) {
         when (state.saveResult) {
-            is CardEditSaveResult.Saved -> {
-                val releasable = viewModel.releasableImageUrisOrEmpty(state.imageUri)
-                releaseImagePermissions(releasable)
-                onBack()
-            }
+            is CardEditSaveResult.Saved -> onBack()
             CardEditSaveResult.Failed -> snackbarHostState.showSnackbar(context.getString(R.string.edit_save_failed))
             else -> Unit
+        }
+    }
+    LaunchedEffect(viewModel) {
+        viewModel.events.collect { event ->
+            when (event) {
+                CardEditEvent.ImagePermissionFailed -> showImagePermissionError = true
+                CardEditEvent.CloseReady -> onBack()
+            }
         }
     }
     BackHandler(onBack = closeWithoutSaving)
 
     var dateDialogTarget by remember { mutableStateOf<DateField?>(null) }
     var showColorPicker by remember { mutableStateOf(false) }
-    var showImagePermissionError by remember { mutableStateOf(false) }
     val colorSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
-    // OpenDocument 提供可持久化 URI；编辑期间只获取新权限，保存或取消时再统一清理。
+    // OpenDocument URI 交给统一授权所有者；保存、取消与进程重启都走同一套回收规则。
     val imagePicker =
         rememberLauncherForActivityResult(
             contract = ActivityResultContracts.OpenDocument(),
         ) { uri: Uri? ->
             if (uri != null) {
-                val tookPersistable =
-                    runCatching {
-                        context.contentResolver.takePersistableUriPermission(
-                            uri,
-                            android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION,
-                        )
-                        true
-                    }.getOrElse { error ->
-                        android.util.Log.w(
-                            "CardEditScreen",
-                            "无法持久化卡面图片 URI：$uri",
-                            error,
-                        )
-                        false
-                    }
-                if (tookPersistable) {
-                    viewModel.selectUserImage(uri.toString())
-                } else {
-                    showImagePermissionError = true
-                }
+                viewModel.selectUserImage(uri.toString())
             }
         }
 
@@ -222,6 +185,26 @@ fun CardEditScreen(
     val noneLabel = stringResource(R.string.edit_image_none)
     val landscapeLabel = stringResource(R.string.edit_orientation_landscape)
     val portraitLabel = stringResource(R.string.edit_orientation_portrait)
+
+    if (cardId != null && state.loadState != CardEditLoadState.READY) {
+        val isLoading =
+            state.loadState == CardEditLoadState.NEW || state.loadState == CardEditLoadState.LOADING
+        CardEditLoadScaffold(
+            title = titleText,
+            backContentDescription = backCd,
+            isLoading = isLoading,
+            message =
+                when (state.loadState) {
+                    CardEditLoadState.MISSING -> stringResource(R.string.card_missing)
+                    CardEditLoadState.FAILED -> stringResource(R.string.edit_load_failed)
+                    else -> null
+                },
+            retryLabel = stringResource(R.string.common_retry),
+            onBack = closeWithoutSaving,
+            onRetry = if (state.loadState == CardEditLoadState.FAILED) ({ viewModel.load(cardId) }) else null,
+        )
+        return
+    }
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
@@ -534,9 +517,9 @@ fun CardEditScreen(
         val target = selectedDateField
         val initial =
             when (target) {
-                DateField.VALID_UNTIL -> state.validUntilMillis
-                DateField.NEXT_DUE -> state.nextDueDateMillis
-            } ?: System.currentTimeMillis()
+                DateField.VALID_UNTIL -> state.validUntilMillis ?: DateToken.fromLocalDate(LocalDate.now())
+                DateField.NEXT_DUE -> state.nextDueDateMillis ?: DateToken.fromAnnualDate(LocalDate.now())
+            }
         val pickerState = rememberDatePickerState(initialSelectedDateMillis = initial)
         DatePickerDialog(
             onDismissRequest = { dateDialogTarget = null },
@@ -550,7 +533,7 @@ fun CardEditScreen(
                                 DateField.NEXT_DUE ->
                                     it.copy(
                                         nextDueDateMillis =
-                                            DateToken.fromLocalDate(
+                                            DateToken.fromAnnualDate(
                                                 normalizeAnnualDueDate(DateToken.toLocalDate(ms)),
                                             ),
                                     )
@@ -587,7 +570,13 @@ fun CardEditScreen(
             onDismissRequest = { showColorPicker = false },
             sheetState = colorSheetState,
         ) {
-            Column(modifier = Modifier.padding(20.dp)) {
+            Column(
+                modifier =
+                    Modifier
+                        .heightIn(max = 560.dp)
+                        .verticalScroll(rememberScrollState())
+                        .padding(20.dp),
+            ) {
                 Text(
                     colorPickerTitle,
                     style = MaterialTheme.typography.titleLarge,
@@ -613,6 +602,59 @@ fun CardEditScreen(
 }
 
 private enum class DateField { VALID_UNTIL, NEXT_DUE }
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun CardEditLoadScaffold(
+    title: String,
+    backContentDescription: String,
+    isLoading: Boolean,
+    message: String?,
+    retryLabel: String,
+    onBack: () -> Unit,
+    onRetry: (() -> Unit)?,
+) {
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold) },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = backContentDescription)
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
+            )
+        },
+    ) { padding ->
+        Box(
+            modifier =
+                Modifier
+                    .fillMaxSize()
+                    .padding(padding)
+                    .padding(24.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (isLoading) {
+                CircularProgressIndicator()
+            } else {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                ) {
+                    Text(
+                        text = message.orEmpty(),
+                        style = MaterialTheme.typography.bodyLarge,
+                        textAlign = TextAlign.Center,
+                    )
+                    onRetry?.let { retry ->
+                        Button(onClick = retry) { Text(retryLabel) }
+                    }
+                }
+            }
+        }
+    }
+}
 
 internal data class CardNetworkPickerPresentation(
     val visible: Boolean,
@@ -910,14 +952,3 @@ private fun DateRow(
         }
     }
 }
-
-/** 清理图片权限属于尽力而为边界，但不能吞掉协程取消。 */
-private suspend fun CardEditViewModel.releasableImageUrisOrEmpty(keptUri: String?): Set<String> =
-    try {
-        releasableImageUris(keptUri)
-    } catch (error: CancellationException) {
-        throw error
-    } catch (error: Exception) {
-        Log.w("CardEditScreen", "读取待释放图片 URI 失败", error)
-        emptySet()
-    }

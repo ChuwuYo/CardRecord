@@ -1,10 +1,24 @@
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
     id("org.jetbrains.kotlin.plugin.serialization")
-    id("org.jetbrains.kotlin.kapt")
+    id("com.google.devtools.ksp")
+    id("androidx.room")
     id("org.jlleitschuh.gradle.ktlint") version "14.0.1"
+}
+
+kotlin {
+    compilerOptions {
+        jvmTarget.set(JvmTarget.JVM_17)
+    }
+}
+
+room {
+    // Room 插件把 schema 目录建模为任务输入/输出，支持正确的增量与构建缓存。
+    schemaDirectory("$projectDir/schemas")
 }
 
 android {
@@ -74,15 +88,12 @@ android {
         }
     }
     lint {
-        checkReleaseBuilds = false
-        abortOnError = false
+        checkReleaseBuilds = true
+        abortOnError = true
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
-    }
-    kotlinOptions {
-        jvmTarget = "17"
     }
     buildFeatures {
         compose = true
@@ -96,7 +107,7 @@ android {
 
 dependencies {
     implementation("androidx.core:core-ktx:1.15.0")
-    // 应用内语言切换（per-app language 官方方案）：AppCompatDelegate.setApplicationLocales
+    // 应用内语言切换依赖 AppCompatDelegate.setApplicationLocales。
     implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.9.0")
     implementation("androidx.lifecycle:lifecycle-process:2.9.0")
@@ -114,17 +125,14 @@ dependencies {
     implementation("androidx.room:room-ktx:2.7.2")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
     implementation("androidx.datastore:datastore-preferences:1.1.1")
-    implementation("io.coil-kt.coil3:coil-compose:3.4.0")
-    implementation("io.coil-kt.coil3:coil-network-okhttp:3.4.0")
-    // 现代化调色板：HSV 圆形色环 + 多滑动条（BrightnessSlider / AlphaSlider / SaturationSlider）
-    // 版本与当前 Kotlin / Compose 工具链兼容。
+    // 3.2.0 与项目 Kotlin 2.1.20 同版本编译；仅加载用户选择的本地 URI，不引入网络模块。
+    implementation("io.coil-kt.coil3:coil-compose:3.2.0")
+    // HSV 取色器。
     implementation("com.github.skydoves:colorpicker-compose:1.1.2")
-    // 种子色 → Material 3 配色：MaterialKolor 封装 Google material-color-utilities 的
-    // HCT / tonal palette 官方算法（Material You）。2.1.1 用 Kotlin 2.1.20 + Compose 1.7.3 编译，
-    // 与本项目工具链一致，避免自己写 HSL 近似。
+    // 种子色生成 Material 3 HCT 色板。
     implementation("com.materialkolor:material-kolor:2.1.1")
     debugImplementation("androidx.compose.ui:ui-tooling")
-    kapt("androidx.room:room-compiler:2.7.2")
+    ksp("androidx.room:room-compiler:2.7.2")
 
     // ── 单测 ────────────────────────────────────────────────────────
     // JUnit 4 + Robolectric（Android Context / ContentResolver / Resources）
@@ -136,14 +144,6 @@ dependencies {
     testImplementation("androidx.room:room-testing:2.7.2")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.1")
     testImplementation("org.mockito.kotlin:mockito-kotlin:5.4.0")
-}
-
-configurations.all {
-    resolutionStrategy {
-        force("org.jetbrains.kotlin:kotlin-stdlib:2.1.20")
-        force("org.jetbrains.kotlin:kotlin-stdlib-jdk7:2.1.20")
-        force("org.jetbrains.kotlin:kotlin-stdlib-jdk8:2.1.20")
-    }
 }
 
 // ── ktlint ────────────────────────────────────────────────────────

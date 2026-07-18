@@ -1,14 +1,13 @@
 package com.shuaji.cards.data
 
 import android.content.Context
+import com.shuaji.cards.core.OneShotEventQueue
 import com.shuaji.cards.data.backup.BackupRepository
 import com.shuaji.cards.data.local.AppDatabase
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.MutableSharedFlow
-import kotlinx.coroutines.flow.SharedFlow
-import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.launch
 import java.time.Clock
 import java.time.ZoneId
 
@@ -27,19 +26,13 @@ interface AppContainer {
     /**
      * 设置页结果事件流：ViewModel 发布 [SettingsDoneEvent]，
      * `ShuajiApp` 顶层 SnackbarHost 负责在当前应用页面展示。
-     *
-     * **为什么 ViewModel 不直接 emit 字符串？**
-     * 1) ViewModel 不该持有 Context，调 `getString(R.string.xxx, ...)` 需要
-     *    Application。Application 注入放到 ViewModel 构造里。
-     * 2) 字符串拼装逻辑集中在 ViewModel，UI 层只负责把消息文本丢给 Snackbar。
-     *    这样多语言 / 文案微调都在 strings.xml 一处改。
      */
-    val settingsEvents: SharedFlow<SettingsDoneEvent>
+    val settingsEvents: Flow<SettingsDoneEvent>
 
     /**
      * 发送一条设置页事件（AppContainer 同时是发布者和容器）。
      *
-     * 对外仅暴露只读 [SharedFlow]，发布经过该接口收口。
+     * 事件在 Activity 重建的短暂无订阅窗口仍会排队，但每条只消费一次。
      */
     suspend fun emitSettings(event: SettingsDoneEvent)
 
@@ -52,11 +45,17 @@ interface AppContainer {
 
 class DefaultAppContainer(
     context: Context,
+    startupThemeModeCache: ThemeModeStartupCache = SharedPreferencesThemeModeStartupCache(context),
 ) : AppContainer {
     private val database = AppDatabase.get(context)
     private val clock = Clock.systemUTC()
     private val zoneIdProvider: () -> ZoneId = { ZoneId.systemDefault() }
     private val boundaryTicks = localMidnightTicks(clock, zoneIdProvider)
+    private val imagePermissions =
+        ContentResolverUserImagePermissionStore(
+            contentResolver = context.contentResolver,
+            cardDao = database.cardDao(),
+        )
     override val repository: CardRepository =
         CardRepository(
             database = database,
@@ -66,8 +65,9 @@ class DefaultAppContainer(
             clock = clock,
             zoneIdProvider = zoneIdProvider,
             boundaryTicks = boundaryTicks,
+            imagePermissions = imagePermissions,
         )
-    override val settings: SettingsRepository = SettingsRepository(context.appDataStore)
+    override val settings: SettingsRepository = SettingsRepository(context.appDataStore, startupThemeModeCache)
     override val backup: BackupRepository =
         BackupRepository(
             context = context,
@@ -76,18 +76,14 @@ class DefaultAppContainer(
             folderDao = database.cardFolderDao(),
             transactionDao = database.transactionDao(),
             normalizeInTransaction = repository::normalizeOverdueCyclesInTransaction,
+            reconcileImagePermissions = imagePermissions::reconcile,
         )
 
     private val annualFeeCycleEventQueue = AnnualFeeCycleEventQueue()
     override val annualFeeCycleEvents: Flow<AnnualFeeCycleEvent> = annualFeeCycleEventQueue.events
 
-    /**
-     * 设置页 Done 事件流：`SettingsViewModel.emitSettings` 推，`ShuajiApp` 顶层
-     * SnackbarHost 订阅。**用 `replay = 0`**——用户从设置页跳走再跳回来，事件已弹过；
-     * 不再 replay 旧消息。
-     */
-    private val _settingsEvents = MutableSharedFlow<SettingsDoneEvent>(extraBufferCapacity = 4)
-    override val settingsEvents: SharedFlow<SettingsDoneEvent> = _settingsEvents.asSharedFlow()
+    private val settingsEventQueue = OneShotEventQueue<SettingsDoneEvent>()
+    override val settingsEvents: Flow<SettingsDoneEvent> = settingsEventQueue.events
 
     /** 协调器与 Repository 共享同一个首发/跨零时 ticker，避免重复归一化。 */
     private val annualFeeCycleCoordinator =
@@ -98,11 +94,14 @@ class DefaultAppContainer(
             onEvent = annualFeeCycleEventQueue::emit,
         )
 
-    override fun startAnnualFeeCycleCoordinator(scope: CoroutineScope): Job = annualFeeCycleCoordinator.start(scope)
+    override fun startAnnualFeeCycleCoordinator(scope: CoroutineScope): Job {
+        scope.launch { imagePermissions.reconcile() }
+        return annualFeeCycleCoordinator.start(scope)
+    }
 
     /** 把设置页结果事件发布到顶层 SnackbarHost。 */
     override suspend fun emitSettings(event: SettingsDoneEvent) {
-        _settingsEvents.emit(event)
+        settingsEventQueue.emit(event)
     }
 }
 

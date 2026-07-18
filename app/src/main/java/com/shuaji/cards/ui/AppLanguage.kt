@@ -6,7 +6,7 @@ import androidx.core.os.LocaleListCompat
 import com.shuaji.cards.R
 
 /**
- * 应用内可选语言（per-app language，官方 [AppCompatDelegate] 方案）。
+ * 应用内可选语言，通过 [AppCompatDelegate] 与系统语言设置同步。
  *
  * **新增一门语言只需三步**：
  * 1. 在此枚举加一项（[tag] 为 BCP-47 语言标签，须与 `res/xml/locales_config.xml` 一致）；

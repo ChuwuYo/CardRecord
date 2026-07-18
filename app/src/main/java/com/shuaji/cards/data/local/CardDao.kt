@@ -28,9 +28,6 @@ interface CardDao {
     fun observeAll(): Flow<List<CardEntity>>
 
     @Query("SELECT * FROM cards WHERE id = :id")
-    fun observeById(id: Long): Flow<CardEntity?>
-
-    @Query("SELECT * FROM cards WHERE id = :id")
     suspend fun getById(id: Long): CardEntity?
 
     /** 备份导出与事务内周期归一化用的一次性全量读取。 */
@@ -41,10 +38,10 @@ interface CardDao {
     suspend fun upsert(card: CardEntity): Long
 
     @Update
-    suspend fun update(card: CardEntity)
+    suspend fun update(card: CardEntity): Int
 
     @Delete
-    suspend fun delete(card: CardEntity)
+    suspend fun delete(card: CardEntity): Int
 
     /**
      * 备份导入 REPLACE 用：清空 cards 表。
@@ -57,7 +54,7 @@ interface CardDao {
 /** 流水支持新增、观察、删除单笔和按统计窗口重置。 */
 @Dao
 interface TransactionDao {
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insert(transaction: TransactionEntity): Long
 
     @Query("SELECT * FROM transactions")
@@ -82,5 +79,5 @@ interface TransactionDao {
 
     /** 单笔删除：流水列表每行一个垃圾桶按钮只删除对应行。 */
     @Query("DELETE FROM transactions WHERE id = :id")
-    suspend fun deleteById(id: Long)
+    suspend fun deleteById(id: Long): Int
 }

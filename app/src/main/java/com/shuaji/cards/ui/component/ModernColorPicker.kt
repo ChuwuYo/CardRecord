@@ -32,7 +32,7 @@ import com.github.skydoves.colorpicker.compose.rememberColorPickerController
 import com.shuaji.cards.R
 
 /**
- * 现代化调色板：HSV 圆形色环 + 下方 Brightness 滑动条 + 当前色预览 + HEX 实时显示。
+ * HSV 色环、亮度滑块、当前色预览与 HEX 输入组成的取色器。
  *
  * 基于 [skydoves/colorpicker-compose](https://github.com/skydoves/colorpicker-compose)。
  */

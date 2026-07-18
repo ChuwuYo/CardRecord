@@ -5,7 +5,6 @@ import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
 import androidx.room.PrimaryKey
-import kotlinx.serialization.Serializable
 
 /**
  * 单笔消费事件，**只记时间和所属卡**。
@@ -20,10 +19,8 @@ import kotlinx.serialization.Serializable
  * 排序走文件 sort 完全够用，避免引入 Room 复合索引在 migration 阶段
  * 出现「索引名相同但列不同」的 schema 对不上陷阱。
  *
- * `@Serializable` 跟 `@Entity` 互不干扰——同一类型既存在数据库表里，
- * 也作为 `BackupBundle.transactions` 的元素直接走 JSON 序列化导出。
+ * 备份协议通过独立的 schema DTO 映射，不让 Room 模型的重构隐式改变已发布的 JSON。
  */
-@Serializable
 @Entity(
     tableName = "transactions",
     foreignKeys = [

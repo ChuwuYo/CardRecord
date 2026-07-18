@@ -9,7 +9,7 @@ import org.junit.Test
 class ColorHexTest {
     @Test
     fun parses_six_digit_hex_as_opaque() {
-        val c = parseSeedColor("#0061A4")!!
+        val c = requireNotNull(parseSeedColor("#0061A4"))
         assertEquals(0x00 / 255f, c.red, 0.01f)
         assertEquals(0x61 / 255f, c.green, 0.01f)
         assertEquals(0xA4 / 255f, c.blue, 0.01f)

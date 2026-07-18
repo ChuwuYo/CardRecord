@@ -5,11 +5,11 @@ import androidx.lifecycle.Lifecycle.Event.ON_START
 import androidx.lifecycle.Lifecycle.Event.ON_STOP
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.ProcessLifecycleOwner
+import com.shuaji.cards.core.OneShotEventQueue
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
@@ -18,7 +18,6 @@ import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flowOn
-import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
@@ -32,15 +31,7 @@ sealed interface AnnualFeeCycleEvent {
     ) : AnnualFeeCycleEvent
 }
 
-/** 暂存尚未展示的周期事件；每个事件只交给一个 collector 一次。 */
-class AnnualFeeCycleEventQueue {
-    private val channel = Channel<AnnualFeeCycleEvent>(Channel.BUFFERED)
-    val events: Flow<AnnualFeeCycleEvent> = channel.receiveAsFlow()
-
-    suspend fun emit(event: AnnualFeeCycleEvent) {
-        channel.send(event)
-    }
-}
+typealias AnnualFeeCycleEventQueue = OneShotEventQueue<AnnualFeeCycleEvent>
 
 /** 在进程前台期间，按订阅首发与本地零时边界推进过期年费周期。 */
 class AnnualFeeCycleCoordinator(

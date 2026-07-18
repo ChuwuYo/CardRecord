@@ -30,11 +30,10 @@ object ViewModelFactories {
         viewModelFactory {
             initializer {
                 val container = app().container
-                // ViewModel 依赖 AppContainer 接口，通过 emitSettings 发布结果事件。
                 SettingsViewModel(
                     application = app(),
                     backup = container.backup,
-                    settingsEventsSink = container,
+                    emitSettingsEvent = container::emitSettings,
                     settingsRepo = container.settings,
                 )
             }

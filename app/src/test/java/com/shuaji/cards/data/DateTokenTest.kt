@@ -14,10 +14,21 @@ class DateTokenTest {
     }
 
     @Test
-    fun leapYearFebruary28_normalizesToMonthEnd() {
+    fun ordinaryDateToken_preservesLeapYearFebruary28Exactly() {
+        val token = DateToken.fromLocalDate(LocalDate.of(2028, 2, 28))
+
+        assertEquals(LocalDate.of(2028, 2, 28), DateToken.toLocalDate(token))
+    }
+
+    @Test
+    fun annualDate_normalizesLeapYearFebruary28ToMonthEnd() {
         assertEquals(
             LocalDate.of(2028, 2, 29),
             DateToken.normalizeAnnualDate(LocalDate.of(2028, 2, 28)),
+        )
+        assertEquals(
+            LocalDate.of(2028, 2, 29),
+            DateToken.toLocalDate(DateToken.fromAnnualDate(LocalDate.of(2028, 2, 28))),
         )
     }
 

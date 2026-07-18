@@ -1,12 +1,7 @@
 package com.shuaji.cards.data
 
-import com.shuaji.cards.data.AnnualFeeCycleState.ACTIVE
-import com.shuaji.cards.data.AnnualFeeCycleState.OVERDUE
-import com.shuaji.cards.data.AnnualFeeCycleState.UNSCHEDULED
-import com.shuaji.cards.data.AnnualFeeCycleState.UPCOMING
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.time.Instant
@@ -21,14 +16,8 @@ class AnnualFeeCycleTest {
     fun dueTwoYearsAway_isUpcomingUntilPreviousAnniversary() {
         val due = token(LocalDate.of(2028, 6, 1))
 
-        assertEquals(
-            UPCOMING,
-            AnnualFeeCycle.resolve(due, instant("2026-06-01T00:00:00Z"), utc).state,
-        )
-        assertEquals(
-            ACTIVE,
-            AnnualFeeCycle.resolve(due, instant("2027-06-01T00:00:00Z"), utc).state,
-        )
+        assertTrue(AnnualFeeCycle.resolve(due, instant("2026-06-01T00:00:00Z"), utc) is AnnualFeeCycle.Upcoming)
+        assertTrue(AnnualFeeCycle.resolve(due, instant("2027-06-01T00:00:00Z"), utc) is AnnualFeeCycle.Active)
     }
 
     @Test
@@ -38,7 +27,7 @@ class AnnualFeeCycleTest {
                 token(LocalDate.of(2028, 6, 1)),
                 instant("2027-06-01T00:00:00Z"),
                 utc,
-            )
+            ) as AnnualFeeCycle.Active
 
         assertTrue(cycle.includes(instant("2027-06-01T00:00:00Z").toEpochMilli()))
         assertTrue(cycle.includes(instant("2028-05-31T23:59:59.999Z").toEpochMilli()))
@@ -51,18 +40,13 @@ class AnnualFeeCycleTest {
             LocalDate.of(2028, 2, 29),
             AnnualFeeCycle.previousAnnualDate(LocalDate.of(2029, 2, 28)),
         )
-        assertEquals(
-            LocalDate.of(2029, 2, 28),
-            AnnualFeeCycle.nextAnnualDate(LocalDate.of(2028, 2, 29)),
-        )
     }
 
     @Test
     fun nullDue_isUnscheduledAndIncludesAllTransactions() {
         val cycle = AnnualFeeCycle.resolve(null, instant("2027-01-01T00:00:00Z"), utc)
 
-        assertEquals(UNSCHEDULED, cycle.state)
-        assertNull(cycle.startDate)
+        assertTrue(cycle is AnnualFeeCycle.Unscheduled)
         assertTrue(cycle.canRecord)
         assertTrue(cycle.participatesInProgress)
         assertTrue(cycle.includes(0L))
@@ -77,7 +61,7 @@ class AnnualFeeCycleTest {
                 utc,
             )
 
-        assertEquals(OVERDUE, cycle.state)
+        assertTrue(cycle is AnnualFeeCycle.Overdue)
         assertFalse(cycle.canRecord)
         assertFalse(cycle.participatesInProgress)
         assertFalse(cycle.includes(instant("2026-06-01T00:00:00Z").toEpochMilli()))
@@ -96,6 +80,18 @@ class AnnualFeeCycleTest {
     }
 
     @Test
+    fun advanceAcrossManyYears_preservesAnnualRuleWithoutIterationState() {
+        val advanced =
+            AnnualFeeCycle.advanceDueDateUntilFuture(
+                token(LocalDate.of(1900, 2, 28)),
+                instant("9999-02-28T00:00:00Z"),
+                utc,
+            )
+
+        assertEquals(LocalDate.of(10000, 2, 29), DateToken.toLocalDate(advanced))
+    }
+
+    @Test
     fun localStartOfDay_definesAbsoluteWindowBoundaries() {
         val seoul = ZoneId.of("Asia/Seoul")
         val cycle =
@@ -103,9 +99,8 @@ class AnnualFeeCycleTest {
                 token(LocalDate.of(2028, 6, 1)),
                 instant("2027-05-31T15:00:00Z"),
                 seoul,
-            )
+            ) as AnnualFeeCycle.Active
 
-        assertEquals(ACTIVE, cycle.state)
         assertEquals(instant("2027-05-31T15:00:00Z").toEpochMilli(), cycle.startBoundaryMillis)
         assertEquals(instant("2028-05-31T15:00:00Z").toEpochMilli(), cycle.dueBoundaryMillis)
     }
@@ -119,7 +114,7 @@ class AnnualFeeCycleTest {
                 utc,
             )
 
-        assertEquals(UPCOMING, cycle.state)
+        assertTrue(cycle is AnnualFeeCycle.Upcoming)
         assertFalse(cycle.canRecord)
         assertFalse(cycle.participatesInProgress)
         assertFalse(cycle.includes(instant("2027-06-01T00:00:00Z").toEpochMilli()))

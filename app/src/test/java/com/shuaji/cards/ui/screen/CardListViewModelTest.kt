@@ -8,7 +8,10 @@ import com.shuaji.cards.data.AnnualFeeCycle
 import com.shuaji.cards.data.CardRepository
 import com.shuaji.cards.data.local.AppDatabase
 import com.shuaji.cards.data.local.CardEntity
+import com.shuaji.cards.data.local.CardFolderEntity
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.advanceUntilIdle
@@ -58,6 +61,24 @@ class CardListViewModelTest {
     }
 
     @Test
+    fun selectedFolderFilter_fallsBackToAllWhenFolderNoLongerExists() {
+        val selected = FolderFilter.Folder(folderId = 42, folderName = "已删除")
+
+        assertEquals(FolderFilter.All, normalizeFolderFilter(selected, emptyList()))
+    }
+
+    @Test
+    fun selectedFolderFilter_keepsStableIdAndRefreshesNameFromCurrentFolder() {
+        val selected = FolderFilter.Folder(folderId = 42, folderName = "旧名称")
+        val folders = listOf(CardFolderEntity(id = 42, name = "新名称", colorArgb = 0))
+
+        assertEquals(
+            FolderFilter.Folder(folderId = 42, folderName = "新名称"),
+            normalizeFolderFilter(selected, folders),
+        )
+    }
+
+    @Test
     fun requestDelete_waitsForConfirmation() =
         runTest {
             val card = createCardWithTwoTransactions()
@@ -99,12 +120,25 @@ class CardListViewModelTest {
             viewModel.requestDelete(card)
 
             viewModel.confirmDelete()
-            db.cardDao().observeById(card.card.id).first { it == null }
-            db.transactionDao().observeAll().first { it.isEmpty() }
+            advanceUntilIdle()
 
             assertNull(db.cardDao().getById(card.card.id))
             assertEquals(0, db.transactionDao().listAll().size)
             assertNull(viewModel.pendingDelete.value)
+        }
+
+    @Test
+    fun confirmDelete_staleCardEmitsFailureInsteadOfPretendingSuccess() =
+        runTest {
+            val card = createCardWithTwoTransactions()
+            val viewModel = CardListViewModel(repository)
+            viewModel.requestDelete(card)
+            repository.deleteCard(card.card)
+            val event = async(start = CoroutineStart.UNDISPATCHED) { viewModel.events.first() }
+
+            viewModel.confirmDelete()
+
+            assertEquals(CardListEvent.DeleteFailed, event.await())
         }
 
     private suspend fun createCardWithTwoTransactions(): CardUi {

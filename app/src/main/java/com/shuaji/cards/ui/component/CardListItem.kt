@@ -35,6 +35,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
@@ -43,7 +44,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.shuaji.cards.R
 import com.shuaji.cards.data.AnnualFeeCycle
-import com.shuaji.cards.data.AnnualFeeCycleState
 import com.shuaji.cards.data.DateToken
 import com.shuaji.cards.data.local.CardOrientation
 import com.shuaji.cards.data.local.cardOrientationEnum
@@ -109,6 +109,7 @@ private fun CardListItemContent(
     modifier: Modifier = Modifier,
 ) {
     val isPortrait = card.card.cardOrientationEnum == CardOrientation.PORTRAIT
+    val deleteLabel = stringResource(R.string.card_long_press_hint)
 
     Surface(
         modifier =
@@ -116,6 +117,7 @@ private fun CardListItemContent(
                 .fillMaxWidth()
                 .combinedClickable(
                     onClick = onClick,
+                    onLongClickLabel = deleteLabel,
                     onLongClick = onLongClick,
                 ),
         shape = MaterialTheme.shapes.medium,
@@ -294,9 +296,9 @@ private fun FullInfoArea(
             )
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 val disabledReason =
-                    when (card.cycle.state) {
-                        AnnualFeeCycleState.UPCOMING -> stringResource(R.string.card_record_disabled_upcoming)
-                        AnnualFeeCycleState.OVERDUE -> stringResource(R.string.card_record_disabled_overdue)
+                    when (card.cycle) {
+                        is AnnualFeeCycle.Upcoming -> stringResource(R.string.card_record_disabled_upcoming)
+                        AnnualFeeCycle.Overdue -> stringResource(R.string.card_record_disabled_overdue)
                         else -> ""
                     }
                 TextButton(
@@ -325,8 +327,8 @@ fun CycleProgressContent(
     requiredCount: Int,
     variant: CycleProgressVariant,
 ) {
-    when (cycle.state) {
-        AnnualFeeCycleState.UPCOMING ->
+    when (cycle) {
+        is AnnualFeeCycle.Upcoming ->
             Text(
                 text = stringResource(R.string.card_counting_starts_later, cycle.startDate.toString()),
                 style =
@@ -339,7 +341,7 @@ fun CycleProgressContent(
                     },
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-        AnnualFeeCycleState.OVERDUE ->
+        AnnualFeeCycle.Overdue ->
             Text(
                 text = stringResource(R.string.card_cycle_updating),
                 style =
@@ -352,8 +354,8 @@ fun CycleProgressContent(
                     },
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-        AnnualFeeCycleState.ACTIVE,
-        AnnualFeeCycleState.UNSCHEDULED,
+        is AnnualFeeCycle.Active,
+        AnnualFeeCycle.Unscheduled,
         -> ActiveProgressContent(currentCount, requiredCount, variant)
     }
 }
@@ -364,13 +366,21 @@ private fun ActiveProgressContent(
     requiredCount: Int,
     variant: CycleProgressVariant,
 ) {
-    val target = if (requiredCount > 0) (currentCount.toFloat() / requiredCount).coerceIn(0f, 1f) else 0f
+    if (requiredCount <= 0) {
+        Text(
+            text = stringResource(R.string.card_invalid_required_count),
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.error,
+        )
+        return
+    }
+    val target = (currentCount.toFloat() / requiredCount).coerceIn(0f, 1f)
     val animatedProgress by animateFloatAsState(
         targetValue = target,
         animationSpec = spring(dampingRatio = Spring.DampingRatioLowBouncy),
         label = "progress",
     )
-    val isDone = requiredCount > 0 && currentCount >= requiredCount
+    val isDone = currentCount >= requiredCount
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween,
@@ -395,7 +405,8 @@ private fun ActiveProgressContent(
                 } else if (isDone) {
                     stringResource(R.string.card_status_done)
                 } else {
-                    stringResource(R.string.card_status_remaining, (requiredCount - currentCount).coerceAtLeast(0))
+                    val remaining = (requiredCount - currentCount).coerceAtLeast(0)
+                    pluralStringResource(R.plurals.card_status_remaining, remaining, remaining)
                 },
             style = MaterialTheme.typography.labelMedium,
             color = if (isDone) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.onSurfaceVariant,

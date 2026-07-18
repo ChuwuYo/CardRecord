@@ -60,8 +60,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -71,7 +75,7 @@ import com.shuaji.cards.ui.component.CardListItem
 import com.shuaji.cards.ui.component.CompactCardListItem
 
 /**
- * 主页：搜索 + 文件夹过滤 + 卡片列表/网格切换。
+ * 主页：文件夹过滤 + 卡片列表/网格切换。
  *
  * 排序策略：filter=All 时按"距离达标"倒序（最接近达标的在最上面，提醒用户刷），
  * filter=Folder/Unfiled 时按创建时间倒序（最新添加的最上）。
@@ -100,6 +104,16 @@ fun CardListScreen(
                     SwipeFeedback.CardMissing -> context.getString(R.string.card_missing)
                 }
             snackbarHostState.showSnackbar(message)
+        }
+    }
+    LaunchedEffect(viewModel) {
+        viewModel.events.collect { event ->
+            when (event) {
+                CardListEvent.DeleteFailed ->
+                    snackbarHostState.showSnackbar(context.getString(R.string.card_delete_failed))
+                CardListEvent.WriteFailed ->
+                    snackbarHostState.showSnackbar(context.getString(R.string.common_operation_failed))
+            }
         }
     }
 
@@ -187,9 +201,25 @@ private fun ListTopBar(
     onOpenSettings: () -> Unit,
     layoutMode: ListLayoutMode,
 ) {
+    val density = LocalDensity.current
+    val minimumHeight =
+        resolveListTopBarMinimumHeight(
+            titleLineHeight =
+                with(density) {
+                    MaterialTheme.typography.titleLarge.lineHeight
+                        .toDp()
+                },
+            subtitleLineHeight =
+                with(density) {
+                    MaterialTheme.typography.bodySmall.lineHeight
+                        .toDp()
+                },
+        )
     // 用 MD3 TopAppBar 替代自定义 Surface：它会自动应用 WindowInsets.statusBars，
     // 避免标题被状态栏遮挡（之前自定义 Surface 没读 inset，标题直接画到 (0,0)）。
     TopAppBar(
+        // expandedHeight 只约束内容区；状态栏 inset 由 TopAppBar 另加，刘海设备不会挤掉文字高度。
+        expandedHeight = minimumHeight,
         title = {
             Column {
                 Text(
@@ -201,6 +231,8 @@ private fun ListTopBar(
                     text = stringResource(R.string.list_subtitle),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = LIST_SUBTITLE_MAX_LINES,
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
         },
@@ -232,6 +264,14 @@ private fun ListTopBar(
             ),
     )
 }
+
+private const val LIST_SUBTITLE_MAX_LINES = 2
+
+/** TopAppBar 的默认固定高度不足以容纳大字体下的标题与两行副标题。 */
+internal fun resolveListTopBarMinimumHeight(
+    titleLineHeight: Dp,
+    subtitleLineHeight: Dp,
+): Dp = titleLineHeight + subtitleLineHeight * LIST_SUBTITLE_MAX_LINES + 20.dp
 
 @Composable
 private fun OverallProgress(state: ListUiState) {
@@ -302,7 +342,7 @@ private fun FilterBar(
             expanded = expanded,
             onExpandedChange = { expanded = !expanded },
         ) {
-            // MD3 官方做法：表单场景下的下拉应该撑满父容器宽度。
+            // 筛选菜单与触发控件同宽，避免双列和长文件夹名造成跳动。
             // 用 ExposedDropdownMenuBox + OutlinedTextField.menuAnchor(MenuAnchorType) 即可。
             OutlinedTextField(
                 value = currentLabel,
@@ -345,7 +385,12 @@ private fun FilterBar(
                 if (state.folders.isNotEmpty()) {
                     HorizontalDivider()
                     Text(
-                        text = stringResource(R.string.list_filter_folder_count, state.folders.size),
+                        text =
+                            pluralStringResource(
+                                R.plurals.list_filter_folder_count,
+                                state.folders.size,
+                                state.folders.size,
+                            ),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
@@ -472,15 +517,16 @@ private fun FolderHeader(
  *
  * `GridCells.Adaptive(160.dp)` 在常见手机宽度显示两列，在大屏上自动增加列数。
  */
-private sealed interface CardGridCell {
+internal sealed interface CardGridCell {
     val key: String
 
     data class Header(
+        val groupKey: String,
         val title: String,
         val colorArgb: Int,
         val isUnfiledGroup: Boolean,
     ) : CardGridCell {
-        override val key: String get() = "h-$title"
+        override val key: String get() = "h-$groupKey"
     }
 
     data class Item(
@@ -502,6 +548,7 @@ private fun CardsGrid(
             state.grouped.flatMap { group ->
                 listOf(
                     CardGridCell.Header(
+                        groupKey = group.key,
                         title = group.title,
                         colorArgb = group.colorArgb,
                         isUnfiledGroup = group.isUnfiledGroup,

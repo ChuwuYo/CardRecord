@@ -1,8 +1,12 @@
 package com.shuaji.cards
 
 import android.app.Application
+import androidx.appcompat.app.AppCompatDelegate
 import com.shuaji.cards.data.AppContainer
 import com.shuaji.cards.data.DefaultAppContainer
+import com.shuaji.cards.data.SharedPreferencesThemeModeStartupCache
+import com.shuaji.cards.data.ThemeMode
+import com.shuaji.cards.ui.theme.resolveAppCompatNightMode
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -21,7 +25,11 @@ class ShuajiApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
-        container = DefaultAppContainer(this)
+        val startupThemeModeCache = SharedPreferencesThemeModeStartupCache(this)
+        AppCompatDelegate.setDefaultNightMode(
+            resolveAppCompatNightMode(startupThemeModeCache.read() ?: ThemeMode.SYSTEM),
+        )
+        container = DefaultAppContainer(this, startupThemeModeCache)
         container.startAnnualFeeCycleCoordinator(appScope)
     }
 }

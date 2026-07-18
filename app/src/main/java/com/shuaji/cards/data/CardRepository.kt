@@ -7,7 +7,7 @@ import com.shuaji.cards.data.local.CardEntity
 import com.shuaji.cards.data.local.CardFolderDao
 import com.shuaji.cards.data.local.CardFolderEntity
 import com.shuaji.cards.data.local.CardWithCount
-import com.shuaji.cards.data.local.ImageSourceType
+import com.shuaji.cards.data.local.FolderWithCardCount
 import com.shuaji.cards.data.local.TransactionDao
 import com.shuaji.cards.data.local.TransactionEntity
 import kotlinx.coroutines.flow.Flow
@@ -44,6 +44,7 @@ class CardRepository(
     private val clock: Clock,
     private val zoneIdProvider: () -> ZoneId,
     boundaryTicks: Flow<Unit>,
+    private val imagePermissions: UserImagePermissionStore = NoOpUserImagePermissionStore,
 ) {
     /**
      * 每个活跃 Repository 订阅固定观察 cards 与 transactions 两条查询。
@@ -76,23 +77,35 @@ class CardRepository(
                     snapshot.transactions
                         .asSequence()
                         .filter { it.cardId == id }
-                        .sortedByDescending(TransactionEntity::occurredAtMillis)
+                        .sortedByDescending { it.occurredAtMillis }
                         .toList(),
             )
         }
 
-    suspend fun upsertCard(card: CardEntity): Long = cardDao.upsert(card)
+    suspend fun upsertCard(card: CardEntity): Long =
+        cardDao.upsert(card).also {
+            imagePermissions.reconcile()
+        }
 
-    suspend fun deleteCard(card: CardEntity) = cardDao.delete(card)
+    /** 编辑只允许更新仍存在的卡，返回 false 时调用方不得用 upsert 把已删除卡片复活。 */
+    suspend fun updateCard(card: CardEntity): Boolean =
+        (cardDao.update(card) == 1).also {
+            imagePermissions.reconcile()
+        }
 
-    /** 当前数据库中仍被用户卡面引用的持久化 URI。 */
-    suspend fun referencedUserImageUris(): Set<String> =
-        cardDao
-            .listAll()
-            .asSequence()
-            .filter { it.imageSourceType == ImageSourceType.USER.name }
-            .mapNotNull { it.imageUri }
-            .toSet()
+    /** 只在确实删除一行时返回 true，防止调用方把陈旧状态误报为成功。 */
+    suspend fun deleteCard(card: CardEntity): Boolean =
+        (cardDao.delete(card) == 1).also {
+            imagePermissions.reconcile()
+        }
+
+    suspend fun acquireUserImagePermission(uri: String): Boolean = imagePermissions.acquire(uri)
+
+    /** 表单保存或放弃后结束临时租约；是否真正释放由全库引用集合决定。 */
+    suspend fun releasePendingUserImagePermissions(uris: Set<String>) {
+        if (uris.isEmpty()) return
+        imagePermissions.releasePending(uris)
+    }
 
     /** 在同一 Room 写事务中校验卡片、归一化周期并记录流水。 */
     suspend fun recordSwipe(cardId: Long): SwipeRecordResult =
@@ -102,10 +115,10 @@ class CardRepository(
             val storedCard = cardDao.getById(cardId) ?: return@withTransaction SwipeRecordResult.CardMissing
             val card = normalizeCardIfOverdue(storedCard, now, zone)
             val cycle = resolveCycle(card, now, zone)
-            if (cycle.state == AnnualFeeCycleState.UPCOMING) {
-                return@withTransaction SwipeRecordResult.CountingNotStarted(cycle.startDate!!)
+            if (cycle is AnnualFeeCycle.Upcoming) {
+                return@withTransaction SwipeRecordResult.CountingNotStarted(cycle.startDate)
             }
-            check(cycle.canRecord) { "过期周期归一化后仍不可记录" }
+            check(cycle !is AnnualFeeCycle.Overdue) { "过期周期归一化后仍不可记录" }
             val transactionId =
                 transactionDao.insert(
                     TransactionEntity(cardId = card.id, occurredAtMillis = now.toEpochMilli()),
@@ -124,36 +137,49 @@ class CardRepository(
             val storedCard = cardDao.getById(cardId) ?: return@withTransaction false
             val card = normalizeCardIfOverdue(storedCard, now, zone)
             val cycle = resolveCycle(card, now, zone)
-            when (cycle.state) {
-                AnnualFeeCycleState.UNSCHEDULED -> transactionDao.deleteAllForCard(cardId)
-                AnnualFeeCycleState.ACTIVE ->
+            when (cycle) {
+                AnnualFeeCycle.Unscheduled -> transactionDao.deleteAllForCard(cardId)
+                is AnnualFeeCycle.Active ->
                     transactionDao.deleteForCardInRange(
                         cardId = cardId,
-                        start = cycle.startBoundaryMillis!!,
-                        end = cycle.dueBoundaryMillis!!,
+                        start = cycle.startBoundaryMillis,
+                        end = cycle.dueBoundaryMillis,
                     )
-                AnnualFeeCycleState.UPCOMING -> return@withTransaction false
-                AnnualFeeCycleState.OVERDUE -> error("过期周期归一化后仍为 OVERDUE")
+                is AnnualFeeCycle.Upcoming -> return@withTransaction false
+                AnnualFeeCycle.Overdue -> error("过期周期归一化后仍为 OVERDUE")
             }
             true
         }
 
-    suspend fun deleteTransaction(id: Long) {
-        transactionDao.deleteById(id)
-    }
+    suspend fun deleteTransaction(id: Long): Boolean = transactionDao.deleteById(id) == 1
 
     fun observeFolders(): Flow<List<CardFolderEntity>> = folderDao.observeAll()
 
+    fun observeFoldersWithCardCounts(): Flow<List<FolderWithCardCount>> = folderDao.observeWithCardCounts()
+
     suspend fun insertFolder(folder: CardFolderEntity): Long = folderDao.insert(folder)
 
-    suspend fun updateFolder(folder: CardFolderEntity) = folderDao.update(folder)
+    /** 排序号分配与插入属于同一个写事务，避免首次加载或快速连点产生重复顺序。 */
+    suspend fun createFolder(
+        name: String,
+        colorArgb: Int,
+    ): Long =
+        database.withTransaction {
+            folderDao.insert(
+                CardFolderEntity(
+                    name = name,
+                    colorArgb = colorArgb,
+                    sortOrder = folderDao.nextSortOrder(),
+                ),
+            )
+        }
 
-    suspend fun deleteFolder(folder: CardFolderEntity) {
+    suspend fun updateFolder(folder: CardFolderEntity): Boolean = folderDao.update(folder) == 1
+
+    suspend fun deleteFolder(folder: CardFolderEntity): Boolean {
         // 外键 `ON DELETE SET NULL` 会把该文件夹下的卡片归入「未分类」。
-        folderDao.delete(folder)
+        return folderDao.delete(folder) == 1
     }
-
-    suspend fun countCardsInFolder(folderId: Long): Int = folderDao.countCardsInFolder(folderId)
 
     /** 事务入口：只推进过期日期，绝不删除历史流水。 */
     suspend fun normalizeOverdueCycles(): Int =
@@ -167,7 +193,7 @@ class CardRepository(
         val zone = zoneIdProvider()
         var normalizedCount = 0
         cardDao.listAll().forEach { card ->
-            if (resolveCycle(card, now, zone).state == AnnualFeeCycleState.OVERDUE) {
+            if (resolveCycle(card, now, zone) is AnnualFeeCycle.Overdue) {
                 normalizeCardIfOverdue(card, now, zone)
                 normalizedCount += 1
             }
@@ -181,7 +207,7 @@ class CardRepository(
         zone: ZoneId,
     ): CardEntity {
         val dueToken = card.nextDueDateMillis ?: return card
-        if (resolveCycle(card, now, zone).state != AnnualFeeCycleState.OVERDUE) return card
+        if (resolveCycle(card, now, zone) !is AnnualFeeCycle.Overdue) return card
         val normalized =
             card.copy(
                 nextDueDateMillis =
@@ -210,7 +236,7 @@ class CardRepository(
         cards: List<CardEntity>,
         transactions: List<TransactionEntity>,
     ): List<CardWithCount> {
-        val byCard = transactions.groupBy(TransactionEntity::cardId)
+        val byCard = transactions.groupBy { it.cardId }
         val now = clock.instant()
         val zone = zoneIdProvider()
         return cards.map { card ->
@@ -219,7 +245,7 @@ class CardRepository(
             CardWithCount(
                 card = card,
                 currentCount = rows.count { cycle.includes(it.occurredAtMillis) },
-                lastSwipeAtMillis = rows.maxOfOrNull(TransactionEntity::occurredAtMillis),
+                lastSwipeAtMillis = rows.maxOfOrNull { it.occurredAtMillis },
                 cycle = cycle,
             )
         }

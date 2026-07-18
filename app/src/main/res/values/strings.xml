@@ -13,8 +13,12 @@
     <string name="common_select">选择</string>
     <string name="common_clear">清除</string>
     <string name="common_create">新建</string>
+    <string name="common_retry">重试</string>
     <string name="common_unknown_reason">未知原因</string>
     <string name="common_unknown_error">未知错误</string>
+    <string name="common_operation_failed">操作失败，请重试</string>
+    <string name="common_loading">正在加载…</string>
+    <string name="card_delete_failed">删除失败，卡片仍保留，请重试</string>
 
     <!-- ────── 设置页 ────── -->
     <string name="settings_title">设置</string>
@@ -25,39 +29,36 @@
     <string name="settings_import_subtitle">从 JSON 备份文件恢复（覆盖或追加）</string>
     <string name="settings_privacy_note">提示：导出文件包含你的所有卡片信息（卡名 / 备注 / 卡面 URI 等），属于明文 JSON，请勿分享给他人。跨设备恢复时，图片 URI 通常不可直接使用，可能需要重新选择卡面。</string>
     <string name="settings_import_dialog_title">选择导入方式</string>
-    <string name="settings_import_dialog_message">"覆盖"会清空当前所有数据并按备份原样恢复；"追加"会保留现有数据，并为导入内容分配新 id 后合并。</string>
+    <string name="settings_import_dialog_message">"覆盖"会清空当前数据并恢复备份内容；"追加"会保留当前数据并合并备份内容。</string>
     <string name="settings_import_mode_replace">覆盖</string>
     <string name="settings_import_mode_merge">追加</string>
     <string name="settings_import_replace_confirm_title">确认覆盖？</string>
-    <string name="settings_import_replace_confirm_message">此操作会清空当前所有卡片 / 文件夹 / 流水，并写入备份文件的内容。操作不可撤销。</string>
     <string name="settings_import_merge_confirm_title">确认追加？</string>
-    <string name="settings_import_merge_confirm_message">会把备份文件里的卡片 / 文件夹 / 流水追加到现有数据库，保留现有数据不变。</string>
-    <string name="settings_import_replace_confirm_message_with_count">此备份包含 %1$d 张卡 / %2$d 个文件夹 / %3$d 笔流水。此操作会清空当前所有数据并写入备份内容，操作不可撤销。</string>
-    <string name="settings_import_merge_confirm_message_with_count">此备份包含 %1$d 张卡 / %2$d 个文件夹 / %3$d 笔流水。追加到现有数据库，保留现有数据不变。</string>
+    <string name="settings_import_replace_confirm_message_with_count">此备份包含 %1$s / %2$s / %3$s。此操作会清空当前所有数据并写入备份内容，操作不可撤销。</string>
+    <string name="settings_import_merge_confirm_message_with_count">此备份包含 %1$s / %2$s / %3$s。追加到现有数据库，保留现有数据不变。</string>
     <string name="settings_backup_time_label">备份时间：%1$s</string>
-    <string name="settings_result_export_success_with_count">已导出 %1$d 张卡 / %2$d 个文件夹 / %3$d 笔流水到备份文件</string>
+    <string name="settings_result_export_success_with_count">已导出 %1$s / %2$s / %3$s 到备份文件</string>
     <string name="settings_result_export_empty">已导出空备份（数据库无任何记录）</string>
-    <string name="settings_result_import_replace_with_count">覆盖成功：%1$d 张卡，%2$d 个文件夹，%3$d 笔流水</string>
-    <string name="settings_result_import_merge_with_count">追加成功：%1$d 张卡，%2$d 个文件夹，%3$d 笔流水</string>
-    <string name="settings_result_extras_transactions_skipped">%1$d 笔流水因引用不存在的卡被跳过</string>
-    <string name="settings_result_extras_cards_invalid_folder">%1$d 张卡的文件夹引用无效，已置为未分组</string>
-    <string name="settings_result_extras_duplicate_folders">%1$d 个文件夹与现库重名</string>
-    <string name="settings_result_extras_duplicate_cards">%1$d 张卡与现库重名</string>
-    <string name="settings_result_image_uri_potentially_broken">%1$d 张自定义卡面可能需要重新选择（导入无法验证图片 URI 是否仍可访问）</string>
+    <string name="settings_result_import_replace_with_count">覆盖成功：%1$s，%2$s，%3$s</string>
+    <string name="settings_result_import_merge_with_count">追加成功：%1$s，%2$s，%3$s</string>
     <string name="settings_result_export_failed">导出失败：%1$s</string>
     <string name="settings_result_import_failed">导入失败：%1$s</string>
+    <string name="settings_result_inspect_failed">读取备份失败：%1$s</string>
     <string name="settings_snackbar_error_prefix">"⚠️ "</string>
     <string name="settings_result_extras_separator">；</string>
-    <string name="settings_dialog_image_warning">其中 %1$d 张卡使用自定义图片；导入后可能需要重新选择卡面</string>
-    <string name="settings_import_persist_warning">⚠️ 文件访问权限未持久化，切换应用或重启后可能无法访问该文件</string>
 
     <!-- 导入 / 导出底层错误（作为 %1$s 拼入 settings_result_*_failed） -->
     <string name="backup_error_open_target_uri">无法打开目标 URI 用于写入（可能被占用）</string>
     <string name="backup_error_open_source_uri">无法打开源 URI 用于读取</string>
+    <string name="backup_error_write_failed">写入备份文件失败：%1$s</string>
     <string name="backup_error_source_missing">源文件不存在或已失效：%1$s</string>
     <string name="backup_error_read_failed">读取备份文件失败：%1$s</string>
     <string name="backup_error_empty_file">备份文件为空</string>
     <string name="backup_error_malformed_json">备份文件格式不正确（不是合法的 JSON）</string>
+    <string name="backup_error_file_too_large">备份文件超过 %1$d MiB 上限</string>
+    <string name="backup_error_file_changed">确认期间备份文件内容已变化，请重新选择并检查</string>
+    <string name="backup_error_invalid_structure">备份文件的数据标识或字段结构无效</string>
+    <string name="backup_error_operation_busy">另一个备份操作正在进行，请稍后再试</string>
     <string name="backup_error_version_mismatch">备份 schema 版本不匹配（文件 version=%1$d，当前=%2$d）</string>
     <string name="backup_error_db_write_failed">数据库写入失败：%1$s</string>
 
@@ -67,8 +68,6 @@
     <string name="settings_theme_mode_system">跟随系统</string>
     <string name="settings_theme_mode_light">浅色</string>
     <string name="settings_theme_mode_dark">深色</string>
-    <string name="settings_dynamic_color">动态颜色</string>
-    <string name="settings_dynamic_color_subtitle">使用系统壁纸颜色（Android 12+）</string>
     <string name="settings_color_source">颜色来源</string>
     <string name="settings_color_source_system">系统动态</string>
     <string name="settings_color_source_custom">自定义</string>
@@ -90,9 +89,7 @@
     <string name="list_filter_all">全部卡片</string>
     <string name="list_filter_unfiled">未分类</string>
     <string name="list_filter_manage">管理文件夹…</string>
-    <string name="list_filter_folder_count">%1$d 个文件夹</string>
     <string name="list_filter_switch">切换</string>
-    <string name="list_filter_deleted_folder">已删除文件夹</string>
     <string name="list_toggle_to_grid">切换为网格</string>
     <string name="list_toggle_to_list">切换为列表</string>
     <string name="list_overall_progress">总进度</string>
@@ -106,16 +103,14 @@
     <string name="list_filter_anchor_label">文件夹筛选</string>
 
     <!-- ────── 卡片项 ────── -->
-    <string name="card_count_unit">笔</string>
     <string name="card_count_format">%1$d / %2$d</string>
-    <string name="card_count_compact_format">%1$d / %2$d 笔</string>
+    <string name="card_invalid_required_count">请编辑卡片并设置有效的目标笔数</string>
     <string name="card_percent_format">%1$d%%</string>
     <string name="card_date_next_due">下次结算 %1$s</string>
     <string name="card_date_valid_until">有效期至 %1$s</string>
     <string name="card_label_valid_until">有效期</string>
     <string name="card_label_next_due">下次结算</string>
     <string name="card_status_done">已达标</string>
-    <string name="card_status_remaining">还需 %1$d 笔</string>
     <string name="card_status_expired">已过期</string>
     <string name="card_long_press_hint">长按可删除</string>
     <string name="card_increment_one">+1 笔</string>
@@ -131,7 +126,6 @@
     <string name="card_missing">卡片不存在或已被删除</string>
 
     <!-- ────── 详情页 ────── -->
-    <string name="detail_title">卡片详情</string>
     <string name="detail_title_loading">卡片详情</string>
     <string name="detail_loading">正在加载…</string>
     <string name="detail_action_delete">删除卡片</string>
@@ -142,13 +136,11 @@
     <string name="detail_label_card_number">卡号</string>
     <string name="detail_label_note">备注</string>
     <string name="detail_label_swipes">刷卡记录</string>
-    <string name="detail_swipe_count">%1$d 笔</string>
     <string name="detail_swipes_empty">还没有记录，点右下角「记一笔」开始追踪</string>
     <string name="detail_swipe_index">%1$d</string>
     <string name="detail_action_delete_swipe">删除这一笔</string>
     <string name="detail_delete_swipe_dialog_title">删除这一笔？</string>
     <string name="detail_delete_swipe_dialog_message">将删除 %1$s 的这笔刷卡记录，操作不可撤销。</string>
-    <string name="cycle_auto_reset_message">已自动续期 %1$d 张卡的年费统计周期</string>
     <string name="cycle_auto_reset_error_message">年费统计周期更新失败，将在前台自动重试</string>
     <string name="detail_reset_dialog_title">重置已统计笔数？</string>
     <string name="detail_reset_dialog_message">已设置结算日时，只删除本期记录并保留历史；未设置结算日时，会删除全部记录。操作不可撤销。</string>
@@ -193,6 +185,7 @@
     <string name="edit_save_existing">保存修改</string>
     <string name="edit_next_due_must_be_future">下次年费结算日必须晚于今天</string>
     <string name="edit_save_failed">保存失败，请重试</string>
+    <string name="edit_load_failed">无法加载卡片，请重试</string>
 
     <!-- ────── 文件夹页 ────── -->
     <string name="folder_title">文件夹</string>
@@ -201,7 +194,6 @@
     <string name="folder_dialog_edit_title">编辑文件夹</string>
     <string name="folder_dialog_field_name">名称</string>
     <string name="folder_dialog_field_color">颜色</string>
-    <string name="folder_count_label">%1$d 张卡</string>
     <string name="folder_delete_title">删除「%1$s」？</string>
     <string name="folder_delete_message">文件夹下的卡片不会被删除，会被移到「未分类」。</string>
     <string name="folder_empty_title">还没有文件夹</string>
@@ -215,4 +207,62 @@
     <string name="network_amex">American Express</string>
     <string name="network_diners">Diners Club</string>
     <string name="network_discover">Discover</string>
+
+    <!-- ────── 数量文案：统一使用 plurals，避免英文单复数错误 ────── -->
+    <plurals name="backup_count_cards">
+        <item quantity="one">%1$d 张卡</item>
+        <item quantity="other">%1$d 张卡</item>
+    </plurals>
+    <plurals name="backup_count_folders">
+        <item quantity="one">%1$d 个文件夹</item>
+        <item quantity="other">%1$d 个文件夹</item>
+    </plurals>
+    <plurals name="backup_count_transactions">
+        <item quantity="one">%1$d 笔流水</item>
+        <item quantity="other">%1$d 笔流水</item>
+    </plurals>
+    <plurals name="settings_result_extras_transactions_skipped">
+        <item quantity="one">%1$d 笔流水因引用不存在的卡被跳过</item>
+        <item quantity="other">%1$d 笔流水因引用不存在的卡被跳过</item>
+    </plurals>
+    <plurals name="settings_result_extras_cards_invalid_folder">
+        <item quantity="one">%1$d 张卡的文件夹引用无效，已置为未分组</item>
+        <item quantity="other">%1$d 张卡的文件夹引用无效，已置为未分组</item>
+    </plurals>
+    <plurals name="settings_result_extras_duplicate_folders">
+        <item quantity="one">%1$d 个文件夹与现库重名</item>
+        <item quantity="other">%1$d 个文件夹与现库重名</item>
+    </plurals>
+    <plurals name="settings_result_extras_duplicate_cards">
+        <item quantity="one">%1$d 张卡与现库重名</item>
+        <item quantity="other">%1$d 张卡与现库重名</item>
+    </plurals>
+    <plurals name="settings_result_image_uri_potentially_broken">
+        <item quantity="one">%1$d 张自定义卡面可能需要重新选择（导入无法验证图片 URI 是否仍可访问）</item>
+        <item quantity="other">%1$d 张自定义卡面可能需要重新选择（导入无法验证图片 URI 是否仍可访问）</item>
+    </plurals>
+    <plurals name="settings_dialog_image_warning">
+        <item quantity="one">其中 %1$d 张卡使用自定义图片；导入后可能需要重新选择卡面</item>
+        <item quantity="other">其中 %1$d 张卡使用自定义图片；导入后可能需要重新选择卡面</item>
+    </plurals>
+    <plurals name="list_filter_folder_count">
+        <item quantity="one">%1$d 个文件夹</item>
+        <item quantity="other">%1$d 个文件夹</item>
+    </plurals>
+    <plurals name="card_status_remaining">
+        <item quantity="one">还需 %1$d 笔</item>
+        <item quantity="other">还需 %1$d 笔</item>
+    </plurals>
+    <plurals name="detail_swipe_count">
+        <item quantity="one">%1$d 笔</item>
+        <item quantity="other">%1$d 笔</item>
+    </plurals>
+    <plurals name="cycle_auto_reset_message">
+        <item quantity="one">已自动续期 %1$d 张卡的年费统计周期</item>
+        <item quantity="other">已自动续期 %1$d 张卡的年费统计周期</item>
+    </plurals>
+    <plurals name="folder_count_label">
+        <item quantity="one">%1$d 张卡</item>
+        <item quantity="other">%1$d 张卡</item>
+    </plurals>
 </resources>

@@ -1,6 +1,7 @@
 package com.shuaji.cards.ui.theme
 
 import android.os.Build
+import androidx.appcompat.app.AppCompatDelegate
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
@@ -19,9 +20,8 @@ import com.shuaji.cards.data.ThemeSettings
  *   1. ColorSource.SYSTEM_DYNAMIC：Android 12+ 跟随系统壁纸动态色，低版本回退默认色
  *   2. ColorSource.CUSTOM：用户自选种子色，由 MaterialKolor 按 Material You（HCT tonal palette）生成整套配色
  *
- * 种子色 → ColorScheme 不再自行用 HSL 近似，而是交给成熟的 MaterialKolor 库
- * （内部即 Google material-color-utilities 的官方 Material You 算法），保证整套
- * primary/secondary/tertiary/中性面/容器色都符合 MD3 规范并随种子色协调变化。
+ * 自定义种子色通过 MaterialKolor 生成 ColorScheme，避免在应用内维护另一套
+ * HSL 推导规则。
  */
 
 /** 默认品牌主色的 ARGB 单一真源。 */
@@ -33,14 +33,9 @@ val DefaultBrandPrimary = Color(DEFAULT_BRAND_PRIMARY_ARGB)
 @Composable
 fun ShuajiTheme(
     settings: ThemeSettings = ThemeSettings(),
+    darkTheme: Boolean = resolveDarkTheme(settings.themeMode, isSystemInDarkTheme()),
     content: @Composable () -> Unit,
 ) {
-    val darkTheme =
-        when (settings.themeMode) {
-            ThemeMode.SYSTEM -> isSystemInDarkTheme()
-            ThemeMode.LIGHT -> false
-            ThemeMode.DARK -> true
-        }
     MaterialTheme(
         colorScheme = resolveColorScheme(settings, darkTheme),
         typography = AppTypography,
@@ -48,6 +43,25 @@ fun ShuajiTheme(
         content = content,
     )
 }
+
+/** 把持久化选择与系统外观归一化为唯一的生效亮暗状态。 */
+internal fun resolveDarkTheme(
+    themeMode: ThemeMode,
+    isSystemDark: Boolean,
+): Boolean =
+    when (themeMode) {
+        ThemeMode.SYSTEM -> isSystemDark
+        ThemeMode.LIGHT -> false
+        ThemeMode.DARK -> true
+    }
+
+/** 让 AppCompat 的资源限定符与 Compose 使用同一个主题模式。 */
+internal fun resolveAppCompatNightMode(themeMode: ThemeMode): Int =
+    when (themeMode) {
+        ThemeMode.SYSTEM -> AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM
+        ThemeMode.LIGHT -> AppCompatDelegate.MODE_NIGHT_NO
+        ThemeMode.DARK -> AppCompatDelegate.MODE_NIGHT_YES
+    }
 
 /**
  * 根据 [ThemeSettings.colorSource] 解析最终使用的 [ColorScheme]。

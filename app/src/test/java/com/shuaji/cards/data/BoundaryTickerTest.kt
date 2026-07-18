@@ -1,6 +1,7 @@
 package com.shuaji.cards.data
 
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.take
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.launch
@@ -38,6 +39,50 @@ class BoundaryTickerTest {
 
             collection.join()
             assertEquals(listOf(Unit, Unit), values)
+        }
+
+    @Test
+    fun timeZoneChangeOnSameLocalDate_isObservedWithinBoundedRecheckInterval() =
+        runTest {
+            val clock = SchedulerClock(Instant.parse("2027-06-01T10:00:00Z"), testScheduler)
+            var zone: ZoneId = ZoneOffset.UTC
+            val values = mutableListOf<Unit>()
+            val collection =
+                launch {
+                    localMidnightTicks(clock) { zone }
+                        .take(2)
+                        .toList(values)
+                }
+
+            runCurrent()
+            zone = ZoneOffset.ofHours(1)
+            advanceTimeBy(15 * 60 * 1_000L - 1L)
+            runCurrent()
+            assertEquals(listOf(Unit), values)
+
+            advanceTimeBy(1L)
+            runCurrent()
+            collection.join()
+            assertEquals(listOf(Unit, Unit), values)
+        }
+
+    @Test
+    fun unchangedDateAndZone_doNotEmitAgainAtBoundedRechecks() =
+        runTest {
+            val clock = SchedulerClock(Instant.parse("2027-06-01T10:00:00Z"), testScheduler)
+            val values = mutableListOf<Unit>()
+            val collection =
+                launch {
+                    localMidnightTicks(clock) { ZoneOffset.UTC }
+                        .toList(values)
+                }
+
+            runCurrent()
+            advanceTimeBy(30 * 60 * 1_000L)
+            runCurrent()
+
+            assertEquals(listOf(Unit), values)
+            collection.cancelAndJoin()
         }
 
     private class SchedulerClock(

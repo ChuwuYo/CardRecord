@@ -18,6 +18,8 @@ local.properties
 captures/
 .cxx/
 *.apk.idsig
+*.apk
+*.aab
 
 # OS
 .DS_Store

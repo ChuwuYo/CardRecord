@@ -66,13 +66,35 @@ class CardRepositoryTest {
         }
 
     @Test
+    fun transactionInsert_duplicateIdFailsWithoutReplacingOriginal() =
+        runBlocking {
+            val cardId = insertCard(due = null)
+            db.transactionDao().insert(TransactionEntity(id = 7L, cardId = cardId, occurredAtMillis = 100L))
+
+            val failure =
+                runCatching {
+                    db.transactionDao().insert(TransactionEntity(id = 7L, cardId = cardId, occurredAtMillis = 200L))
+                }.exceptionOrNull()
+
+            assertTrue(failure is android.database.sqlite.SQLiteConstraintException)
+            assertEquals(
+                100L,
+                db
+                    .transactionDao()
+                    .listAll()
+                    .single()
+                    .occurredAtMillis,
+            )
+        }
+
+    @Test
     fun upsert_existingCardPreservesTransactions() =
         runBlocking {
             val id = insertCard(due = null, name = "修改前")
             repo.recordSwipe(id)
             repo.recordSwipe(id)
 
-            val original = db.cardDao().getById(id)!!
+            val original = requireNotNull(db.cardDao().getById(id))
             repo.upsertCard(
                 original.copy(
                     name = "修改后",
@@ -80,7 +102,7 @@ class CardRepositoryTest {
                 ),
             )
 
-            val updated = repo.observeCard(id).first()!!
+            val updated = requireNotNull(repo.observeCard(id).first())
             assertEquals("修改后", updated.card.name)
             assertEquals(0xFF2E7D32.toInt(), updated.card.colorArgb)
             assertEquals("编辑卡片不能删除已有流水", 2, updated.currentCount)
@@ -108,7 +130,14 @@ class CardRepositoryTest {
 
             assertTrue("重复主键应让只插入操作失败", failure is android.database.sqlite.SQLiteConstraintException)
             assertEquals(folderId, db.cardDao().getById(cardId)?.folderId)
-            assertEquals("日常", db.cardFolderDao().getById(folderId)?.name)
+            assertEquals(
+                "日常",
+                db
+                    .cardFolderDao()
+                    .listAll()
+                    .single { it.id == folderId }
+                    .name,
+            )
         }
 
     @Test
@@ -119,12 +148,57 @@ class CardRepositoryTest {
                     CardFolderEntity(name = "修改前", colorArgb = 0xFF1565C0.toInt()),
                 )
             val cardId = insertCard(due = null, folderId = folderId)
-            val original = db.cardFolderDao().getById(folderId)!!
+            val original = db.cardFolderDao().listAll().single { it.id == folderId }
 
-            repo.updateFolder(original.copy(name = "修改后", colorArgb = 0xFF2E7D32.toInt()))
+            assertTrue(repo.updateFolder(original.copy(name = "修改后", colorArgb = 0xFF2E7D32.toInt())))
 
             assertEquals(folderId, db.cardDao().getById(cardId)?.folderId)
-            assertEquals("修改后", db.cardFolderDao().getById(folderId)?.name)
+            assertEquals(
+                "修改后",
+                db
+                    .cardFolderDao()
+                    .listAll()
+                    .single { it.id == folderId }
+                    .name,
+            )
+        }
+
+    @Test
+    fun staleFolderAndTransactionWrites_reportNoAffectedRow() =
+        runBlocking {
+            val missingFolder = CardFolderEntity(id = 9_999L, name = "不存在", colorArgb = 0)
+
+            assertFalse(repo.updateFolder(missingFolder))
+            assertFalse(repo.deleteFolder(missingFolder))
+            assertFalse(repo.deleteTransaction(9_999L))
+        }
+
+    @Test
+    fun observeFoldersWithCardCounts_derivesCountsInOneReactiveQuery() =
+        runBlocking {
+            val folderId = repo.insertFolder(CardFolderEntity(name = "日常", colorArgb = 0xFF1565C0.toInt()))
+            val cardId = insertCard(due = null, folderId = folderId)
+
+            assertEquals(
+                1,
+                repo
+                    .observeFoldersWithCardCounts()
+                    .first()
+                    .single()
+                    .cardCount,
+            )
+
+            val card = requireNotNull(db.cardDao().getById(cardId))
+            repo.upsertCard(card.copy(folderId = null))
+
+            assertEquals(
+                0,
+                repo
+                    .observeFoldersWithCardCounts()
+                    .first()
+                    .single()
+                    .cardCount,
+            )
         }
 
     @Test
@@ -188,7 +262,7 @@ class CardRepositoryTest {
             assertEquals(1, db.transactionDao().listAll().size)
             assertEquals(
                 LocalDate.of(2028, 6, 1),
-                DateToken.toLocalDate(db.cardDao().getById(id)!!.nextDueDateMillis!!),
+                storedDueDate(id),
             )
         }
 
@@ -239,7 +313,7 @@ class CardRepositoryTest {
             assertEquals(1, currentCount(id))
             assertEquals(
                 LocalDate.of(2028, 6, 1),
-                DateToken.toLocalDate(db.cardDao().getById(id)!!.nextDueDateMillis!!),
+                storedDueDate(id),
             )
         }
 
@@ -283,7 +357,7 @@ class CardRepositoryTest {
 
             assertEquals(
                 listOf(LocalDate.of(2028, 6, 1), LocalDate.of(2028, 6, 1)),
-                db.cardDao().listAll().map { DateToken.toLocalDate(it.nextDueDateMillis!!) },
+                db.cardDao().listAll().map { DateToken.toLocalDate(requireNotNull(it.nextDueDateMillis)) },
             )
             assertEquals(1, boundaryClock.instantCalls)
         }
@@ -295,7 +369,7 @@ class CardRepositoryTest {
             insertTransaction(id, "2026-01-01T00:00:00Z")
             insertTransaction(id, "2027-07-01T00:00:00Z")
 
-            val details = repo.observeCardDetails(id).first()!!
+            val details = requireNotNull(repo.observeCardDetails(id).first())
 
             assertEquals(1, details.card.currentCount)
             assertEquals(
@@ -344,6 +418,11 @@ class CardRepositoryTest {
             .first()
             .single { it.card.id == cardId }
             .currentCount
+
+    private suspend fun storedDueDate(cardId: Long): LocalDate {
+        val card = requireNotNull(db.cardDao().getById(cardId))
+        return DateToken.toLocalDate(requireNotNull(card.nextDueDateMillis))
+    }
 
     private fun createRepository(clock: Clock): CardRepository =
         CardRepository(

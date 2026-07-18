@@ -1,20 +1,8 @@
-// Top-level build file
-buildscript {
-    repositories {
-        google()
-        mavenCentral()
-    }
-    dependencies {
-        classpath("com.android.tools.build:gradle:8.13.2")
-        classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:2.1.20")
-        classpath("org.jetbrains.kotlin:compose-compiler-gradle-plugin:2.1.20")
-        classpath("org.jetbrains.kotlin:kotlin-serialization:2.1.20")
-    }
-}
-
-allprojects {
-    repositories {
-        google()
-        mavenCentral()
-    }
+plugins {
+    id("com.android.application") version "8.13.2" apply false
+    id("org.jetbrains.kotlin.android") version "2.1.20" apply false
+    id("org.jetbrains.kotlin.plugin.compose") version "2.1.20" apply false
+    id("org.jetbrains.kotlin.plugin.serialization") version "2.1.20" apply false
+    id("com.google.devtools.ksp") version "2.1.20-2.0.1" apply false
+    id("androidx.room") version "2.7.2" apply false
 }

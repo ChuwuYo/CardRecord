@@ -32,6 +32,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -143,9 +144,9 @@ private fun LandscapeCardBody(
                 .clip(MaterialTheme.shapes.medium),
     ) {
         // 严格按 ISO 7810 ID-1 比例，比例单一来源是 CardOrientation.aspectRatio
-        val height: Dp =
+        val aspectHeight: Dp =
             (maxWidth / card.cardOrientationEnum.aspectRatio).coerceAtLeast(CARD_MIN_HEIGHT_DP.dp)
-        val compact = isCompactCardContent(contentLayout, CardOrientation.LANDSCAPE)
+        val compact = isCompactCardContent(contentLayout)
         val networkLayout =
             resolveCardNetworkVisualLayout(
                 cardWidth = maxWidth,
@@ -154,18 +155,46 @@ private fun LandscapeCardBody(
         val contentPlacement =
             resolveCardContentPlacement(
                 contentLayout = contentLayout,
-                orientation = CardOrientation.LANDSCAPE,
                 networkLayout = networkLayout,
                 badgeVisible = shouldShowNetworkBadge(sourceType, network != null),
                 defaultPadding = 16.dp,
             )
+        val compactMinimumHeight =
+            if (compact) {
+                val density = LocalDensity.current
+                resolveCompactCardMinimumHeight(
+                    bankLineHeight =
+                        with(density) {
+                            MaterialTheme.typography.labelMedium.lineHeight
+                                .toDp()
+                        },
+                    nameLineHeight =
+                        with(density) {
+                            MaterialTheme.typography.titleMedium.lineHeight
+                                .toDp()
+                        },
+                    numberLineHeight =
+                        if (showNumber && card.cardNumberMasked.isNotBlank()) {
+                            with(density) {
+                                MaterialTheme.typography.titleMedium.lineHeight
+                                    .toDp()
+                            }
+                        } else {
+                            null
+                        },
+                    contentPlacement = contentPlacement,
+                )
+            } else {
+                0.dp
+            }
+        // 双列仍优先保持标准比例；字体放大后则扩展高度，不能为了卡片比例裁掉可访问文本。
+        val height = maxOf(aspectHeight, compactMinimumHeight)
         val contentEndPaddings =
             resolveCardContentEndPaddings(
                 sourceType = sourceType,
                 networkPresent = network != null,
                 networkLayout = networkLayout,
                 contentLayout = contentLayout,
-                orientation = CardOrientation.LANDSCAPE,
                 defaultPadding = 16.dp,
             )
         Box(
@@ -227,14 +256,17 @@ private fun PortraitCardBody(
         val width: Dp =
             (maxWidth * PORTRAIT_WIDTH_FRACTION)
                 .coerceIn(100.dp, 180.dp)
-        // 高度严格按 1.586:1 比例，比例单一来源是 CardOrientation.aspectRatio
-        val height: Dp = (width * card.cardOrientationEnum.aspectRatio).coerceAtMost(280.dp)
-        val networkLayout = resolveCardNetworkVisualLayout(width)
-        val compact = isCompactCardContent(contentLayout, CardOrientation.PORTRAIT)
+        // aspectRatio 始终表示宽 / 高；竖版必须用宽度除以比例，不能把 0.631 再当成高 / 宽相乘。
+        val height: Dp = resolveCardHeight(width, card.cardOrientationEnum).coerceAtMost(280.dp)
+        val compact = isCompactCardContent(contentLayout)
+        val networkLayout =
+            resolveCardNetworkVisualLayout(
+                cardWidth = width,
+                providerDecorationScale = if (compact) COMPACT_PROVIDER_DECORATION_SCALE else 1f,
+            )
         val contentPlacement =
             resolveCardContentPlacement(
                 contentLayout = contentLayout,
-                orientation = CardOrientation.PORTRAIT,
                 networkLayout = networkLayout,
                 badgeVisible = shouldShowNetworkBadge(sourceType, network != null),
                 defaultPadding = 14.dp,
@@ -245,7 +277,6 @@ private fun PortraitCardBody(
                 networkPresent = network != null,
                 networkLayout = networkLayout,
                 contentLayout = contentLayout,
-                orientation = CardOrientation.PORTRAIT,
                 defaultPadding = 14.dp,
             )
         Box(
@@ -323,7 +354,8 @@ private fun CardImageLayer(
                     model = card.imageUri,
                     contentDescription = stringResource(R.string.card_image_content_description),
                     modifier = modifier.clip(MaterialTheme.shapes.medium),
-                    contentScale = ContentScale.Crop,
+                    // 与编辑预览一致：用户选择的整张图片都保留，留白由卡片底色承接。
+                    contentScale = ContentScale.Fit,
                 )
             }
         }
@@ -348,19 +380,36 @@ internal data class CardContentPlacement(
     val bottom: Dp,
 )
 
-internal fun isCompactCardContent(
-    contentLayout: CardVisualContentLayout,
+/** 紧凑性由列表容器决定；卡面朝向只负责几何比例，不能反向覆盖排版密度。 */
+internal fun isCompactCardContent(contentLayout: CardVisualContentLayout): Boolean = contentLayout == CardVisualContentLayout.COMPACT
+
+/** 所有朝向统一使用 `宽 / 高` 比例，避免竖版在不同调用点出现互为倒数的解释。 */
+internal fun resolveCardHeight(
+    width: Dp,
     orientation: CardOrientation,
-): Boolean = contentLayout == CardVisualContentLayout.COMPACT && orientation == CardOrientation.LANDSCAPE
+): Dp = width / orientation.aspectRatio
+
+/** 双列卡文字区的真实最小高度；行高已包含系统 fontScale。 */
+internal fun resolveCompactCardMinimumHeight(
+    bankLineHeight: Dp,
+    nameLineHeight: Dp,
+    numberLineHeight: Dp?,
+    contentPlacement: CardContentPlacement,
+): Dp =
+    contentPlacement.top +
+        maxOf(bankLineHeight, 14.dp) +
+        4.dp +
+        nameLineHeight +
+        (numberLineHeight?.let { 2.dp + it } ?: 0.dp) +
+        contentPlacement.bottom
 
 internal fun resolveCardContentPlacement(
     contentLayout: CardVisualContentLayout,
-    orientation: CardOrientation,
     networkLayout: CardNetworkVisualLayout,
     badgeVisible: Boolean,
     defaultPadding: Dp,
 ): CardContentPlacement =
-    if (isCompactCardContent(contentLayout, orientation)) {
+    if (isCompactCardContent(contentLayout)) {
         val compactInset = networkLayout.badgeInset
         CardContentPlacement(
             start = compactInset,
@@ -391,7 +440,6 @@ internal fun resolveCardContentEndPaddings(
     networkPresent: Boolean,
     networkLayout: CardNetworkVisualLayout,
     contentLayout: CardVisualContentLayout,
-    orientation: CardOrientation,
     defaultPadding: Dp,
 ): CardContentEndPaddings {
     val badgePadding =
@@ -400,7 +448,7 @@ internal fun resolveCardContentEndPaddings(
         } else {
             defaultPadding
         }
-    val compact = isCompactCardContent(contentLayout, orientation)
+    val compact = isCompactCardContent(contentLayout)
     val compactEdgePadding = networkLayout.badgeInset
     return CardContentEndPaddings(
         bankRow =

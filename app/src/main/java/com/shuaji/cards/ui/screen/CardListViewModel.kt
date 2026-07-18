@@ -2,25 +2,27 @@ package com.shuaji.cards.ui.screen
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.shuaji.cards.core.OneShotEventQueue
 import com.shuaji.cards.data.AnnualFeeCycle
-import com.shuaji.cards.data.AnnualFeeCycleState
 import com.shuaji.cards.data.CardRepository
 import com.shuaji.cards.data.SwipeRecordResult
 import com.shuaji.cards.data.local.CardEntity
 import com.shuaji.cards.data.local.CardFolderEntity
 import com.shuaji.cards.data.local.CardWithCount
 import com.shuaji.cards.data.local.isExpiredAt
-import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import java.time.Instant
+import java.time.ZoneId
 
 /** 主页布局模式 */
 enum class ListLayoutMode { LIST, GRID }
@@ -57,8 +59,8 @@ data class CardUi(
 )
 
 data class OverallProgress(
-    val current: Int,
-    val required: Int,
+    val current: Long,
+    val required: Long,
     val percent: Int,
     val allDone: Boolean,
     val isEmpty: Boolean,
@@ -70,6 +72,12 @@ sealed interface SwipeFeedback {
     ) : SwipeFeedback
 
     data object CardMissing : SwipeFeedback
+}
+
+sealed interface CardListEvent {
+    data object DeleteFailed : CardListEvent
+
+    data object WriteFailed : CardListEvent
 }
 
 /** 主页 List 中的"分组"：一组卡片 + 标题（文件夹名 / "全部"） */
@@ -112,15 +120,19 @@ class CardListViewModel(
     private val _pendingDelete = MutableStateFlow<CardUi?>(null)
     val pendingDelete: StateFlow<CardUi?> = _pendingDelete.asStateFlow()
 
-    private val _swipeFeedback = MutableSharedFlow<SwipeFeedback>(extraBufferCapacity = 1)
-    val swipeFeedback: SharedFlow<SwipeFeedback> = _swipeFeedback.asSharedFlow()
+    private val swipeFeedbackQueue = OneShotEventQueue<SwipeFeedback>()
+    val swipeFeedback: Flow<SwipeFeedback> = swipeFeedbackQueue.events
+    private val eventQueue = OneShotEventQueue<CardListEvent>()
+    val events: Flow<CardListEvent> = eventQueue.events
+    private var deleteJob: Job? = null
 
-    private val nowProvider: () -> Long = { System.currentTimeMillis() }
+    private val nowProvider: () -> Instant = { Instant.now() }
+    private val zoneIdProvider: () -> ZoneId = { ZoneId.systemDefault() }
 
     /** Repository 流 → UI 流：包成 [CardUi]，把过期判定提前算好。 */
     private fun observeCardUis() =
         repository.observeCards().map { list ->
-            list.map { it.toCardUi(nowProvider()) }
+            list.map { it.toCardUi(nowProvider(), zoneIdProvider()) }
         }
 
     val uiState: StateFlow<ListUiState> =
@@ -130,11 +142,12 @@ class CardListViewModel(
             selectedFilter,
             selectedLayoutMode,
         ) { cards, folders, flt, mode ->
-            val grouped = groupCardsForList(cards, folders, flt)
+            val normalizedFilter = normalizeFolderFilter(flt, folders)
+            val grouped = groupCardsForList(cards, folders, normalizedFilter)
             ListUiState(
                 allCards = cards,
                 folders = folders,
-                filter = flt,
+                filter = normalizedFilter,
                 layoutMode = mode,
                 grouped = grouped,
             )
@@ -163,54 +176,89 @@ class CardListViewModel(
     }
 
     fun confirmDelete() {
+        if (deleteJob?.isActive == true) return
         val card = _pendingDelete.value ?: return
         _pendingDelete.value = null
-        viewModelScope.launch {
-            repository.deleteCard(card.card)
-        }
+        deleteJob =
+            viewModelScope.launch {
+                try {
+                    if (!repository.deleteCard(card.card)) {
+                        eventQueue.emit(CardListEvent.DeleteFailed)
+                    }
+                } catch (exception: Exception) {
+                    if (exception is CancellationException) throw exception
+                    eventQueue.emit(CardListEvent.DeleteFailed)
+                }
+            }
     }
 
     /**
      * 主页快捷记一笔：写一条流水。currentCount 由 Repository 按周期实时派生，
      * 写完 Flow 立刻把新的 CardUi 推给 UI 刷新。
      *
-     * 上限由 UI 控制（达标后按钮 disabled / 进度条满格不可点），ViewModel 不二次校验。
+     * 达标后仍允许继续记录真实消费；展示进度会封顶，但流水事实不应被 UI 目标值截断。
      */
     fun swipe(cardId: Long) {
         viewModelScope.launch {
-            when (val result = repository.recordSwipe(cardId)) {
-                is SwipeRecordResult.Recorded -> Unit
-                is SwipeRecordResult.CountingNotStarted ->
-                    _swipeFeedback.emit(SwipeFeedback.CountingNotStarted(result.startDate))
-                SwipeRecordResult.CardMissing -> _swipeFeedback.emit(SwipeFeedback.CardMissing)
+            try {
+                when (val result = repository.recordSwipe(cardId)) {
+                    is SwipeRecordResult.Recorded -> Unit
+                    is SwipeRecordResult.CountingNotStarted ->
+                        swipeFeedbackQueue.emit(SwipeFeedback.CountingNotStarted(result.startDate))
+                    SwipeRecordResult.CardMissing -> swipeFeedbackQueue.emit(SwipeFeedback.CardMissing)
+                }
+            } catch (exception: Exception) {
+                if (exception is CancellationException) throw exception
+                eventQueue.emit(CardListEvent.WriteFailed)
             }
         }
     }
 }
 
 /**
+ * 文件夹可在管理页被改名或删除，因此筛选项只把 id 当作身份真源。
+ * 已删除的筛选目标回退到“全部”，仍存在的目标则刷新展示名称。
+ */
+internal fun normalizeFolderFilter(
+    filter: FolderFilter,
+    folders: List<CardFolderEntity>,
+): FolderFilter =
+    when (filter) {
+        FolderFilter.All,
+        FolderFilter.Unfiled,
+        -> filter
+        is FolderFilter.Folder ->
+            folders
+                .firstOrNull { it.id == filter.folderId }
+                ?.let { FolderFilter.Folder(folderId = it.id, folderName = it.name) }
+                ?: FolderFilter.All
+    }
+
+/**
  * 把 [CardWithCount] 包装成 UI 用的 [CardUi]。
  *
- * - [isExpired] = `validUntilMillis != null && now > validUntilMillis`
- *   （设置了就该有"已过期"提示，存在即消费）
+ * - [isExpired] 按用户所在时区的自然日判断，有效期当天仍然有效
  */
-private fun CardWithCount.toCardUi(now: Long): CardUi =
+private fun CardWithCount.toCardUi(
+    now: Instant,
+    zoneId: ZoneId,
+): CardUi =
     CardUi(
         card = card,
         currentCount = currentCount,
-        isExpired = card.isExpiredAt(now),
+        isExpired = card.isExpiredAt(now, zoneId),
         lastSwipeAtMillis = lastSwipeAtMillis,
         cycle = cycle,
     )
 
 internal fun calculateOverallProgress(cards: List<CardUi>): OverallProgress {
     val participants = cards.filter { it.cycle.participatesInProgress && it.card.requiredCount > 0 }
-    val required = participants.sumOf { it.card.requiredCount }
-    val current = participants.sumOf { minOf(it.currentCount, it.card.requiredCount) }
+    val required = participants.sumOf { it.card.requiredCount.toLong() }
+    val current = participants.sumOf { minOf(it.currentCount, it.card.requiredCount).toLong() }
     return OverallProgress(
         current = current,
         required = required,
-        percent = if (required == 0) 0 else current * 100 / required,
+        percent = if (required == 0L) 0 else (current * 100L / required).toInt(),
         allDone = participants.isNotEmpty() && participants.all { it.currentCount >= it.card.requiredCount },
         isEmpty = participants.isEmpty(),
     )
@@ -218,19 +266,19 @@ internal fun calculateOverallProgress(cards: List<CardUi>): OverallProgress {
 
 internal fun sortCardsForOverall(cards: List<CardUi>): List<CardUi> =
     cards.sortedWith(
-        compareBy<CardUi> { cycleRank(it.cycle.state) }
+        compareBy<CardUi> { cycleRank(it.cycle) }
             .thenBy { it.card.requiredCount == 0 }
             .thenByDescending { cappedProgressRatio(it) }
             .thenByDescending { it.card.createdAtMillis },
     )
 
-private fun cycleRank(state: AnnualFeeCycleState): Int =
-    when (state) {
-        AnnualFeeCycleState.ACTIVE,
-        AnnualFeeCycleState.UNSCHEDULED,
+private fun cycleRank(cycle: AnnualFeeCycle): Int =
+    when (cycle) {
+        is AnnualFeeCycle.Active,
+        AnnualFeeCycle.Unscheduled,
         -> 0
-        AnnualFeeCycleState.OVERDUE -> 1
-        AnnualFeeCycleState.UPCOMING -> 2
+        AnnualFeeCycle.Overdue -> 1
+        is AnnualFeeCycle.Upcoming -> 2
     }
 
 private fun cappedProgressRatio(card: CardUi): Double =

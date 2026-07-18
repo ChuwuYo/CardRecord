@@ -13,6 +13,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -46,6 +48,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.semantics
@@ -57,7 +60,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.shuaji.cards.R
 import com.shuaji.cards.ShuajiApplication
-import com.shuaji.cards.data.AnnualFeeCycleState
+import com.shuaji.cards.data.AnnualFeeCycle
 import com.shuaji.cards.data.DateToken
 import com.shuaji.cards.data.local.TransactionEntity
 import com.shuaji.cards.ui.component.CardVisual
@@ -67,22 +70,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-/**
- * 详情页：**字段全消费审计**。
- *
- * 用户在编辑页能填的每个字段（name / bank / cardNumberMasked / requiredCount /
- * validUntilMillis / nextDueDateMillis / colorArgb / note / imageSourceType /
- * cardOrientation / folderId），在这里都至少有"展示"的归宿。
- *
- * 流水表瘦到 2 字段（card_id, occurred_at_millis）后，**每一行流水
- * 都在 UI 有归宿**——「流水列表」section 把 `current.swipes` 全部按时间
- * 倒序展示出来；历史行仍保留，因此行数可能大于 currentCount。
- *
- * 操作上只保留：记一笔（FAB） / 重置（顶部按钮） / 编辑 / 删除。
- *
- * v1.4.1: 详情页加完整流水列表 section（v1.4.0 只显示一行最近时间是错的，
- * 流水表保留全部行，UI 必须有对应行数）。
- */
+/** 卡片元数据、当前周期进度与完整流水的详情页。 */
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 fun CardDetailScreen(
@@ -94,9 +82,10 @@ fun CardDetailScreen(
     val app = context.applicationContext as ShuajiApplication
     val viewModel: CardDetailViewModel =
         viewModel(
-            factory = CardDetailViewModelFactory(app.container.repository, cardId),
+            factory = cardDetailViewModelFactory(app.container.repository, cardId),
         )
-    val card by viewModel.card.collectAsStateWithLifecycle()
+    val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val card = (state as? CardDetailUiState.Loaded)?.detail
 
     var showResetDialog by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf(false) }
@@ -109,6 +98,14 @@ fun CardDetailScreen(
     val editCd = stringResource(R.string.detail_action_edit)
     val loadingText = stringResource(R.string.detail_loading)
     val defaultName = stringResource(R.string.card_default_name)
+    val title =
+        when (val currentState = state) {
+            CardDetailUiState.Loading -> titleLoading
+            CardDetailUiState.Missing -> stringResource(R.string.card_missing)
+            is CardDetailUiState.Loaded ->
+                currentState.detail.card.name
+                    .ifBlank { defaultName }
+        }
     val snackbarHostState = remember { SnackbarHostState() }
 
     LaunchedEffect(viewModel) {
@@ -122,7 +119,18 @@ fun CardDetailScreen(
             snackbarHostState.showSnackbar(message)
         }
     }
-    LaunchedEffect(card?.cycle?.state) {
+    LaunchedEffect(viewModel) {
+        viewModel.events.collect { event ->
+            when (event) {
+                CardDetailEvent.Deleted -> onBack()
+                CardDetailEvent.DeleteFailed ->
+                    snackbarHostState.showSnackbar(context.getString(R.string.card_delete_failed))
+                CardDetailEvent.WriteFailed ->
+                    snackbarHostState.showSnackbar(context.getString(R.string.common_operation_failed))
+            }
+        }
+    }
+    LaunchedEffect(card?.cycle) {
         if (card?.cycle?.canRecord == false) showResetDialog = false
     }
 
@@ -130,23 +138,25 @@ fun CardDetailScreen(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
-                title = { Text(text = card?.card?.name?.ifBlank { defaultName } ?: titleLoading, fontWeight = FontWeight.Bold) },
+                title = { Text(text = title, fontWeight = FontWeight.Bold) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = backCd)
                     }
                 },
                 actions = {
-                    IconButton(onClick = { showDeleteDialog = true }) {
-                        Icon(Icons.Default.Delete, contentDescription = deleteCardCd)
-                    }
-                    if (card?.cycle?.canRecord == true) {
-                        IconButton(onClick = { showResetDialog = true }) {
-                            Icon(Icons.Default.Refresh, contentDescription = resetCd)
+                    if (card != null) {
+                        IconButton(onClick = { showDeleteDialog = true }) {
+                            Icon(Icons.Default.Delete, contentDescription = deleteCardCd)
                         }
-                    }
-                    IconButton(onClick = onEdit) {
-                        Icon(Icons.Default.Edit, contentDescription = editCd)
+                        if (card.cycle.canRecord) {
+                            IconButton(onClick = { showResetDialog = true }) {
+                                Icon(Icons.Default.Refresh, contentDescription = resetCd)
+                            }
+                        }
+                        IconButton(onClick = onEdit) {
+                            Icon(Icons.Default.Edit, contentDescription = editCd)
+                        }
                     }
                 },
                 colors =
@@ -156,65 +166,67 @@ fun CardDetailScreen(
             )
         },
         floatingActionButton = {
-            ExtendedFabRecord(
-                onClick = { viewModel.recordSwipe() },
-                enabled = card?.cycle?.canRecord == true,
-                disabledReason =
-                    when (card?.cycle?.state) {
-                        AnnualFeeCycleState.UPCOMING -> stringResource(R.string.card_record_disabled_upcoming)
-                        AnnualFeeCycleState.OVERDUE -> stringResource(R.string.card_record_disabled_overdue)
-                        else -> ""
-                    },
-            )
+            card?.let { loaded ->
+                ExtendedFabRecord(
+                    onClick = { viewModel.recordSwipe() },
+                    enabled = loaded.cycle.canRecord,
+                    disabledReason =
+                        when (loaded.cycle) {
+                            is AnnualFeeCycle.Upcoming -> stringResource(R.string.card_record_disabled_upcoming)
+                            AnnualFeeCycle.Overdue -> stringResource(R.string.card_record_disabled_overdue)
+                            else -> ""
+                        },
+                )
+            }
         },
     ) { padding ->
-        val current = card
-        if (current == null) {
-            Box(
-                modifier =
-                    Modifier
-                        .fillMaxSize()
-                        .padding(padding),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(loadingText, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        when (val currentState = state) {
+            CardDetailUiState.Loading,
+            CardDetailUiState.Missing,
+            -> {
+                Box(
+                    modifier =
+                        Modifier
+                            .fillMaxSize()
+                            .padding(padding),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = if (currentState is CardDetailUiState.Loading) loadingText else stringResource(R.string.card_missing),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
-            return@Scaffold
-        }
-        LazyColumn(
-            modifier =
-                Modifier
-                    .fillMaxSize()
-                    .padding(padding),
-            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 96.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            // 1. 卡面
-            item {
-                CardVisual(card = current.card)
-            }
-            // 2. 过期提示（如果设置了 validUntil 且已过期）
-            if (current.isExpired) {
-                item { ExpiredBanner() }
-            }
-            // 3. 进度块
-            item {
-                ProgressBlock(
-                    cycle = current.cycle,
-                    currentCount = current.currentCount,
-                    requiredCount = current.requiredCount,
-                )
-            }
-            // 4. 信息区：发卡行 / 卡号 / 备注（先看卡片元数据）
-            item {
-                CardInfoSection(detail = current)
-            }
-            // 5. 流水列表（按时间倒序，全部 N 行——零死数据，每行可单笔删除）
-            item {
-                SwipeListSection(
-                    detail = current,
-                    onRequestDelete = { swipeToDelete = it },
-                )
+
+            is CardDetailUiState.Loaded -> {
+                val current = currentState.detail
+                LazyColumn(
+                    modifier =
+                        Modifier
+                            .fillMaxSize()
+                            .padding(padding),
+                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 96.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    item { CardVisual(card = current.card) }
+                    if (current.isExpired) {
+                        item { ExpiredBanner() }
+                    }
+                    item {
+                        ProgressBlock(
+                            cycle = current.cycle,
+                            currentCount = current.currentCount,
+                            requiredCount = current.requiredCount,
+                        )
+                    }
+                    if (current.card.hasDetailInfo) {
+                        item { CardInfoSection(detail = current) }
+                    }
+                    swipeListItems(
+                        detail = current,
+                        onRequestDelete = { swipeToDelete = it },
+                    )
+                }
             }
         }
     }
@@ -245,7 +257,6 @@ fun CardDetailScreen(
                 TextButton(onClick = {
                     viewModel.deleteCard()
                     showDeleteDialog = false
-                    onBack()
                 }) { Text(stringResource(R.string.common_delete)) }
             },
             dismissButton = {
@@ -297,103 +308,125 @@ private fun ExtendedFabRecord(
     )
 }
 
-/**
- * 流水列表 section：把 swipes 全部按时间倒序展示出来，每行可单笔删除。
- *
- * - 标题行：左边"刷卡记录"，右边"已刷 N 笔"（= 列表行数）
- * - 行：序号 + 时间戳 + 垃圾桶按钮
- * - 空态：引导用户点 FAB 记第一笔
- *
- * 单笔删除走 AlertDialog 二次确认（与"重置""删卡"同一档次的破坏性操作，
- * 都需要在 UI 层兜底），不在按钮上"点了就删"。
- */
-@Composable
-private fun SwipeListSection(
+/** 流水与详情共用外层 LazyColumn，避免把全部历史一次性组合进单个 item。 */
+private fun LazyListScope.swipeListItems(
     detail: CardDetailUi,
     onRequestDelete: (TransactionEntity) -> Unit,
 ) {
     val swipes = detail.swipes
+    item(key = "swipe-header") {
+        SwipeListHeader(count = swipes.size)
+    }
+    if (swipes.isEmpty()) {
+        item(key = "swipe-empty") {
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = MaterialTheme.shapes.medium,
+                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+            ) {
+                Text(
+                    text = stringResource(R.string.detail_swipes_empty),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(16.dp),
+                )
+            }
+        }
+    } else {
+        itemsIndexed(
+            items = swipes,
+            key = { _, transaction -> transaction.id },
+        ) { index, transaction ->
+            SwipeListRow(
+                index = index,
+                transaction = transaction,
+                isCurrentPeriod = detail.isCurrentPeriod(transaction),
+                onRequestDelete = onRequestDelete,
+            )
+        }
+    }
+}
+
+@Composable
+private fun SwipeListHeader(count: Int) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.medium,
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
     ) {
-        Column(modifier = Modifier.padding(vertical = 4.dp)) {
-            // 标题行
-            Row(
-                modifier =
-                    Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
-            ) {
+        Row(
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Text(
+                text = stringResource(R.string.detail_label_swipes),
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(
+                text = pluralStringResource(R.plurals.detail_swipe_count, count, count),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+                fontWeight = FontWeight.SemiBold,
+            )
+        }
+    }
+}
+
+@Composable
+private fun SwipeListRow(
+    index: Int,
+    transaction: TransactionEntity,
+    isCurrentPeriod: Boolean,
+    onRequestDelete: (TransactionEntity) -> Unit,
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.medium,
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+    ) {
+        Row(
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .padding(start = 16.dp, end = 4.dp, top = 6.dp, bottom = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = stringResource(R.string.detail_swipe_index, index + 1),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.width(28.dp),
+            )
+            Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = stringResource(R.string.detail_label_swipes),
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Text(
-                    text = stringResource(R.string.detail_swipe_count, swipes.size),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    fontWeight = FontWeight.SemiBold,
-                )
-            }
-            if (swipes.isEmpty()) {
-                Text(
-                    text = stringResource(R.string.detail_swipes_empty),
+                    text = formatDateTime(transaction.occurredAtMillis),
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                    color = MaterialTheme.colorScheme.onSurface,
+                    fontWeight = FontWeight.Medium,
                 )
-            } else {
-                swipes.forEachIndexed { index, txn ->
-                    if (index > 0) {
-                        DividerLine()
-                    }
-                    Row(
-                        modifier =
-                            Modifier
-                                .fillMaxWidth()
-                                .padding(start = 16.dp, end = 4.dp, top = 6.dp, bottom = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            text = stringResource(R.string.detail_swipe_index, index + 1),
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.width(28.dp),
-                        )
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = formatDateTime(txn.occurredAtMillis),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurface,
-                                fontWeight = FontWeight.Medium,
-                            )
-                            if (!detail.isCurrentPeriod(txn)) {
-                                Text(
-                                    text = stringResource(R.string.detail_swipe_historical),
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
-                        }
-                        // 单笔删除按钮 —— 触发 onRequestDelete 弹出二次确认
-                        IconButton(
-                            onClick = { onRequestDelete(txn) },
-                            modifier = Modifier.size(36.dp),
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Delete,
-                                contentDescription = stringResource(R.string.detail_action_delete_swipe),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(18.dp),
-                            )
-                        }
-                    }
+                if (!isCurrentPeriod) {
+                    Text(
+                        text = stringResource(R.string.detail_swipe_historical),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
+            }
+            IconButton(
+                onClick = { onRequestDelete(transaction) },
+                modifier = Modifier.size(48.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Delete,
+                    contentDescription = stringResource(R.string.detail_action_delete_swipe),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(18.dp),
+                )
             }
         }
     }
@@ -456,16 +489,54 @@ private fun ProgressBlock(
 }
 
 /**
- * 字段消费区：把 CardEntity 里所有「用户可填」的字段都展示出来。
+ * 详情字段消费区。
  *
- * 凡是字段存在就要有消费路径，否则就是「写而不读」（用户填了看不到，毫无意义）。
- * 当前覆盖：name / bank / cardNumberMasked / requiredCount / validUntilMillis /
- * nextDueDateMillis / note / folderId。cardOrientation 在 [CardVisual] 里消费，
- * colorArgb 也是 [CardVisual] 里消费。
+ * 卡名、颜色和朝向由 [CardVisual] 展示，所需笔数由 [ProgressBlock] 展示，文件夹
+ * 由列表分组消费；这里只渲染非空的补充信息，避免空银行名或卡号占据整行。
  */
 @Composable
 private fun CardInfoSection(detail: CardDetailUi) {
     val c = detail.card
+    val rows =
+        listOfNotNull(
+            c.bank.takeIf(String::isNotBlank)?.let {
+                CardInfoRow(
+                    icon = Icons.Default.CreditCard,
+                    label = stringResource(R.string.detail_label_bank),
+                    value = it,
+                )
+            },
+            c.cardNumberMasked.takeIf(String::isNotBlank)?.let {
+                CardInfoRow(
+                    icon = Icons.Default.CreditCard,
+                    label = stringResource(R.string.detail_label_card_number),
+                    value = it,
+                )
+            },
+            c.validUntilMillis?.let {
+                CardInfoRow(
+                    icon = Icons.Default.CreditCard,
+                    label = stringResource(R.string.card_label_valid_until),
+                    value = DateToken.format(it),
+                    valueColor = if (detail.isExpired) MaterialTheme.colorScheme.error else null,
+                )
+            },
+            c.nextDueDateMillis?.let {
+                CardInfoRow(
+                    icon = Icons.Default.Event,
+                    label = stringResource(R.string.card_label_next_due),
+                    value = DateToken.formatAnnualDue(it),
+                )
+            },
+            c.note.takeIf(String::isNotBlank)?.let {
+                CardInfoRow(
+                    icon = Icons.AutoMirrored.Filled.Note,
+                    label = stringResource(R.string.detail_label_note),
+                    value = it,
+                    multiline = true,
+                )
+            },
+        )
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.medium,
@@ -474,46 +545,35 @@ private fun CardInfoSection(detail: CardDetailUi) {
         Column(
             modifier = Modifier.padding(vertical = 4.dp),
         ) {
-            InfoRow(
-                icon = Icons.Default.CreditCard,
-                label = stringResource(R.string.detail_label_bank),
-                value = c.bank,
-            )
-            DividerLine()
-            InfoRow(
-                icon = Icons.Default.CreditCard,
-                label = stringResource(R.string.detail_label_card_number),
-                value = c.cardNumberMasked,
-            )
-            if (c.validUntilMillis != null) {
-                DividerLine()
+            rows.forEachIndexed { index, row ->
+                if (index > 0) DividerLine()
                 InfoRow(
-                    icon = Icons.Default.CreditCard,
-                    label = stringResource(R.string.card_label_valid_until),
-                    value = DateToken.format(c.validUntilMillis),
-                    valueColor = if (detail.isExpired) MaterialTheme.colorScheme.error else null,
-                )
-            }
-            if (c.nextDueDateMillis != null) {
-                DividerLine()
-                InfoRow(
-                    icon = Icons.Default.Event,
-                    label = stringResource(R.string.card_label_next_due),
-                    value = DateToken.formatAnnualDue(c.nextDueDateMillis),
-                )
-            }
-            if (c.note.isNotBlank()) {
-                DividerLine()
-                InfoRow(
-                    icon = Icons.AutoMirrored.Filled.Note,
-                    label = stringResource(R.string.detail_label_note),
-                    value = c.note,
-                    multiline = true,
+                    icon = row.icon,
+                    label = row.label,
+                    value = row.value,
+                    valueColor = row.valueColor,
+                    multiline = row.multiline,
                 )
             }
         }
     }
 }
+
+private data class CardInfoRow(
+    val icon: ImageVector,
+    val label: String,
+    val value: String,
+    val valueColor: androidx.compose.ui.graphics.Color? = null,
+    val multiline: Boolean = false,
+)
+
+private val com.shuaji.cards.data.local.CardEntity.hasDetailInfo: Boolean
+    get() =
+        bank.isNotBlank() ||
+            cardNumberMasked.isNotBlank() ||
+            validUntilMillis != null ||
+            nextDueDateMillis != null ||
+            note.isNotBlank()
 
 @Composable
 private fun DividerLine() {

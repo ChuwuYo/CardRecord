@@ -27,8 +27,8 @@ import org.robolectric.annotation.Config
  * 全新安装用户的 `cards` 表没外键，`deleteFolder` 依赖的 SET NULL 不生效。
  * v7（实体补外键 + `MIGRATION_6_7` 统一磁盘 schema）修复后，下面两条用例应通过。
  *
- * 测试不依赖导出的 schema JSON（本项目 `exportSchema = false`）：
- * 手工建出 v5 库 → 用真实 `ALL_MIGRATIONS` 跑到最新版 → 强制打开触发 schema 校验。
+ * 这些回归测试手工建历史库，再用真实 `ALL_MIGRATIONS` 升到最新版并触发 schema 校验；
+ * 导出的 schema JSON 另供 Room 自动迁移审阅与 CI 完整性检查。
  * 若外键不一致，`open` 会抛异常、测试失败。
  */
 @RunWith(RobolectricTestRunner::class)
@@ -63,6 +63,68 @@ class MigrationTest {
             val cards = runBlocking { db.cardDao().listAll() }
             assertEquals("历史卡片应被迁移保留", 1, cards.size)
             assertEquals("迁移不应丢失 folder_id 引用", 1L, cards.single().folderId)
+            assertEquals("重建 cards 父表不能级联删除历史流水", 1, runBlocking { db.transactionDao().listAll() }.size)
+        } finally {
+            db.close()
+        }
+    }
+
+    @Test
+    fun migrateFromV3_preservesExistingFoldersAndAssignments() {
+        createV3DatabaseWithSampleFolder()
+
+        val db = openMigratedDatabase()
+        try {
+            val folders = runBlocking { db.cardFolderDao().listAll() }
+            val cards = runBlocking { db.cardDao().listAll() }
+
+            assertEquals("v3 已有文件夹不能被迁移删除", listOf("商旅"), folders.map { it.name })
+            assertEquals(folders.single().id, cards.single().folderId)
+            assertForeignKeysClean(db)
+        } finally {
+            db.close()
+        }
+    }
+
+    @Test
+    fun migrateFromV5_nullsDanglingFolderIdAndLeavesForeignKeysClean() {
+        createV5DatabaseWithSampleRow(folderId = 999L, insertFolder = false)
+
+        val db = openMigratedDatabase()
+        try {
+            assertNull(
+                runBlocking {
+                    db
+                        .cardDao()
+                        .listAll()
+                        .single()
+                        .folderId
+                },
+            )
+            assertEquals(1, runBlocking { db.transactionDao().listAll() }.size)
+            assertForeignKeysClean(db)
+        } finally {
+            db.close()
+        }
+    }
+
+    @Test
+    fun migrateFromV6_nullsDanglingFolderIdAndLeavesForeignKeysClean() {
+        createV6DatabaseWithDanglingFolder()
+
+        val db = openMigratedDatabase()
+        try {
+            assertNull(
+                runBlocking {
+                    db
+                        .cardDao()
+                        .listAll()
+                        .single()
+                        .folderId
+                },
+            )
+            assertEquals("v6 重建 cards 不能级联删除历史流水", 1, runBlocking { db.transactionDao().listAll() }.size)
+            assertForeignKeysClean(db)
         } finally {
             db.close()
         }
@@ -100,7 +162,7 @@ class MigrationTest {
 
                 val card = db.cardDao().getById(cardId)
                 assertNotNull("删文件夹不应删卡片", card)
-                assertNull("删文件夹后卡片应归未分类（folder_id 置空）", card!!.folderId)
+                assertNull("删文件夹后卡片应归未分类（folder_id 置空）", requireNotNull(card).folderId)
             }
         } finally {
             db.close()
@@ -116,7 +178,10 @@ class MigrationTest {
      * - `transactions`：含后来被删的 amount_cents / merchant / note，带 card 外键 + 索引。
      * - `card_folders`：含后来被删的 icon_key。
      */
-    private fun createV5DatabaseWithSampleRow() {
+    private fun createV5DatabaseWithSampleRow(
+        folderId: Long = 1L,
+        insertFolder: Boolean = true,
+    ) {
         context.deleteDatabase(dbName)
         val callback =
             object : SupportSQLiteOpenHelper.Callback(5) {
@@ -172,17 +237,24 @@ class MigrationTest {
                         """.trimIndent(),
                     )
                     // 一个文件夹 + 一张引用它的卡片（验证迁移后 folder_id 仍被保留）
-                    db.execSQL(
-                        "INSERT INTO `card_folders` " +
-                            "(`id`, `name`, `color_argb`, `icon_key`, `sort_order`, `created_at_millis`) " +
-                            "VALUES (1, '商旅', 255, 'folder', 0, 0)",
-                    )
+                    if (insertFolder) {
+                        db.execSQL(
+                            "INSERT INTO `card_folders` " +
+                                "(`id`, `name`, `color_argb`, `icon_key`, `sort_order`, `created_at_millis`) " +
+                                "VALUES (1, '商旅', 255, 'folder', 0, 0)",
+                        )
+                    }
                     db.execSQL(
                         "INSERT INTO `cards` (" +
                             "`id`, `name`, `bank`, `card_number_masked`, `required_count`, `color_argb`, " +
                             "`note`, `image_source_type`, `card_orientation`, `folder_id`, " +
                             "`created_at_millis`, `current_count`, `archived`" +
-                            ") VALUES (1, 'Visa', '某银行', '**** 1234', 6, 255, '', 'USER', 'LANDSCAPE', 1, 0, 0, 0)",
+                            ") VALUES (1, 'Visa', '某银行', '**** 1234', 6, 255, '', 'USER', 'LANDSCAPE', " +
+                            "$folderId, 0, 0, 0)",
+                    )
+                    db.execSQL(
+                        "INSERT INTO transactions (id, card_id, occurred_at_millis, amount_cents, merchant, note) " +
+                            "VALUES (1, 1, 123, 0, '', '')",
                     )
                 }
 
@@ -205,5 +277,159 @@ class MigrationTest {
             )
         helper.writableDatabase.use { /* 触发 onCreate，落地 v5 schema + 样例数据 */ }
         helper.close()
+    }
+
+    private fun createV3DatabaseWithSampleFolder() {
+        createHistoricalDatabase(version = 3) { db ->
+            createLegacyCardTables(db, cardTable = "credit_cards")
+            db.execSQL(
+                """
+                CREATE TABLE `card_folders` (
+                    `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                    `name` TEXT NOT NULL,
+                    `color_argb` INTEGER NOT NULL,
+                    `icon_key` TEXT NOT NULL DEFAULT 'folder',
+                    `sort_order` INTEGER NOT NULL DEFAULT 0,
+                    `created_at_millis` INTEGER NOT NULL
+                )
+                """.trimIndent(),
+            )
+            db.execSQL("CREATE INDEX `index_credit_cards_folder_id` ON `credit_cards` (`folder_id`)")
+            db.execSQL(
+                "INSERT INTO card_folders (id, name, color_argb, icon_key, sort_order, created_at_millis) " +
+                    "VALUES (1, '商旅', 255, 'folder', 0, 0)",
+            )
+            insertLegacyCard(db, "credit_cards", folderId = 1L)
+        }
+    }
+
+    private fun createV6DatabaseWithDanglingFolder() {
+        createHistoricalDatabase(version = 6) { db ->
+            db.execSQL(
+                """
+                CREATE TABLE `card_folders` (
+                    `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                    `name` TEXT NOT NULL,
+                    `color_argb` INTEGER NOT NULL,
+                    `sort_order` INTEGER NOT NULL,
+                    `created_at_millis` INTEGER NOT NULL
+                )
+                """.trimIndent(),
+            )
+            db.execSQL(
+                """
+                CREATE TABLE `cards` (
+                    `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                    `name` TEXT NOT NULL, `bank` TEXT NOT NULL,
+                    `card_number_masked` TEXT NOT NULL, `valid_until_millis` INTEGER,
+                    `next_due_date_millis` INTEGER, `required_count` INTEGER NOT NULL,
+                    `color_argb` INTEGER NOT NULL, `note` TEXT NOT NULL, `image_uri` TEXT,
+                    `image_source_type` TEXT NOT NULL DEFAULT 'USER', `image_provider_key` TEXT,
+                    `card_orientation` TEXT NOT NULL DEFAULT 'LANDSCAPE', `folder_id` INTEGER,
+                    `created_at_millis` INTEGER NOT NULL
+                )
+                """.trimIndent(),
+            )
+            db.execSQL(
+                """
+                CREATE TABLE `transactions` (
+                    `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                    `card_id` INTEGER NOT NULL, `occurred_at_millis` INTEGER NOT NULL,
+                    FOREIGN KEY(`card_id`) REFERENCES `cards`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE
+                )
+                """.trimIndent(),
+            )
+            db.execSQL("CREATE INDEX `index_transactions_card_id` ON `transactions` (`card_id`)")
+            db.execSQL(
+                "INSERT INTO cards (id, name, bank, card_number_masked, required_count, color_argb, note, " +
+                    "image_source_type, card_orientation, folder_id, created_at_millis) " +
+                    "VALUES (1, 'Visa', '某银行', '**** 1234', 6, 255, '', 'USER', 'LANDSCAPE', 999, 0)",
+            )
+            db.execSQL("INSERT INTO transactions (id, card_id, occurred_at_millis) VALUES (1, 1, 123)")
+        }
+    }
+
+    private fun createLegacyCardTables(
+        db: SupportSQLiteDatabase,
+        cardTable: String,
+    ) {
+        db.execSQL(
+            """
+            CREATE TABLE `$cardTable` (
+                `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                `name` TEXT NOT NULL, `bank` TEXT NOT NULL, `card_number_masked` TEXT NOT NULL,
+                `valid_until_millis` INTEGER, `next_due_date_millis` INTEGER,
+                `required_count` INTEGER NOT NULL, `color_argb` INTEGER NOT NULL,
+                `note` TEXT NOT NULL, `image_uri` TEXT,
+                `image_source_type` TEXT NOT NULL DEFAULT 'USER', `image_provider_key` TEXT,
+                `card_orientation` TEXT NOT NULL DEFAULT 'LANDSCAPE', `folder_id` INTEGER,
+                `created_at_millis` INTEGER NOT NULL, `current_count` INTEGER NOT NULL DEFAULT 0,
+                `cycle_start_millis` INTEGER, `archived` INTEGER NOT NULL DEFAULT 0
+            )
+            """.trimIndent(),
+        )
+        db.execSQL(
+            """
+            CREATE TABLE `transactions` (
+                `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `card_id` INTEGER NOT NULL,
+                `occurred_at_millis` INTEGER NOT NULL, `amount_cents` INTEGER NOT NULL DEFAULT 0,
+                `merchant` TEXT NOT NULL DEFAULT '', `note` TEXT NOT NULL DEFAULT '',
+                FOREIGN KEY(`card_id`) REFERENCES `$cardTable`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE
+            )
+            """.trimIndent(),
+        )
+        db.execSQL("CREATE INDEX `index_transactions_card_id` ON `transactions` (`card_id`)")
+    }
+
+    private fun insertLegacyCard(
+        db: SupportSQLiteDatabase,
+        table: String,
+        folderId: Long,
+    ) {
+        db.execSQL(
+            "INSERT INTO `$table` (id, name, bank, card_number_masked, required_count, color_argb, note, " +
+                "image_source_type, card_orientation, folder_id, created_at_millis, current_count, archived) " +
+                "VALUES (1, 'Visa', '某银行', '**** 1234', 6, 255, '', 'USER', 'LANDSCAPE', " +
+                "$folderId, 0, 0, 0)",
+        )
+    }
+
+    private fun createHistoricalDatabase(
+        version: Int,
+        create: (SupportSQLiteDatabase) -> Unit,
+    ) {
+        context.deleteDatabase(dbName)
+        val callback =
+            object : SupportSQLiteOpenHelper.Callback(version) {
+                override fun onCreate(db: SupportSQLiteDatabase) = create(db)
+
+                override fun onUpgrade(
+                    db: SupportSQLiteDatabase,
+                    oldVersion: Int,
+                    newVersion: Int,
+                ) = Unit
+            }
+        val helper =
+            FrameworkSQLiteOpenHelperFactory().create(
+                SupportSQLiteOpenHelper.Configuration
+                    .builder(context)
+                    .name(dbName)
+                    .callback(callback)
+                    .build(),
+            )
+        helper.writableDatabase.use { }
+        helper.close()
+    }
+
+    private fun openMigratedDatabase(): AppDatabase =
+        Room
+            .databaseBuilder(context, AppDatabase::class.java, dbName)
+            .addMigrations(*AppDatabase.ALL_MIGRATIONS)
+            .build()
+
+    private fun assertForeignKeysClean(db: AppDatabase) {
+        db.openHelper.writableDatabase.query("PRAGMA foreign_key_check").use { cursor ->
+            assertEquals("迁移后不应留下外键脏数据", 0, cursor.count)
+        }
     }
 }

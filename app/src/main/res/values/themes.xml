@@ -6,16 +6,16 @@
         1) statusBarColor / navigationBarColor = transparent：
            让 enableEdgeToEdge() 完全接管 system bars 颜色（浅/深自动跟随 darkTheme）。
         2) windowBackground = @color/window_background：
-           **根治"页面切换白闪"**。Activity 启动到 Compose 接管绘制之间，
-           窗口背景就是这个颜色，跟 Compose 内的 background 完全一致，
-           Navigation crossfade 过渡中用户看不到任何突兀的色差。
-           配套资源：values/colors.xml、values-night/colors.xml。
+           Application 在 Activity 创建前用同步启动缓存恢复 AppCompat 明暗模式，
+           因而 values[-night] 与 Compose 的主题模式方向一致。XML 无法表达动态色
+           或用户种子色，所以占位色仍不追求与最终 ColorScheme 完全一致。
         3) windowAnimationStyle = @style/WindowAnimation.Shuaji（淡入淡出）：
-           **根治语言切换 / 重建时的"黑闪 / 白闪"**。
+           降低语言切换 / 重建时窗口交接的突兀感。
            AppCompatDelegate.setApplicationLocales() 会触发 Activity.recreate()，
            销毁旧窗口、重建新窗口之间有一帧间隙，此时屏幕显示的是 windowBackground
-           （深色 #0A121C 近黑 / 浅色 #F6FAFF 近白），用户感知为"黑屏/白闪"。
-           给 Activity 级转场一个 fade，让旧画面淡出、新画面淡入，把这帧间隙盖住。
+           用户可能感知为短暂闪烁。
+           给 Activity 级转场一个 fade，让旧画面淡出、新画面淡入；正确的明暗方向
+           由启动缓存 + AppCompat 配置保证，fade 只负责转场观感。
            注意：windowAnimationStyle 只作用于 Activity 级转场（冷启动 / recreate），
            应用内 Compose Navigation 的 crossfade 是窗口内的另一层、不触发 Activity
            转场，两者不冲突、不会叠加。

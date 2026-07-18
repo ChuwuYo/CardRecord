@@ -11,11 +11,14 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
@@ -25,6 +28,7 @@ import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
@@ -32,6 +36,8 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -40,6 +46,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -48,6 +55,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -57,17 +66,15 @@ import com.shuaji.cards.R
 import com.shuaji.cards.data.local.CardFolderEntity
 import com.shuaji.cards.ui.ViewModelFactories
 import com.shuaji.cards.ui.component.ModernColorPicker
+import com.shuaji.cards.ui.theme.DEFAULT_BRAND_PRIMARY_ARGB
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CardFolderScreen(onBack: () -> Unit) {
     val viewModel: CardFolderViewModel = viewModel(factory = ViewModelFactories.Folders)
-    val folders by viewModel.folders.collectAsStateWithLifecycle()
-    val counts by viewModel.counts.collectAsStateWithLifecycle()
-
-    LaunchedEffect(folders) {
-        viewModel.refreshCounts()
-    }
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    val snackbarHostState = remember { SnackbarHostState() }
 
     var dialogTarget by remember { mutableStateOf<DialogTarget?>(null) }
     var folderToDelete by remember { mutableStateOf<CardFolderEntity?>(null) }
@@ -79,7 +86,16 @@ fun CardFolderScreen(onBack: () -> Unit) {
     val deleteCd = stringResource(R.string.common_delete)
     val cancelText = stringResource(R.string.common_cancel)
 
+    LaunchedEffect(viewModel) {
+        viewModel.events.collect { event ->
+            if (event is CardFolderEvent.WriteFailed) {
+                snackbarHostState.showSnackbar(context.getString(R.string.common_operation_failed))
+            }
+        }
+    }
+
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = {
@@ -108,28 +124,41 @@ fun CardFolderScreen(onBack: () -> Unit) {
             )
         },
     ) { padding ->
-        if (folders.isEmpty()) {
-            EmptyFolderState(onCreate = { dialogTarget = DialogTarget.Create })
-        } else {
-            LazyColumn(
-                modifier =
-                    Modifier
-                        .fillMaxSize()
-                        .padding(padding),
-                contentPadding = PaddingValues(16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                items(folders, key = { it.id }) { folder ->
-                    FolderRow(
-                        folder = folder,
-                        cardCount = counts[folder.id] ?: 0,
-                        editCd = editCd,
-                        deleteCd = deleteCd,
-                        onClick = { dialogTarget = DialogTarget.Edit(folder) },
-                        onDelete = { folderToDelete = folder },
-                    )
+        when (val state = uiState) {
+            CardFolderUiState.Loading ->
+                Box(
+                    modifier = Modifier.fillMaxSize().padding(padding),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    CircularProgressIndicator()
                 }
-            }
+            is CardFolderUiState.Ready ->
+                if (state.folders.isEmpty()) {
+                    EmptyFolderState(
+                        modifier = Modifier.padding(padding),
+                        onCreate = { dialogTarget = DialogTarget.Create },
+                    )
+                } else {
+                    LazyColumn(
+                        modifier =
+                            Modifier
+                                .fillMaxSize()
+                                .padding(padding),
+                        contentPadding = PaddingValues(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        items(state.folders, key = { it.folder.id }) { item ->
+                            FolderRow(
+                                folder = item.folder,
+                                cardCount = item.cardCount,
+                                editCd = editCd,
+                                deleteCd = deleteCd,
+                                onClick = { dialogTarget = DialogTarget.Edit(item.folder) },
+                                onDelete = { folderToDelete = item.folder },
+                            )
+                        }
+                    }
+                }
         }
     }
 
@@ -230,7 +259,7 @@ private fun FolderRow(
                     fontWeight = FontWeight.SemiBold,
                 )
                 Text(
-                    stringResource(R.string.folder_count_label, cardCount),
+                    pluralStringResource(R.plurals.folder_count_label, cardCount, cardCount),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -246,10 +275,13 @@ private fun FolderRow(
 }
 
 @Composable
-private fun EmptyFolderState(onCreate: () -> Unit) {
+private fun EmptyFolderState(
+    modifier: Modifier = Modifier,
+    onCreate: () -> Unit,
+) {
     Column(
         modifier =
-            Modifier
+            modifier
                 .fillMaxSize()
                 .padding(32.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -289,7 +321,7 @@ private fun FolderEditDialog(
     onConfirm: (name: String, color: Int) -> Unit,
 ) {
     var name by remember(initial) { mutableStateOf(initial?.name ?: "") }
-    var color by remember(initial) { mutableStateOf(initial?.colorArgb ?: 0xFF42A5F5.toInt()) }
+    var color by remember(initial) { mutableIntStateOf(initial?.colorArgb ?: DEFAULT_BRAND_PRIMARY_ARGB.toInt()) }
 
     val titleText =
         stringResource(
@@ -304,7 +336,12 @@ private fun FolderEditDialog(
         onDismissRequest = onDismiss,
         title = { Text(titleText) },
         text = {
-            Column {
+            Column(
+                modifier =
+                    Modifier
+                        .heightIn(max = 440.dp)
+                        .verticalScroll(rememberScrollState()),
+            ) {
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },

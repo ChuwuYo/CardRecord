@@ -71,7 +71,6 @@ class CardVisualTest {
             ),
             resolveCardContentPlacement(
                 contentLayout = CardVisualContentLayout.COMPACT,
-                orientation = CardOrientation.LANDSCAPE,
                 networkLayout = compactLayout,
                 badgeVisible = true,
                 defaultPadding = 16.dp,
@@ -91,7 +90,6 @@ class CardVisualTest {
             ),
             resolveCardContentPlacement(
                 contentLayout = CardVisualContentLayout.COMPACT,
-                orientation = CardOrientation.LANDSCAPE,
                 networkLayout = compactLayout,
                 badgeVisible = false,
                 defaultPadding = 16.dp,
@@ -114,7 +112,6 @@ class CardVisualTest {
                 networkPresent = true,
                 networkLayout = compactLayout,
                 contentLayout = CardVisualContentLayout.COMPACT,
-                orientation = CardOrientation.LANDSCAPE,
                 defaultPadding = 16.dp,
             )
 
@@ -140,7 +137,6 @@ class CardVisualTest {
                 networkPresent = true,
                 networkLayout = largeLayout,
                 contentLayout = CardVisualContentLayout.STANDARD,
-                orientation = CardOrientation.LANDSCAPE,
                 defaultPadding = 16.dp,
             ),
         )
@@ -155,7 +151,6 @@ class CardVisualTest {
                 networkPresent = true,
                 networkLayout = compactLayout,
                 contentLayout = CardVisualContentLayout.STANDARD,
-                orientation = CardOrientation.PORTRAIT,
                 defaultPadding = 14.dp,
             ),
         )
@@ -166,7 +161,6 @@ class CardVisualTest {
                 networkPresent = true,
                 networkLayout = compactLayout,
                 contentLayout = CardVisualContentLayout.STANDARD,
-                orientation = CardOrientation.LANDSCAPE,
                 defaultPadding = 16.dp,
             ),
         )
@@ -180,25 +174,54 @@ class CardVisualTest {
             wideGridLayout.badgeInset,
             resolveCardContentPlacement(
                 contentLayout = CardVisualContentLayout.COMPACT,
-                orientation = CardOrientation.LANDSCAPE,
                 networkLayout = wideGridLayout,
                 badgeVisible = true,
                 defaultPadding = 16.dp,
             ).start,
         )
         assertEquals(
-            14.dp,
+            wideGridLayout.badgeInset,
             resolveCardContentPlacement(
                 contentLayout = CardVisualContentLayout.COMPACT,
-                orientation = CardOrientation.PORTRAIT,
                 networkLayout = wideGridLayout,
                 badgeVisible = true,
                 defaultPadding = 14.dp,
             ).start,
         )
-        assertTrue(isCompactCardContent(CardVisualContentLayout.COMPACT, CardOrientation.LANDSCAPE))
-        assertFalse(isCompactCardContent(CardVisualContentLayout.COMPACT, CardOrientation.PORTRAIT))
-        assertFalse(isCompactCardContent(CardVisualContentLayout.STANDARD, CardOrientation.LANDSCAPE))
+        assertTrue(isCompactCardContent(CardVisualContentLayout.COMPACT))
+        assertFalse(isCompactCardContent(CardVisualContentLayout.STANDARD))
+    }
+
+    @Test
+    fun cardHeight_usesWidthOverHeightRatioForBothOrientations() {
+        assertDpClose(100f / 1.586f, resolveCardHeight(100.dp, CardOrientation.LANDSCAPE))
+        assertDpClose(100f / 0.631f, resolveCardHeight(100.dp, CardOrientation.PORTRAIT))
+        assertTrue(resolveCardHeight(100.dp, CardOrientation.PORTRAIT) > 100.dp)
+        assertTrue(resolveCardHeight(100.dp, CardOrientation.LANDSCAPE) < 100.dp)
+    }
+
+    @Test
+    fun compactCardHeight_expandsForScaledTextAndBadgeSafeArea() {
+        val placement = CardContentPlacement(start = 6.dp, top = 6.dp, bottom = 34.dp)
+
+        assertEquals(
+            98.dp,
+            resolveCompactCardMinimumHeight(
+                bankLineHeight = 24.dp,
+                nameLineHeight = 30.dp,
+                numberLineHeight = null,
+                contentPlacement = placement,
+            ),
+        )
+        assertEquals(
+            120.dp,
+            resolveCompactCardMinimumHeight(
+                bankLineHeight = 24.dp,
+                nameLineHeight = 30.dp,
+                numberLineHeight = 20.dp,
+                contentPlacement = placement,
+            ),
+        )
     }
 
     @Test

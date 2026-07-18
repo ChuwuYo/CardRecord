@@ -3,26 +3,23 @@ package com.shuaji.cards.ui.screen
 import android.app.Application
 import androidx.test.core.app.ApplicationProvider
 import com.shuaji.cards.MainDispatcherRule
-import com.shuaji.cards.data.AnnualFeeCycleEvent
-import com.shuaji.cards.data.AppContainer
 import com.shuaji.cards.data.SettingsDoneEvent
 import com.shuaji.cards.data.SettingsRepository
 import com.shuaji.cards.data.ThemeSettings
+import com.shuaji.cards.data.backup.BackupCancelResult
 import com.shuaji.cards.data.backup.BackupException
+import com.shuaji.cards.data.backup.BackupFileInfo
 import com.shuaji.cards.data.backup.BackupRepository
 import com.shuaji.cards.data.backup.ExportSummary
 import com.shuaji.cards.data.backup.ImportMode
 import com.shuaji.cards.data.backup.ImportResult
-import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.MutableSharedFlow
-import kotlinx.coroutines.flow.SharedFlow
-import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -34,11 +31,16 @@ import org.junit.runner.RunWith
 import org.mockito.kotlin.any
 import org.mockito.kotlin.doAnswer
 import org.mockito.kotlin.doReturn
+import org.mockito.kotlin.doSuspendableAnswer
 import org.mockito.kotlin.doThrow
 import org.mockito.kotlin.mock
+import org.mockito.kotlin.times
+import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+
+private const val TEST_CONTENT_SHA256 = "test-content-sha256"
 
 /**
  * [SettingsViewModel] 的核心行为测试。
@@ -47,10 +49,7 @@ import org.robolectric.annotation.Config
  * - 用 Robolectric 拿真实 [Application]，让 `getString(R.string.xxx, args...)` 走真实
  *   Android 资源系统（验证国际化字符串拼装正确）。
  * - 用 mockito-kotlin mock 掉 [BackupRepository] / [SettingsRepository]，聚焦 ViewModel
- *   自身的状态机与「是否把正确的 [SettingsDoneEvent] 推给了 [AppContainer]」。
- * - [fakeContainer] 直接捕获 `emitSettings` 的入参到 [emittedEvents]——ViewModel 测试只关心
- *   「有没有发、发了什么」，SharedFlow 的 replay / 订阅时序语义属于 AppContainer 的职责，
- *   不该耦合进来，否则测试会被并发时序拖得既脆弱又难懂。
+ *   自身的状态机与「是否发布了正确的 [SettingsDoneEvent]」。
  * - 关键：[runTest] 复用 [MainDispatcherRule] 的 scheduler，`advanceUntilIdle()` 才能驱动
  *   ViewModel `viewModelScope.launch` 里的协程跑完。
  *
@@ -77,34 +76,19 @@ class SettingsViewModelTest {
 
     /** 可选钩子：emitSettings 被调用的「那一刻」同步触发，用于断言 emit 时点的状态。 */
     private var onEmitSettings: ((SettingsDoneEvent) -> Unit)? = null
-    private val fakeContainer =
-        object : AppContainer {
-            // 没测的 repo / settings 留空即可——用 `by lazy` 包一层，**仅在访问时才抛** error()。
-            // Kotlin object 初始值是立即求值，普通 `= error("not used")` 会让 fakeContainer
-            // 一被构造就 ISE 把所有测试带挂。
-            override val repository: com.shuaji.cards.data.CardRepository by lazy { error("not used") }
-            override val settings: com.shuaji.cards.data.SettingsRepository by lazy { error("not used") }
-            override val backup: BackupRepository by lazy { error("not used in fake") }
-            override val annualFeeCycleEvents: Flow<AnnualFeeCycleEvent> by lazy { error("not used") }
-            override val settingsEvents: SharedFlow<SettingsDoneEvent> =
-                MutableSharedFlow<SettingsDoneEvent>().asSharedFlow()
-
-            override suspend fun emitSettings(event: SettingsDoneEvent) {
-                onEmitSettings?.invoke(event)
-                emittedEvents += event
-            }
-
-            // 测试不涉及启动续期，留空实现满足接口即可。
-            override fun startAnnualFeeCycleCoordinator(scope: CoroutineScope): Job = error("not used")
-        }
+    private val emitSettingsEvent: suspend (SettingsDoneEvent) -> Unit = { event ->
+        onEmitSettings?.invoke(event)
+        emittedEvents += event
+    }
 
     @Before
     fun setUp() {
         application = ApplicationProvider.getApplicationContext()
         backup = mock()
+        whenever(backup.cancelActive()).doReturn(BackupCancelResult.CANCELLED)
     }
 
-    private fun newVm() = SettingsViewModel(application, backup, fakeContainer, settingsRepo)
+    private fun newVm() = SettingsViewModel(application, backup, emitSettingsEvent, settingsRepo)
 
     /** 跑一段触发 ViewModel 的动作，推进到协程空闲，返回这期间新 emit 的事件快照。 */
     private fun TestScope.runAndCollect(action: () -> Unit): List<SettingsDoneEvent> {
@@ -176,7 +160,7 @@ class SettingsViewModelTest {
     @Test
     fun import_with_imageUriUserCount_includes_image_warning() =
         runTest(mainDispatcherRule.testDispatcher.scheduler) {
-            whenever(backup.import(any(), any())).doReturn(
+            whenever(backup.import(any(), any(), any())).doReturn(
                 ImportResult(
                     cardsAdded = 3,
                     foldersAdded = 1,
@@ -188,7 +172,7 @@ class SettingsViewModelTest {
             val collected =
                 runAndCollect {
                     val vm = newVm()
-                    vm.import(android.net.Uri.EMPTY, ImportMode.MERGE)
+                    vm.import(android.net.Uri.EMPTY, ImportMode.MERGE, TEST_CONTENT_SHA256)
                 }
 
             assertEquals(1, collected.size)
@@ -251,12 +235,12 @@ class SettingsViewModelTest {
     @Test
     fun import_failure_marks_event_as_error_with_cause() =
         runTest(mainDispatcherRule.testDispatcher.scheduler) {
-            whenever(backup.import(any(), any())).doThrow(BackupException("版本不匹配"))
+            whenever(backup.import(any(), any(), any())).doThrow(BackupException("版本不匹配"))
 
             val collected =
                 runAndCollect {
                     val vm = newVm()
-                    vm.import(android.net.Uri.EMPTY, ImportMode.REPLACE)
+                    vm.import(android.net.Uri.EMPTY, ImportMode.REPLACE, TEST_CONTENT_SHA256)
                 }
 
             assertEquals(1, collected.size)
@@ -265,6 +249,48 @@ class SettingsViewModelTest {
                 "失败消息应含「版本不匹配」，实际：${collected[0].message}",
                 collected[0].message.contains("版本不匹配"),
             )
+        }
+
+    @Test
+    fun inspect_success_returnsTrustedInfo_andRestoresIdle() =
+        runTest(mainDispatcherRule.testDispatcher.scheduler) {
+            val uri = android.net.Uri.parse("content://test/backup")
+            val expected = BackupFileInfo(2, 1, 3, 1, 123L, "preview-sha256")
+            whenever(backup.inspect(uri)).doReturn(expected)
+            val vm = newVm()
+
+            val actual = vm.inspectBackup(uri)
+
+            assertEquals(expected, actual)
+            assertEquals(SettingsUiState.Idle, vm.state.value)
+            assertEquals(PendingImport(uri, expected), vm.pendingImport.value)
+        }
+
+    @Test
+    fun import_forwardsPreviewDigestToRepository() =
+        runTest(mainDispatcherRule.testDispatcher.scheduler) {
+            val uri = android.net.Uri.parse("content://test/success")
+            whenever(backup.import(uri, ImportMode.MERGE, "preview-sha256")).doReturn(ImportResult(1, 0, 0))
+
+            runAndCollect { newVm().import(uri, ImportMode.MERGE, "preview-sha256") }
+
+            verify(backup).import(uri, ImportMode.MERGE, "preview-sha256")
+        }
+
+    @Test
+    fun importPending_usesAtomicUriAndDigestThenClearsConfirmation() =
+        runTest(mainDispatcherRule.testDispatcher.scheduler) {
+            val uri = android.net.Uri.parse("content://test/pending")
+            val info = BackupFileInfo(2, 1, 3, 0, null, "pending-sha256")
+            whenever(backup.inspect(uri)).doReturn(info)
+            whenever(backup.import(uri, ImportMode.REPLACE, info.contentSha256)).doReturn(ImportResult(2, 1, 3))
+            val vm = newVm()
+            vm.inspectBackup(uri)
+
+            runAndCollect { vm.importPending(ImportMode.REPLACE) }
+
+            assertEquals(null, vm.pendingImport.value)
+            verify(backup).import(uri, ImportMode.REPLACE, info.contentSha256)
         }
 
     // ════════════════════════════════════════════════════════════
@@ -288,6 +314,130 @@ class SettingsViewModelTest {
             assertEquals(SettingsUiState.Idle, vm.state.value)
         }
 
+    @Test
+    fun rapidDuplicateExport_startsOnlyOneOperation() =
+        runTest(mainDispatcherRule.testDispatcher.scheduler) {
+            val uri = android.net.Uri.parse("content://test/export")
+            val entered = CompletableDeferred<Unit>()
+            val release = CompletableDeferred<Unit>()
+            whenever(backup.export(uri)).doSuspendableAnswer {
+                entered.complete(Unit)
+                release.await()
+                ExportSummary(1, 0, 0)
+            }
+            val vm = newVm()
+
+            vm.export(uri)
+            runCurrent()
+            entered.await()
+            vm.export(uri)
+            runCurrent()
+
+            verify(backup, times(1)).export(uri)
+            assertEquals(SettingsUiState.Working, vm.state.value)
+            release.complete(Unit)
+            advanceUntilIdle()
+            assertEquals(SettingsUiState.Done, vm.state.value)
+        }
+
+    @Test
+    fun cancel_cancelsOwningJobAndReturnsIdle() =
+        runTest(mainDispatcherRule.testDispatcher.scheduler) {
+            val uri = android.net.Uri.parse("content://test/export")
+            whenever(backup.export(uri)).doSuspendableAnswer { awaitCancellation() }
+            val vm = newVm()
+
+            vm.export(uri)
+            runCurrent()
+            assertEquals(SettingsUiState.Working, vm.state.value)
+
+            vm.cancel()
+            advanceUntilIdle()
+
+            assertEquals(SettingsUiState.Idle, vm.state.value)
+            verify(backup).cancelActive()
+        }
+
+    @Test
+    fun cancel_nonCooperativeProviderResultStillDoesNotEmitDone() =
+        runTest(mainDispatcherRule.testDispatcher.scheduler) {
+            val uri = android.net.Uri.parse("content://test/non-cooperative")
+            val entered = CompletableDeferred<Unit>()
+            whenever(backup.export(uri)).doSuspendableAnswer {
+                entered.complete(Unit)
+                try {
+                    awaitCancellation()
+                } catch (_: kotlinx.coroutines.CancellationException) {
+                    // 模拟 Provider 吞掉取消并返回普通结果。
+                }
+                ExportSummary(1, 0, 0)
+            }
+            val vm = newVm()
+
+            vm.export(uri)
+            runCurrent()
+            entered.await()
+            vm.cancel()
+            advanceUntilIdle()
+
+            assertEquals(SettingsUiState.Idle, vm.state.value)
+            assertTrue(emittedEvents.isEmpty())
+        }
+
+    @Test
+    fun cancel_duringCommit_waitsForDefinitiveResult() =
+        runTest(mainDispatcherRule.testDispatcher.scheduler) {
+            val uri = android.net.Uri.parse("content://test/committing")
+            val entered = CompletableDeferred<Unit>()
+            val release = CompletableDeferred<Unit>()
+            whenever(backup.import(uri, ImportMode.REPLACE, TEST_CONTENT_SHA256)).doSuspendableAnswer {
+                entered.complete(Unit)
+                release.await()
+                ImportResult(1, 0, 0)
+            }
+            whenever(backup.cancelActive()).doReturn(BackupCancelResult.COMMIT_IN_PROGRESS)
+            val vm = newVm()
+
+            vm.import(uri, ImportMode.REPLACE, TEST_CONTENT_SHA256)
+            runCurrent()
+            entered.await()
+            vm.cancel()
+            runCurrent()
+
+            assertEquals(SettingsUiState.Working, vm.state.value)
+            release.complete(Unit)
+            advanceUntilIdle()
+            assertEquals(SettingsUiState.Done, vm.state.value)
+            assertEquals(1, emittedEvents.size)
+        }
+
+    @Test
+    fun cancel_withNoRegisteredRepositoryOperation_doesNotHideLaterSuccess() =
+        runTest(mainDispatcherRule.testDispatcher.scheduler) {
+            val uri = android.net.Uri.parse("content://test/no-active-race")
+            val entered = CompletableDeferred<Unit>()
+            val release = CompletableDeferred<Unit>()
+            whenever(backup.export(uri)).doSuspendableAnswer {
+                entered.complete(Unit)
+                release.await()
+                ExportSummary(1, 0, 0)
+            }
+            whenever(backup.cancelActive()).doReturn(BackupCancelResult.NO_ACTIVE_OPERATION)
+            val vm = newVm()
+
+            vm.export(uri)
+            runCurrent()
+            entered.await()
+            vm.cancel()
+            runCurrent()
+
+            assertEquals(SettingsUiState.Working, vm.state.value)
+            release.complete(Unit)
+            advanceUntilIdle()
+            assertEquals(SettingsUiState.Done, vm.state.value)
+            assertEquals(1, emittedEvents.size)
+        }
+
     // ════════════════════════════════════════════════════════════
     // REPLACE 模式 + imageUriUserCount 显式提示
     // ════════════════════════════════════════════════════════════
@@ -295,7 +445,7 @@ class SettingsViewModelTest {
     @Test
     fun replace_import_with_image_warning_message() =
         runTest(mainDispatcherRule.testDispatcher.scheduler) {
-            whenever(backup.import(any(), any())).doReturn(
+            whenever(backup.import(any(), any(), any())).doReturn(
                 ImportResult(
                     cardsAdded = 5,
                     foldersAdded = 2,
@@ -307,7 +457,7 @@ class SettingsViewModelTest {
             val collected =
                 runAndCollect {
                     val vm = newVm()
-                    vm.import(android.net.Uri.EMPTY, ImportMode.REPLACE)
+                    vm.import(android.net.Uri.EMPTY, ImportMode.REPLACE, TEST_CONTENT_SHA256)
                 }
 
             assertEquals(1, collected.size)
@@ -331,7 +481,7 @@ class SettingsViewModelTest {
         runTest(mainDispatcherRule.testDispatcher.scheduler) {
             // 触发所有 5 个 extras：transactionsSkipped / cardsSkippedInvalidFolder /
             // duplicateFolderNames / duplicateCardNames / imageUriUserCount
-            whenever(backup.import(any(), any())).doReturn(
+            whenever(backup.import(any(), any(), any())).doReturn(
                 ImportResult(
                     cardsAdded = 8,
                     foldersAdded = 3,
@@ -347,7 +497,7 @@ class SettingsViewModelTest {
             val collected =
                 runAndCollect {
                     val vm = newVm()
-                    vm.import(android.net.Uri.EMPTY, ImportMode.MERGE)
+                    vm.import(android.net.Uri.EMPTY, ImportMode.MERGE, TEST_CONTENT_SHA256)
                 }
 
             assertEquals(1, collected.size)

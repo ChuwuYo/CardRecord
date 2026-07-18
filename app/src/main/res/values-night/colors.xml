@@ -1,8 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!--
-        暗色主题下的窗口背景色，与 Theme.kt 中 darkColorScheme().background (#0A121C) 一致。
-        没有这个文件，亮色资源会被复用，暗色启动会从亮白过渡到深色。
+        AppCompat 生效模式为暗色时的启动占位；运行时背景仍由动态色或用户种子色决定。
     -->
     <color name="window_background">#0A121C</color>
 </resources>

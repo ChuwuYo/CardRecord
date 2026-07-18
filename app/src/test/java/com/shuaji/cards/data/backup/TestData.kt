@@ -65,4 +65,16 @@ object TestData {
         cardId = cardId,
         occurredAtMillis = occurredAtMillis,
     )
+
+    fun backupBundle(
+        version: Int = BackupBundle.SCHEMA_VERSION,
+        cards: List<CardEntity> = emptyList(),
+        folders: List<CardFolderEntity> = emptyList(),
+        transactions: List<TransactionEntity> = emptyList(),
+    ) = BackupBundle(
+        version = version,
+        cards = cards.map { it.toBackupV1() },
+        folders = folders.map { it.toBackupV1() },
+        transactions = transactions.map { it.toBackupV1() },
+    )
 }

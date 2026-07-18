@@ -1,20 +1,32 @@
 package com.shuaji.cards.ui
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.union
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.dp
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.shuaji.cards.R
@@ -41,7 +53,7 @@ object Routes {
 }
 
 /**
- * 顶层 app 容器：Scaffold + NavHost + 全局 SnackbarHost。
+ * 顶层 app 容器：NavHost + 全局 SnackbarHost。
  *
  * SnackbarHost 放在最外层，这样不论用户在哪个 page 都能弹消息：
  * - `ShuajiApplication` 启动生命周期协调器，归一化结果通过
@@ -57,7 +69,6 @@ fun ShuajiApp() {
     val cycleEvents = app.container.annualFeeCycleEvents
     val settingsEvents = app.container.settingsEvents
     val snackbarHostState = remember { SnackbarHostState() }
-    val autoResetMessage = stringResource(R.string.cycle_auto_reset_message)
     val autoResetErrorMessage = stringResource(R.string.cycle_auto_reset_error_message)
 
     // 订阅自动续期事件 → 弹 Snackbar
@@ -65,7 +76,12 @@ fun ShuajiApp() {
         cycleEvents.collect { event ->
             val message =
                 when (event) {
-                    is AnnualFeeCycleEvent.Normalized -> autoResetMessage.format(event.count)
+                    is AnnualFeeCycleEvent.Normalized ->
+                        context.resources.getQuantityString(
+                            R.plurals.cycle_auto_reset_message,
+                            event.count,
+                            event.count,
+                        )
                     is AnnualFeeCycleEvent.Failed -> autoResetErrorMessage
                 }
             snackbarHostState.showSnackbar(
@@ -91,13 +107,18 @@ fun ShuajiApp() {
     }
 
     val navController = rememberNavController()
-    Scaffold(
-        modifier = Modifier.fillMaxSize(),
-        snackbarHost = { SnackbarHost(snackbarHostState) },
-        containerColor = MaterialTheme.colorScheme.background,
+    val currentRoute =
+        navController
+            .currentBackStackEntryAsState()
+            .value
+            ?.destination
+            ?.route
+    Box(
+        modifier =
+            Modifier
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.background),
     ) {
-        // 不传 padding 给 NavHost —— 各 page 自己的 Scaffold 处理 WindowInsets，
-        // 避免外层 padding 跟内层 Scaffold padding 重复计算。
         NavHost(
             navController = navController,
             startDestination = Routes.LIST,
@@ -148,5 +169,20 @@ fun ShuajiApp() {
                 )
             }
         }
+        SnackbarHost(
+            hostState = snackbarHostState,
+            modifier =
+                Modifier
+                    .align(Alignment.BottomCenter)
+                    .windowInsetsPadding(
+                        WindowInsets.safeDrawing
+                            .union(WindowInsets.ime)
+                            .only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom),
+                    ).padding(horizontal = 16.dp)
+                    .padding(bottom = globalSnackbarBottomPadding(currentRoute)),
+        )
     }
 }
+
+/** 顶层浮层必须主动避让当前页面的 FAB；内层 Scaffold 无法反向通知外层 SnackbarHost。 */
+internal fun globalSnackbarBottomPadding(route: String?) = if (route == Routes.LIST || route == Routes.DETAIL) 88.dp else 16.dp

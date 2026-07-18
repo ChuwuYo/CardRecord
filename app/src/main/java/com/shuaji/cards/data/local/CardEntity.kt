@@ -5,7 +5,12 @@ import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
 import androidx.room.PrimaryKey
-import kotlinx.serialization.Serializable
+import com.shuaji.cards.data.DateToken
+import java.time.Instant
+import java.time.ZoneId
+
+internal const val IMAGE_SOURCE_USER_KEY = "USER"
+internal const val CARD_ORIENTATION_LANDSCAPE_KEY = "LANDSCAPE"
 
 /**
  * 卡片实体。
@@ -29,18 +34,11 @@ import kotlinx.serialization.Serializable
  * 朝向：
  * - [cardOrientation] = "LANDSCAPE"（横版 1.586:1，标准卡片） / "PORTRAIT"（竖版）
  *
- * `@Serializable` 跟 `@Entity` 互不干扰——Room 用 kapt 生成 DAO，kotlinx-serialization
- * 用 compiler plugin 生成 encoder / decoder，两条独立通路。这个 Entity 既存在数据库表里，
- * 也作为 `BackupBundle.cards` 的元素直接走 JSON 序列化导出。
+ * 备份协议通过独立的 schema DTO 映射，不让 Room 模型的重构隐式改变已发布的 JSON。
  */
-@Serializable
 @Entity(
     tableName = "cards",
-    // folder_id 外键：删除文件夹时把该文件夹下卡片的 folder_id 置空（卡片归「未分类」）。
-    // 历史坑：MIGRATION_5_6 早就在建表 SQL 里写了这条 ON DELETE SET NULL 外键，但实体一直没
-    // 声明，导致 (1) 全新安装的 cards 表其实没外键、SET NULL 不生效；(2) v5→v6 升级用户的 DB
-    // 带外键、与实体期望不一致、Room 启动校验崩溃。MIGRATION_6_7 统一两条路径，使实体声明
-    // 与磁盘 schema 一致。indices 必须同时声明：Room 期望被外键引用的子列上有 index_cards_folder_id。
+    // 删除文件夹只解除分组；folder_id 索引同时满足外键查询与 Room schema 不变量。
     foreignKeys = [
         ForeignKey(
             entity = CardFolderEntity::class,
@@ -70,58 +68,70 @@ data class CardEntity(
     val note: String = "",
     @ColumnInfo(name = "image_uri")
     val imageUri: String? = null,
-    @ColumnInfo(name = "image_source_type", defaultValue = "USER")
-    val imageSourceType: String = ImageSourceType.USER.name,
+    @ColumnInfo(name = "image_source_type", defaultValue = IMAGE_SOURCE_USER_KEY)
+    val imageSourceType: String = IMAGE_SOURCE_USER_KEY,
     @ColumnInfo(name = "image_provider_key")
     val imageProviderKey: String? = null,
-    @ColumnInfo(name = "card_orientation", defaultValue = "LANDSCAPE")
-    val cardOrientation: String = CardOrientation.LANDSCAPE.name,
+    @ColumnInfo(name = "card_orientation", defaultValue = CARD_ORIENTATION_LANDSCAPE_KEY)
+    val cardOrientation: String = CARD_ORIENTATION_LANDSCAPE_KEY,
     @ColumnInfo(name = "folder_id")
     val folderId: Long? = null,
     @ColumnInfo(name = "created_at_millis")
     val createdAtMillis: Long = System.currentTimeMillis(),
 )
 
-enum class ImageSourceType { NONE, PROVIDER, USER }
+enum class ImageSourceType(
+    val key: String,
+) {
+    NONE("NONE"),
+    PROVIDER("PROVIDER"),
+    USER(IMAGE_SOURCE_USER_KEY),
+    ;
+
+    companion object {
+        fun fromKey(key: String): ImageSourceType = entries.firstOrNull { it.key == key } ?: NONE
+    }
+}
 
 /**
  * 把数据库中的卡面来源安全解析成枚举。未知值按纯色处理，避免外部导入或未来版本
  * 写入的新枚举值让旧版应用崩溃。
  */
 val CardEntity.imageSourceTypeEnum: ImageSourceType
-    get() = runCatching { ImageSourceType.valueOf(imageSourceType) }.getOrDefault(ImageSourceType.NONE)
+    get() = ImageSourceType.fromKey(imageSourceType)
 
 /**
  * CardEntity 的辅助属性：把数据库存的 [CardEntity.cardOrientation] (String)
  * 安全转成 [CardOrientation] enum。**所有读卡面朝向的 UI 代码都走这个**，
- * 不要在调用点再写 `runCatching { CardOrientation.valueOf(...) }.getOrDefault(...)`。
+ * 不要在调用点重复解析持久化字符串。
  *
  * 历史数据里如果出现异常字符串（手动改过 db、外部导入），回退到 LANDSCAPE——
  * 因为 PORTRAIT 是后期加的字段，老数据不可能是 PORTRAIT，fallback 安全。
  */
 val CardEntity.cardOrientationEnum: CardOrientation
-    get() = runCatching { CardOrientation.valueOf(cardOrientation) }.getOrDefault(CardOrientation.LANDSCAPE)
+    get() = CardOrientation.fromKey(cardOrientation)
 
-/** 卡片只在当前时刻严格晚于有效截止时刻后才算过期。 */
-fun CardEntity.isExpiredAt(nowMillis: Long): Boolean = validUntilMillis?.let { nowMillis > it } == true
+/** 有效期是本地日历日期；用户所在时区进入次日后才算过期。 */
+fun CardEntity.isExpiredAt(
+    now: Instant,
+    zoneId: ZoneId,
+): Boolean = validUntilMillis?.let { DateToken.toLocalDate(it).isBefore(now.atZone(zoneId).toLocalDate()) } == true
 
 /**
  * 卡片朝向（与卡面物理方向一致）。
  *
- * **aspectRatio 走这里、不走组件里**——把"标准卡比例"作为领域知识挂在
- * 数据模型上，UI 组件只是消费方。这样做的好处：
- * 1) 任何新加的预览/列表/详情渲染位置，都从 `cardOrientation.aspectRatio`
- *    读，不会再写出一份 1.586f 散落各处；
- * 2) 哪天接 Apple Wallet、Google Wallet 等比例不同的卡规格，
- *    改一处即可（甚至可以按 orientation 套不同比例）；
- * 3) 测试可以断言 enum 上的比例而不是去测量像素。
- *
- * ISO/IEC 7810 ID-1 标准卡（CR80）：85.60 mm × 53.98 mm ⇒ 1.586:1。
- * PORTRAIT 旋转 90°，宽高比变 1:1.586 = 0.631。
+ * [aspectRatio] 始终表示宽 / 高；卡面比例集中在朝向模型中，预览、列表与详情共用同一语义。
+ * ISO/IEC 7810 ID-1 横版比例约为 1.586:1；竖版取其倒数。
  */
 enum class CardOrientation(
+    val key: String,
     val aspectRatio: Float,
 ) {
-    LANDSCAPE(1.586f),
-    PORTRAIT(0.631f),
+    LANDSCAPE(CARD_ORIENTATION_LANDSCAPE_KEY, 1.586f),
+    PORTRAIT("PORTRAIT", 0.631f),
+    ;
+
+    companion object {
+        fun fromKey(key: String): CardOrientation = entries.firstOrNull { it.key == key } ?: LANDSCAPE
+    }
 }

@@ -1,28 +1,44 @@
 name: Build APK
 
-# 手动触发（Actions 页面点 "Run workflow"，可选任意分支）或推送到 main 时构建 release APK。
-# 产物：1) 本次运行的 Artifacts（cardrecord-release-apk，zip，需登录）；
-#       2) 发到滚动预发布 Release「apk-latest」，提供免登录的 .apk 直链（手机可直接下）。
+# 只有 main push 或明确选择 main 的手动运行才会接触正式签名 Secrets 并生成 APK。
+# workflow_dispatch 选择其他 ref 时，正式构建 job 会在 runner 启动前直接跳过。
 on:
   workflow_dispatch:
   push:
     branches: [ main ]
 
-# 需要 write 才能由 runner 创建/更新 Release（不受本沙箱 tag push 限制，走 GITHUB_TOKEN）
 permissions:
-  contents: write
+  contents: read
 
-# 所有运行串行更新同一个 apk-latest；不中途取消，避免 tag 已移动但资产尚未覆盖。
+# 滚动测试包串行发布；每个 job 还会核对 main 当前头，拒绝重跑旧提交。
 concurrency:
   group: build-apk-release
   cancel-in-progress: false
 
 jobs:
-  build-apk:
+  verify-sign:
+    name: Verify and sign
+    if: ${{ github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') }}
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - name: Checkout
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+
+      - name: Reject stale main run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          current_main="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')"
+          if [ "$current_main" != "$GITHUB_SHA" ]; then
+            echo "::error::拒绝为旧提交签名：main=$current_main，run=$GITHUB_SHA"
+            exit 1
+          fi
 
       - name: Set up JDK 17
         uses: actions/setup-java@c1e323688fd81a25caa38c78aa6df2d33d3e20d9 # v4
@@ -37,20 +53,34 @@ jobs:
         run: |
           yes | sdkmanager "platforms;android-36" "build-tools;36.0.0" "platform-tools" > /dev/null
 
-      # CI 显式安装与 Wrapper 相同的 Gradle 版本，便于 action 缓存和版本审计。
-      - name: Set up Gradle
+      # 仅提供缓存和构建报告；Gradle 版本由经过校验和固定的 Wrapper 唯一决定。
+      - name: Set up Gradle cache
         uses: gradle/actions/setup-gradle@48b5f213c81028ace310571dc5ec0fbbca0b2947 # v4
         with:
-          gradle-version: '9.4.1'
           dependency-graph: disabled
 
-      # gradle.properties 里写死的 127.0.0.1:18080 是本地沙箱的出口代理，
-      # runner 上不存在，会让依赖下载卡死/失败。CI 运行时剥掉这几行
-      # （只改 runner 的工作副本，不提交回仓库，沙箱构建仍可用代理）。
-      - name: Disable sandbox-only Maven proxy
+      # 本地代理在 GitHub runner 上不存在，只修改本次运行的工作副本。
+      - name: Disable local Maven proxy
         run: |
           sed -i -E '/^systemProp\.(http|https)\.(proxyHost|proxyPort|nonProxyHosts)=/d' gradle.properties
 
+      # 发布不能借用另一个 workflow 的成功状态；本次运行必须独立通过全部门禁。
+      - name: Verify release source
+        run: ./gradlew ktlintCheck :app:testDebugUnitTest :app:lintRelease --no-daemon --stacktrace
+
+      - name: Recheck main before restoring signing key
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          current_main="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')"
+          if [ "$current_main" != "$GITHUB_SHA" ]; then
+            echo "::error::main 已前进到 $current_main，旧提交 $GITHUB_SHA 不再接触签名密钥。"
+            exit 1
+          fi
+
+      # 门禁通过后才把签名密钥写入 runner 临时目录，缩短敏感文件驻留时间。
       - name: Restore release keystore
         env:
           RELEASE_KEYSTORE_BASE64: ${{ secrets.CARDRECORD_RELEASE_KEYSTORE_BASE64 }}
@@ -67,7 +97,7 @@ jobs:
           CARDRECORD_RELEASE_STORE_PASSWORD: ${{ secrets.CARDRECORD_RELEASE_STORE_PASSWORD }}
           CARDRECORD_RELEASE_KEY_ALIAS: ${{ secrets.CARDRECORD_RELEASE_KEY_ALIAS }}
           CARDRECORD_RELEASE_KEY_PASSWORD: ${{ secrets.CARDRECORD_RELEASE_KEY_PASSWORD }}
-        run: gradle :app:assembleRelease --no-daemon --stacktrace
+        run: ./gradlew :app:assembleRelease --no-daemon --stacktrace
 
       - name: Verify release signature
         env:
@@ -76,57 +106,271 @@ jobs:
         run: |
           set -euo pipefail
           test -n "$EXPECTED_CERT_SHA256"
-          actual="$(keytool -printcert -jarfile app/build/outputs/apk/release/app-release.apk | awk -F': ' '/SHA256:/{print $2; exit}')"
+          apk='app/build/outputs/apk/release/app-release.apk'
+          actual="$(keytool -printcert -jarfile "$apk" | awk -F': ' '/SHA256:/{print $2; exit}')"
           test "$actual" = "$EXPECTED_CERT_SHA256"
-          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs app/build/outputs/apk/release/app-release.apk
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs "$apk"
+
+      - name: Record release version
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -oP 'versionName = "\K[^"]+' app/build.gradle.kts \
+            > app/build/outputs/apk/release/version-name.txt
 
       - name: Delete release keystore
         if: ${{ always() }}
         run: rm -f "$RUNNER_TEMP/cardrecord-release.p12"
 
-      - name: Upload APK artifact
+      - name: Upload verified APK
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: cardrecord-release-apk
-          path: app/build/outputs/apk/release/app-release.apk
+          path: |
+            app/build/outputs/apk/release/app-release.apk
+            app/build/outputs/apk/release/version-name.txt
           if-no-files-found: error
 
-      # 读出 versionName，仅用于 Release 标题/说明展示
-      - name: Read versionName
-        id: ver
-        run: echo "name=$(grep -oP 'versionName = \"\K[^\"]+' app/build.gradle.kts)" >> "$GITHUB_OUTPUT"
+  publish:
+    name: Publish rolling release
+    needs: verify-sign
+    if: ${{ github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download verified APK
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: cardrecord-release-apk
+          path: release
 
-      - name: Move rolling tag to this build
+      - name: Publish asset with rollback, then move tag and verify
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
-          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/apk-latest" >/dev/null 2>&1; then
+          apk='release/app-release.apk'
+          version_name="$(cat release/version-name.txt)"
+          expected_digest="$(sha256sum "$apk" | awk '{print $1}')"
+
+          current_main_sha() {
+            gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha'
+          }
+
+          assert_current_main() {
+            local current
+            current="$(current_main_sha)"
+            if [ "$current" != "$GITHUB_SHA" ]; then
+              echo "::error::main 已前进到 $current，拒绝用旧提交 $GITHUB_SHA 更新滚动 Release。"
+              return 1
+            fi
+          }
+
+          # concurrency 只能约束运行顺序；显式头检查同时拦截旧 run 的 Re-run。
+          assert_current_main
+
+          release_api="repos/$GITHUB_REPOSITORY/releases/tags/apk-latest"
+          release_before="$RUNNER_TEMP/release-before.json"
+          metadata_before="$RUNNER_TEMP/release-metadata-before.json"
+          gh api "$release_api" > "$release_before"
+          release_id="$(jq -r '.id' "$release_before")"
+          old_tag_sha="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/apk-latest" --jq '.object.sha')"
+          test -n "$release_id"
+          test -n "$old_tag_sha"
+          jq '{name, body, draft, prerelease}' "$release_before" > "$metadata_before"
+
+          staged_name="app-release-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${GITHUB_SHA}.apk"
+          rollback_name="app-release-rollback-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.apk"
+          staged_apk="release/$staged_name"
+          cp "$apk" "$staged_apk"
+
+          asset_id_by_name() {
+            gh api "repos/$GITHUB_REPOSITORY/releases/$release_id" \
+              | jq -r --arg name "$1" '[.assets[] | select(.name == $name) | .id][0] // empty'
+          }
+
+          staged_id=''
+          old_asset_id="$(asset_id_by_name 'app-release.apk')"
+          existing_staged_id="$(asset_id_by_name "$staged_name")"
+          existing_rollback_id="$(asset_id_by_name "$rollback_name")"
+          test -z "$existing_staged_id"
+          test -z "$existing_rollback_id"
+
+          rollback_publish() {
+            local status="$1"
+            local cleanup_id fixed_id old_name current_tag current_metadata expected_metadata
+            local fixed_count fixed_current_id staged_remaining rollback_remaining
+            local rollback_failed=0
+            trap - ERR INT TERM
+            set +e
+            echo '::warning::滚动 Release 发布失败，正在恢复上一个已验证状态。'
+
+            # 新资产即使已改成固定名，ID 也不变；先清掉它再恢复旧名。
+            cleanup_id="$staged_id"
+            if [ -z "$cleanup_id" ]; then
+              cleanup_id="$(asset_id_by_name "$staged_name")"
+            fi
+            if [ -n "$cleanup_id" ] && [ "$cleanup_id" != "$old_asset_id" ]; then
+              gh api --method DELETE "repos/$GITHUB_REPOSITORY/releases/assets/$cleanup_id" >/dev/null \
+                || rollback_failed=1
+            fi
+
+            if [ -n "$old_asset_id" ]; then
+              old_name="$(gh api "repos/$GITHUB_REPOSITORY/releases/assets/$old_asset_id" --jq '.name' 2>/dev/null)"
+              if [ -z "$old_name" ]; then
+                rollback_failed=1
+              fi
+              if [ -n "$old_name" ] && [ "$old_name" != 'app-release.apk' ]; then
+                fixed_id="$(asset_id_by_name 'app-release.apk')"
+                if [ -n "$fixed_id" ] && [ "$fixed_id" != "$old_asset_id" ]; then
+                  gh api --method DELETE "repos/$GITHUB_REPOSITORY/releases/assets/$fixed_id" >/dev/null \
+                    || rollback_failed=1
+                fi
+                gh api --method PATCH "repos/$GITHUB_REPOSITORY/releases/assets/$old_asset_id" \
+                  -f name='app-release.apk' >/dev/null \
+                  || rollback_failed=1
+              fi
+            fi
+
+            gh api --method PATCH "repos/$GITHUB_REPOSITORY/releases/$release_id" \
+              --input "$metadata_before" >/dev/null \
+              || rollback_failed=1
             gh api --method PATCH "repos/$GITHUB_REPOSITORY/git/refs/tags/apk-latest" \
-              -f sha="$GITHUB_SHA" -F force=true >/dev/null
-          else
-            gh api --method POST "repos/$GITHUB_REPOSITORY/git/refs" \
-              -f ref='refs/tags/apk-latest' -f sha="$GITHUB_SHA" >/dev/null
+              -f sha="$old_tag_sha" -F force=true >/dev/null \
+              || rollback_failed=1
+
+            # 回滚不是“尽力而为”：明确核对资产、元数据和 tag 都已恢复。
+            current_tag="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/apk-latest" --jq '.object.sha' 2>/dev/null)"
+            if [ "$current_tag" != "$old_tag_sha" ]; then
+              rollback_failed=1
+            fi
+            current_metadata="$(
+              gh api "repos/$GITHUB_REPOSITORY/releases/$release_id" 2>/dev/null \
+                | jq -S '{name, body, draft, prerelease}'
+            )"
+            expected_metadata="$(jq -S . "$metadata_before")"
+            if [ -z "$current_metadata" ] || [ "$current_metadata" != "$expected_metadata" ]; then
+              rollback_failed=1
+            fi
+            fixed_count="$(
+              gh api "repos/$GITHUB_REPOSITORY/releases/$release_id" 2>/dev/null \
+                | jq '[.assets[] | select(.name == "app-release.apk")] | length'
+            )"
+            fixed_current_id="$(asset_id_by_name 'app-release.apk')"
+            if [ -n "$old_asset_id" ]; then
+              if [ "$fixed_count" != '1' ] || [ "$fixed_current_id" != "$old_asset_id" ]; then
+                rollback_failed=1
+              fi
+            elif [ "$fixed_count" != '0' ]; then
+              rollback_failed=1
+            fi
+            staged_remaining="$(asset_id_by_name "$staged_name")"
+            rollback_remaining="$(asset_id_by_name "$rollback_name")"
+            if [ -n "$staged_remaining" ] || [ -n "$rollback_remaining" ]; then
+              rollback_failed=1
+            fi
+
+            if [ "$rollback_failed" -ne 0 ]; then
+              echo '::error::滚动 Release 自动回滚未能恢复全部旧状态，需要人工检查资产、元数据与 tag。'
+            else
+              echo '::notice::滚动 Release 已恢复到发布前状态。'
+            fi
+            exit "$status"
+          }
+          trap 'rollback_publish $?' ERR
+          trap 'rollback_publish 130' INT
+          trap 'rollback_publish 143' TERM
+
+          # 旧固定资产仍在线时先上传、校验唯一暂存资产。
+          gh release upload apk-latest "$staged_apk" --repo "$GITHUB_REPOSITORY"
+          staged_id="$(asset_id_by_name "$staged_name")"
+          test -n "$staged_id"
+          staged_digest="$(gh api "repos/$GITHUB_REPOSITORY/releases/assets/$staged_id" --jq '.digest')"
+          test "$staged_digest" = "sha256:$expected_digest"
+
+          # 上传暂存资产可能耗时；在触碰旧固定资产前再核对一次 main。
+          assert_current_main
+
+          # 暂存资产完整后，把旧固定资产改成本次独有回滚名，再切换新资产。
+          if [ -n "$old_asset_id" ]; then
+            gh api --method PATCH "repos/$GITHUB_REPOSITORY/releases/assets/$old_asset_id" \
+              -f name="$rollback_name" >/dev/null
+            old_asset_name="$(gh api "repos/$GITHUB_REPOSITORY/releases/assets/$old_asset_id" --jq '.name')"
+            test "$old_asset_name" = "$rollback_name"
+          fi
+          gh api --method PATCH "repos/$GITHUB_REPOSITORY/releases/assets/$staged_id" \
+            -f name='app-release.apk' >/dev/null
+          staged_asset_name="$(gh api "repos/$GITHUB_REPOSITORY/releases/assets/$staged_id" --jq '.name')"
+          test "$staged_asset_name" = 'app-release.apk'
+
+          notes="$RUNNER_TEMP/release-notes.md"
+          cat > "$notes" <<EOF
+          自动构建的最新可安装 APK（使用 CardRecord 固定发布密钥签名；此 Release 是滚动测试渠道）。
+          - 版本：v${version_name}
+          - 提交：${GITHUB_SHA}
+          - 分支：${GITHUB_REF_NAME}
+
+          如果手机上安装的是 2026-07-15 之前使用临时 debug 证书的测试包，请先导出 JSON 备份，再卸载旧包、安装本 APK 并导入；直接卸载会清除本地数据。
+          EOF
+          gh release edit apk-latest \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "最新测试包 v${version_name}" \
+            --notes-file "$notes" \
+            --prerelease
+
+          # 新资产和发布说明就绪后才移动轻量 tag。
+          assert_current_main
+          gh api --method PATCH "repos/$GITHUB_REPOSITORY/git/refs/tags/apk-latest" \
+            -f sha="$GITHUB_SHA" -F force=true >/dev/null
+
+          actual_tag="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/apk-latest" --jq '.object.sha')"
+          test "$actual_tag" = "$GITHUB_SHA"
+
+          asset_id="$(asset_id_by_name 'app-release.apk')"
+          test -n "$asset_id"
+          api_digest="$(gh api "repos/$GITHUB_REPOSITORY/releases/assets/$asset_id" --jq '.digest')"
+          test "$asset_id" = "$staged_id"
+          test "$api_digest" = "sha256:$expected_digest"
+          gh api -H 'Accept: application/octet-stream' \
+            "repos/$GITHUB_REPOSITORY/releases/assets/$asset_id" > "$RUNNER_TEMP/published.apk"
+          published_digest="$(sha256sum "$RUNNER_TEMP/published.apk" | awk '{print $1}')"
+          test "$published_digest" = "$expected_digest"
+
+          # 若发布期间 main 已前进，就在旧资产仍可恢复时主动回滚本次结果。
+          assert_current_main
+
+          # 新状态已经完整核验，从这里开始只清理旧副本；即使清理 API 暂时失败，
+          # 也不能再删除已发布的新固定资产。
+          trap - ERR INT TERM
+          if [ -n "$old_asset_id" ]; then
+            gh api --method DELETE "repos/$GITHUB_REPOSITORY/releases/assets/$old_asset_id" >/dev/null
+            old_asset_id=''
           fi
 
-      # 把 APK 发到滚动预发布「apk-latest」：每次构建把该 tag 移到当前提交并覆盖同名资产，
-      # 下载直链固定不变：
-      #   https://github.com/<owner>/<repo>/releases/download/apk-latest/app-release.apk
-      - name: Publish APK to rolling pre-release (apk-latest)
-        # v2 固定到完整 commit，避免第三方 tag 漂移。
-        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65
-        with:
-          tag_name: apk-latest
-          name: 最新测试包 v${{ steps.ver.outputs.name }}
-          prerelease: true
-          body: |
-            自动构建的最新可安装 APK（使用 CardRecord 固定发布密钥签名；此 Release 仍是滚动测试渠道）。
-            - 版本：v${{ steps.ver.outputs.name }}
-            - 提交：${{ github.sha }}
-            - 分支：${{ github.ref_name }}
+          # 清理由 runner 被终止或旧 workflow 遗留的暂存/回滚 APK。
+          mapfile -t orphan_asset_ids < <(
+            gh api "repos/$GITHUB_REPOSITORY/releases/$release_id" \
+              | jq -r '.assets[] | select(.name | test("^app-release-.*\\.apk$")) | .id'
+          )
+          for orphan_id in "${orphan_asset_ids[@]}"; do
+            gh api --method DELETE "repos/$GITHUB_REPOSITORY/releases/assets/$orphan_id" >/dev/null
+          done
 
-            ⚠️ 如果手机上安装的是 2026-07-15 之前的旧测试包，它使用不同的临时 debug 证书，不能直接覆盖安装。请先在旧 App 中导出 JSON 配置，再卸载旧包、安装本 APK，最后导入 JSON；直接卸载会清除本地数据。
-
-            直接下载下方 Assets 里的 `app-release.apk` 即可安装。
-          files: app/build/outputs/apk/release/app-release.apk
+          fixed_count="$(
+            gh api "repos/$GITHUB_REPOSITORY/releases/$release_id" \
+              | jq '[.assets[] | select(.name == "app-release.apk")] | length'
+          )"
+          apk_asset_count="$(
+            gh api "repos/$GITHUB_REPOSITORY/releases/$release_id" \
+              | jq '[.assets[] | select(.name | test("^app-release.*\\.apk$"))] | length'
+          )"
+          final_asset_id="$(asset_id_by_name 'app-release.apk')"
+          final_digest="$(
+            gh api "repos/$GITHUB_REPOSITORY/releases/assets/$final_asset_id" --jq '.digest'
+          )"
+          test "$fixed_count" = '1'
+          test "$apk_asset_count" = '1'
+          test "$final_asset_id" = "$staged_id"
+          test "$final_digest" = "sha256:$expected_digest"

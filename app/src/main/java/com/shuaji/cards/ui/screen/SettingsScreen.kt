@@ -1,10 +1,9 @@
 package com.shuaji.cards.ui.screen
 
-import android.content.Intent
-import android.net.Uri
-import android.provider.DocumentsContract
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -15,11 +14,14 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.BrightnessMedium
@@ -44,7 +46,6 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -55,28 +56,25 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.toArgb
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.hideFromAccessibility
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.shuaji.cards.R
+import com.shuaji.cards.data.ColorSource
 import com.shuaji.cards.data.ThemeMode
+import com.shuaji.cards.data.backup.BackupFileInfo
 import com.shuaji.cards.data.backup.ImportMode
-import com.shuaji.cards.data.local.ImageSourceType
 import com.shuaji.cards.ui.AppLanguage
 import com.shuaji.cards.ui.ViewModelFactories
 import com.shuaji.cards.ui.component.ModernColorPicker
 import com.shuaji.cards.ui.theme.DefaultBrandPrimary
 import com.shuaji.cards.ui.theme.parseSeedColor
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.jsonArray
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -103,39 +101,23 @@ import java.util.Locale
  *
  * SnackbarHost 由 `ShuajiApp` 顶层持有，本页只发布操作结果。
  *
- * 用户可见的临时状态（[pendingImportUriString]、[ImportModeStep]）使用
- * [rememberSaveable] 而非 [androidx.compose.runtime.remember]，旋转屏幕 /
- * 进程恢复后状态不会丢。
+ * 导入文件先由 [SettingsViewModel.inspectBackup] 走与正式导入完全相同的受限流式解码；
+ * 只有结构校验成功后才显示模式确认对话框及记录数量。
  *
- * 导入文件后查询 `DocumentsContract.Document.COLUMN_LAST_MODIFIED`，
- * 并在确认对话框中显示文件最后修改时间。
- *
- * `readBackupFileInfo` 在 `Dispatchers.IO` 运行，避免文件 I/O 阻塞主线程。
- * 它会读取整个文件并构建 JSON 树，但不会反序列化为数据库 Entity。
- *
- * 导入文件 URI 调 `takePersistableUriPermission` 持久化；不导入时
- * `releasePersistableUriPermission` 释放——避免 grant slot 永久占用。
+ * 备份是一次性读取，不申请持久化 URI 权限。进程若在确认期间结束，用户重新选择文件即可；
+ * 这样不会占用授权槽位，也不会误撤销自定义卡面等其他功能持有的权限。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(onBack: () -> Unit) {
     val viewModel: SettingsViewModel = viewModel(factory = ViewModelFactories.Settings)
-    val state by viewModel.state.collectAsState()
+    val state by viewModel.state.collectAsStateWithLifecycle()
+    val pendingImport by viewModel.pendingImport.collectAsStateWithLifecycle()
+    val themeSettings by viewModel.themeSettings.collectAsStateWithLifecycle(initialValue = null)
     val coroutineScope = rememberCoroutineScope()
-    val context = LocalContext.current
+    val isWorking = state is SettingsUiState.Working
 
-    // 选完文件后要二次确认的 URI（空 = 还没选 / 已被处理）；用 String 存比 Uri 简单
-    var pendingImportUriString by rememberSaveable { mutableStateOf<String?>(null) }
-    val pendingImportUri: Uri? = pendingImportUriString?.let(Uri::parse)
-
-    // 解析文件后获取的备份摘要（行数 + 最后修改时间）—— 二次确认时显示
-    var pendingImportInfo by rememberSaveable(
-        saver = BackupFileInfoStateSaver,
-    ) { mutableStateOf<BackupFileInfo?>(null) }
-
-    // 记录持久读权限是否获取成功，供 ImportModeDialog 显示警告。
-    // 做 UI 警告。用 rememberSaveable 保证旋转屏幕后状态不丢。
-    var tookPersistable by rememberSaveable { mutableStateOf(true) }
+    BackHandler(enabled = isWorking, onBack = viewModel::cancel)
 
     // 自定义颜色取色器对话框显示状态
     var showColorPicker by rememberSaveable { mutableStateOf(false) }
@@ -152,38 +134,14 @@ fun SettingsScreen(onBack: () -> Unit) {
     val importLauncher =
         rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
             if (uri != null) {
-                // 持久化读权限：OpenDocument 拿到的 URI 进程级读权限在
-                // 进程被 LMK 杀掉后会失效。持久化后 LMK 杀进程后用户回来仍能导入
-                val tookOk =
-                    runCatching {
-                        context.contentResolver.takePersistableUriPermission(
-                            uri,
-                            Intent.FLAG_GRANT_READ_URI_PERMISSION,
-                        )
-                        true
-                    }.getOrDefault(false)
-                tookPersistable = tookOk
-                pendingImportUriString = uri.toString()
-                pendingImportInfo = null // 清掉旧的（如果有）
-                // 后台 IO 线程读取文件并解析摘要。
+                viewModel.dismissPendingImport()
                 coroutineScope.launch {
-                    val info =
-                        withContext(Dispatchers.IO) {
-                            readBackupFileInfo(context.contentResolver, uri)
-                        }
-                    pendingImportInfo = info
-                    // 持久化失败时记录日志，并由 ImportModeDialog 显示警告。
-                    if (!tookOk) {
-                        android.util.Log.w(
-                            "SettingsScreen",
-                            "takePersistableUriPermission 失败，导入 URI $uri 在进程重启后将不可访问",
-                        )
-                    }
+                    viewModel.inspectBackup(uri)
                 }
             }
         }
 
-    // Done 状态变化 → acknowledge（解 ack 只清 state；SharedFlow 事件已发出去了）
+    // Done 状态变化 → acknowledge；完成消息由进程级一次性事件队列独立交付。
     LaunchedEffect(state) {
         if (state is SettingsUiState.Done) {
             viewModel.acknowledge()
@@ -191,29 +149,11 @@ fun SettingsScreen(onBack: () -> Unit) {
     }
 
     // 导入模式选择 + 二次确认
-    // tookPersistable 用于在确认时提示文件访问权限未持久化。
-    pendingImportUri?.let { uri ->
+    pendingImport?.let { pending ->
         ImportModeDialog(
-            info = pendingImportInfo,
-            tookPersistable = tookPersistable,
-            onDismiss = {
-                // 用户取消时释放持久化读权限，避免 grant slot 占用。
-                pendingImportUriString?.let { uriStr ->
-                    runCatching {
-                        context.contentResolver.releasePersistableUriPermission(
-                            Uri.parse(uriStr),
-                            Intent.FLAG_GRANT_READ_URI_PERMISSION,
-                        )
-                    }
-                }
-                pendingImportUriString = null
-                pendingImportInfo = null
-            },
-            onConfirm = { mode ->
-                pendingImportUriString = null
-                pendingImportInfo = null
-                viewModel.import(uri, mode)
-            },
+            info = pending.info,
+            onDismiss = viewModel::dismissPendingImport,
+            onConfirm = viewModel::importPending,
         )
     }
 
@@ -222,8 +162,11 @@ fun SettingsScreen(onBack: () -> Unit) {
             TopAppBar(
                 title = { Text(stringResource(R.string.settings_title)) },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null)
+                    IconButton(onClick = { if (isWorking) viewModel.cancel() else onBack() }) {
+                        Icon(
+                            Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = stringResource(R.string.common_back),
+                        )
                     }
                 },
             )
@@ -238,7 +181,12 @@ fun SettingsScreen(onBack: () -> Unit) {
                     .padding(padding),
         ) {
             val enabled = state is SettingsUiState.Idle
-            LazyColumn(contentPadding = PaddingValues(vertical = 8.dp)) {
+            val working = state is SettingsUiState.Working
+            LazyColumn(
+                modifier = if (working) Modifier.semantics { hideFromAccessibility() } else Modifier,
+                contentPadding = PaddingValues(vertical = 8.dp),
+                userScrollEnabled = !working,
+            ) {
                 item {
                     Text(
                         text = stringResource(R.string.settings_section_data),
@@ -302,7 +250,6 @@ fun SettingsScreen(onBack: () -> Unit) {
                 }
                 // 主题模式：跟随系统 / 浅色 / 深色
                 item {
-                    val themeSettings by viewModel.themeSettings.collectAsState(initial = null)
                     val currentMode = themeSettings?.themeMode ?: ThemeMode.SYSTEM
                     ListItem(
                         leadingContent = {
@@ -314,16 +261,20 @@ fun SettingsScreen(onBack: () -> Unit) {
                         },
                         headlineContent = { Text(stringResource(R.string.settings_theme_mode)) },
                         supportingContent = {
-                            Text(
-                                when (currentMode) {
-                                    ThemeMode.SYSTEM -> stringResource(R.string.settings_theme_mode_system)
-                                    ThemeMode.LIGHT -> stringResource(R.string.settings_theme_mode_light)
-                                    ThemeMode.DARK -> stringResource(R.string.settings_theme_mode_dark)
-                                },
-                            )
+                            if (themeSettings == null) {
+                                Text(stringResource(R.string.common_loading))
+                            } else {
+                                Text(
+                                    when (currentMode) {
+                                        ThemeMode.SYSTEM -> stringResource(R.string.settings_theme_mode_system)
+                                        ThemeMode.LIGHT -> stringResource(R.string.settings_theme_mode_light)
+                                        ThemeMode.DARK -> stringResource(R.string.settings_theme_mode_dark)
+                                    },
+                                )
+                            }
                         },
                         modifier =
-                            Modifier.clickable(enabled = enabled) {
+                            Modifier.clickable(enabled = enabled && themeSettings != null) {
                                 // 循环切换：SYSTEM → LIGHT → DARK → SYSTEM
                                 val next =
                                     when (currentMode) {
@@ -337,8 +288,7 @@ fun SettingsScreen(onBack: () -> Unit) {
                 }
                 // 颜色来源：系统动态 / 自定义
                 item {
-                    val themeSettings by viewModel.themeSettings.collectAsState(initial = null)
-                    val currentSource = themeSettings?.colorSource ?: com.shuaji.cards.data.ColorSource.SYSTEM_DYNAMIC
+                    val currentSource = themeSettings?.colorSource ?: ColorSource.SYSTEM_DYNAMIC
                     ListItem(
                         leadingContent = {
                             Icon(
@@ -349,24 +299,26 @@ fun SettingsScreen(onBack: () -> Unit) {
                         },
                         headlineContent = { Text(stringResource(R.string.settings_color_source)) },
                         supportingContent = {
-                            Text(
-                                when (currentSource) {
-                                    com.shuaji.cards.data.ColorSource.SYSTEM_DYNAMIC ->
-                                        stringResource(R.string.settings_color_source_system)
-                                    com.shuaji.cards.data.ColorSource.CUSTOM ->
-                                        stringResource(R.string.settings_color_source_custom)
-                                },
-                            )
+                            if (themeSettings == null) {
+                                Text(stringResource(R.string.common_loading))
+                            } else {
+                                Text(
+                                    when (currentSource) {
+                                        ColorSource.SYSTEM_DYNAMIC ->
+                                            stringResource(R.string.settings_color_source_system)
+                                        ColorSource.CUSTOM ->
+                                            stringResource(R.string.settings_color_source_custom)
+                                    },
+                                )
+                            }
                         },
                         modifier =
-                            Modifier.clickable(enabled = enabled) {
+                            Modifier.clickable(enabled = enabled && themeSettings != null) {
                                 // 二选一切换：SYSTEM_DYNAMIC ↔ CUSTOM
                                 val next =
                                     when (currentSource) {
-                                        com.shuaji.cards.data.ColorSource.SYSTEM_DYNAMIC ->
-                                            com.shuaji.cards.data.ColorSource.CUSTOM
-                                        com.shuaji.cards.data.ColorSource.CUSTOM ->
-                                            com.shuaji.cards.data.ColorSource.SYSTEM_DYNAMIC
+                                        ColorSource.SYSTEM_DYNAMIC -> ColorSource.CUSTOM
+                                        ColorSource.CUSTOM -> ColorSource.SYSTEM_DYNAMIC
                                     }
                                 viewModel.setColorSource(next)
                             },
@@ -374,8 +326,7 @@ fun SettingsScreen(onBack: () -> Unit) {
                 }
                 // 自定义取色器入口（CUSTOM 时显示）
                 item {
-                    val themeSettings by viewModel.themeSettings.collectAsState(initial = null)
-                    if (themeSettings?.colorSource == com.shuaji.cards.data.ColorSource.CUSTOM) {
+                    if (themeSettings?.colorSource == ColorSource.CUSTOM) {
                         ListItem(
                             leadingContent = {
                                 Icon(
@@ -421,7 +372,10 @@ fun SettingsScreen(onBack: () -> Unit) {
             if (state is SettingsUiState.Working) {
                 // 全屏半透遮挡，按钮 disable（列表里已处理）+ 居中进度 + 可见的「取消」按钮
                 Box(
-                    modifier = Modifier.fillMaxSize(),
+                    modifier =
+                        Modifier
+                            .fillMaxSize()
+                            .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.24f)),
                     contentAlignment = Alignment.Center,
                 ) {
                     Column(
@@ -441,7 +395,6 @@ fun SettingsScreen(onBack: () -> Unit) {
 
     // 自定义颜色取色器对话框
     if (showColorPicker) {
-        val themeSettings by viewModel.themeSettings.collectAsState(initial = null)
         // 等设置加载完成再建取色器：themeSettings 首帧为 null，若此时就建 picker，
         // initialColor 会被定成默认色且之后无法回填——必须拿到已保存的 seedColorHex 再建，
         // 这样重新打开时取色器停在「当前已选颜色」而非默认色。
@@ -452,10 +405,17 @@ fun SettingsScreen(onBack: () -> Unit) {
                 onDismissRequest = { showColorPicker = false },
                 title = { Text(stringResource(R.string.settings_custom_color)) },
                 text = {
-                    ModernColorPicker(
-                        initialColor = savedColor,
-                        onColorSelected = { pickedColor = it },
-                    )
+                    Box(
+                        modifier =
+                            Modifier
+                                .heightIn(max = 440.dp)
+                                .verticalScroll(rememberScrollState()),
+                    ) {
+                        ModernColorPicker(
+                            initialColor = savedColor,
+                            onColorSelected = { pickedColor = it },
+                        )
+                    }
                 },
                 confirmButton = {
                     TextButton(
@@ -528,109 +488,6 @@ fun SettingsScreen(onBack: () -> Unit) {
 }
 
 /**
- * 用 `DocumentsContract.Document.COLUMN_LAST_MODIFIED` + 解析 JSON 顶层的
- * 「卡片/文件夹/流水数」算出来的备份文件元数据。
- *
- * - [cardCount] / [folderCount] / [transactionCount] 用于二次确认带计数
- * - [lastModifiedMillis] 用于「备份时间：xxx」展示
- * - [imageUriUserCount] 跨设备恢复时给用户「N 张卡需重新上传」警告
- *
- * 任一字段缺失/解析失败就降级为 `null`，UI 显示「未知」。
- */
-@Serializable
-data class BackupFileInfo(
-    val cardCount: Int,
-    val folderCount: Int,
-    val transactionCount: Int,
-    val imageUriUserCount: Int,
-    val lastModifiedMillis: Long?,
-)
-
-private val BackupFileInfoStateSaver: Saver<MutableState<BackupFileInfo?>, String> =
-    Saver(
-        save = { it.value?.let { v -> Json.encodeToString(BackupFileInfo.serializer(), v) } ?: "" },
-        restore = { json ->
-            mutableStateOf<BackupFileInfo?>(
-                if (json.isEmpty()) {
-                    null
-                } else {
-                    runCatching { Json.decodeFromString(BackupFileInfo.serializer(), json) }.getOrNull()
-                },
-            )
-        },
-    )
-
-/**
- * 读 SAF 选中的备份文件元数据。
- *
- * 用 [android.content.ContentResolver.query] 拿 `DocumentsContract.Document.COLUMN_LAST_MODIFIED` /
- * `DocumentsContract.Document.COLUMN_DISPLAY_NAME`。文件会整体读入内存，
- * `Json.parseToJsonElement` 也会构建完整 JSON 树；后续只从树中读取数组大小和
- * USER 类型卡片数，不反序列化为 [com.shuaji.cards.data.backup.BackupBundle]。
- *
- * **`runCatching` 兜底**：文件 IO / 解析失败都返回 `null`，UI 降级「未知」文案。
- */
-private suspend fun readBackupFileInfo(
-    resolver: android.content.ContentResolver,
-    uri: Uri,
-): BackupFileInfo? {
-    var lastModified: Long? = null
-    // DocumentsContract.Document.COLUMN_LAST_MODIFIED（API 19+）而不是
-    // OpenableColumns.LAST_MODIFIED（API 29+）——minSdk=26，旧的常量在 API 26-28 查不到。
-    resolver
-        .query(
-            uri,
-            arrayOf(DocumentsContract.Document.COLUMN_LAST_MODIFIED, DocumentsContract.Document.COLUMN_DISPLAY_NAME),
-            null,
-            null,
-            null,
-        )?.use { c ->
-            if (c.moveToFirst()) {
-                val idx = c.getColumnIndex(DocumentsContract.Document.COLUMN_LAST_MODIFIED)
-                if (idx >= 0 && !c.isNull(idx)) {
-                    lastModified = c.getLong(idx)
-                }
-            }
-        }
-    return runCatching {
-        resolver.openInputStream(uri)?.use { input ->
-            val text = input.readBytes().toString(Charsets.UTF_8)
-            val root = BackupFileInfoJson.parseToJsonElement(text).jsonObject
-
-            fun arraySize(key: String): Int = runCatching { root[key]?.jsonArray?.size ?: 0 }.getOrDefault(0)
-
-            val cardCount = arraySize("cards")
-            val folderCount = arraySize("folders")
-            val transactionCount = arraySize("transactions")
-
-            // imageUriUserCount = cards 里 imageSourceType == USER 的数量
-            // ——不用反序列化 CardEntity，直接读 jsonObject
-            var userCount = 0
-            runCatching {
-                val cardsArr = root["cards"]?.jsonArray
-                if (cardsArr != null) {
-                    for (cardEl in cardsArr) {
-                        val src = cardEl.jsonObject["imageSourceType"]?.jsonPrimitive?.content
-                        if (src == ImageSourceType.USER.name) userCount++
-                    }
-                }
-            }
-            BackupFileInfo(
-                cardCount = cardCount,
-                folderCount = folderCount,
-                transactionCount = transactionCount,
-                imageUriUserCount = userCount,
-                lastModifiedMillis = lastModified,
-            )
-        }
-    }.getOrNull()
-}
-
-/** 顶层共享 [Json] 实例，避免 `readBackupFileInfo` 每次调用都重建。 */
-private val BackupFileInfoJson =
-    Json { ignoreUnknownKeys = true }
-
-/**
  * 导入模式选择 + 二次确认。
  *
  * 用户视角：从备份恢复时，常见两种意图：
@@ -647,8 +504,7 @@ private val BackupFileInfoJson =
  */
 @Composable
 private fun ImportModeDialog(
-    info: BackupFileInfo?,
-    tookPersistable: Boolean,
+    info: BackupFileInfo,
     onDismiss: () -> Unit,
     onConfirm: (ImportMode) -> Unit,
 ) {
@@ -677,7 +533,9 @@ private fun ImportModeDialog(
             AlertDialog(
                 onDismissRequest = { step = ImportModeStep.SELECT },
                 title = { Text(stringResource(R.string.settings_import_replace_confirm_title)) },
-                text = { Text(confirmMessage(R.string.settings_import_replace_confirm_message_with_count, info, tookPersistable)) },
+                text = {
+                    Text(confirmMessage(R.string.settings_import_replace_confirm_message_with_count, info))
+                },
                 confirmButton = {
                     TextButton(onClick = { onConfirm(ImportMode.REPLACE) }) {
                         Text(stringResource(R.string.common_confirm))
@@ -693,7 +551,9 @@ private fun ImportModeDialog(
             AlertDialog(
                 onDismissRequest = { step = ImportModeStep.SELECT },
                 title = { Text(stringResource(R.string.settings_import_merge_confirm_title)) },
-                text = { Text(confirmMessage(R.string.settings_import_merge_confirm_message_with_count, info, tookPersistable)) },
+                text = {
+                    Text(confirmMessage(R.string.settings_import_merge_confirm_message_with_count, info))
+                },
                 confirmButton = {
                     TextButton(onClick = { onConfirm(ImportMode.MERGE) }) {
                         Text(stringResource(R.string.common_confirm))
@@ -720,41 +580,39 @@ private val ImportModeStepStateSaver: Saver<MutableState<ImportModeStep>, Int> =
 
 /**
  * 把「此备份包含 N 张卡 / M 个文件夹 / K 笔流水」+ 「其中 N 张卡需重新上传」+
- * 「备份时间：xxx」+ 「⚠️ 文件访问权限未持久化」拼起来。
- * 解析失败时 [info] = null，UI 显示「未知」降级。
+ * 「备份时间：xxx」拼起来。
+ * 对话框只接收仓库完整校验后的摘要，不存在以 0 冒充解析失败的降级路径。
  */
 @Composable
 private fun confirmMessage(
     @androidx.annotation.StringRes templateRes: Int,
-    info: BackupFileInfo?,
-    tookPersistable: Boolean,
+    info: BackupFileInfo,
 ): String {
     val template =
-        if (info != null) {
-            stringResource(
-                templateRes,
-                info.cardCount,
-                info.folderCount,
+        stringResource(
+            templateRes,
+            pluralStringResource(R.plurals.backup_count_cards, info.cardCount, info.cardCount),
+            pluralStringResource(R.plurals.backup_count_folders, info.folderCount, info.folderCount),
+            pluralStringResource(
+                R.plurals.backup_count_transactions,
                 info.transactionCount,
-            )
-        } else {
-            // 解析失败时去掉 % 占位——回退到"包含若干记录"
-            // 模板里 %1$d / %2$d / %3$d 必须有，0/0/0 表示未知
-            stringResource(templateRes, 0, 0, 0)
-        }
+                info.transactionCount,
+            ),
+        )
     val timeLine =
-        info?.lastModifiedMillis?.let {
+        info.lastModifiedMillis?.let {
             val fmt = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
             stringResource(R.string.settings_backup_time_label, fmt.format(Date(it)))
         } ?: ""
     val imageWarningLine =
-        info?.takeIf { it.imageUriUserCount > 0 }?.let {
-            stringResource(R.string.settings_dialog_image_warning, it.imageUriUserCount)
+        info.takeIf { it.imageUriUserCount > 0 }?.let {
+            pluralStringResource(
+                R.plurals.settings_dialog_image_warning,
+                it.imageUriUserCount,
+                it.imageUriUserCount,
+            )
         } ?: ""
-    // 持久化读权限失败时在确认内容中显示警告。
-    val persistWarningLine =
-        if (tookPersistable) "" else stringResource(R.string.settings_import_persist_warning)
-    return listOf(template, timeLine, imageWarningLine, persistWarningLine)
+    return listOf(template, timeLine, imageWarningLine)
         .filter { it.isNotEmpty() }
         .joinToString(separator = "\n")
 }

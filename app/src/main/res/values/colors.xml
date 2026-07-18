@@ -1,10 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!--
-        Activity 启动到 Compose 接管绘制之间的窗口背景色。
-        必须与 Theme.kt 中 lightColorScheme().background = DefaultBrandSurfaceLight (#F6FAFF)
-        完全一致，否则会有"白闪"或"色偏"。
-        设置独立的颜色资源是因为 themes.xml 是静态 XML，无法读 Compose 的运行时决策。
+        AppCompat 生效模式为浅色时的启动占位。
+        themes.xml 无法读取动态色或用户种子色，因此它只负责避免空白窗口，
+        不应被描述为运行时 ColorScheme 的单一真源。
     -->
     <color name="window_background">#F6FAFF</color>
 </resources>
