@@ -17,9 +17,9 @@ import kotlinx.serialization.Serializable
  * `@Required` 要求 JSON 显式包含 `version`；缺失时反序列化失败，
  * 避免用默认版本解析格式不明的备份。
  *
- * imageUri / imageProviderKey 这两个字段虽然依赖设备（content:// URI 在另一台设备失效），
- * 但仍按现状导出，以保留同设备恢复的可能性；跨设备恢复时这两个字段可能失效，
- * 这是 Android 文件系统的限制，UI 通过 [ImportResult.imageUriUserCount]
+ * imageProviderKey 是跨设备稳定的卡组织 key。只有 imageUri 依赖设备
+ * （content:// URI 在另一台设备可能失效），但仍按现状导出，以保留同设备恢复的可能性；
+ * UI 通过 [ImportResult.imageUriUserCount]
  * 提醒用户自定义卡面可能需要重新选择；导入过程不直接探测 URI 可访问性。
  */
 @Serializable

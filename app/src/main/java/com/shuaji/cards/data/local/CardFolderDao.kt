@@ -25,8 +25,8 @@ interface CardFolderDao {
     @Query("SELECT * FROM card_folders")
     suspend fun listAll(): List<CardFolderEntity>
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun upsert(folder: CardFolderEntity): Long
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insert(folder: CardFolderEntity): Long
 
     @Update
     suspend fun update(folder: CardFolderEntity)

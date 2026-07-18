@@ -44,6 +44,7 @@ import com.shuaji.cards.data.local.CardEntity
 import com.shuaji.cards.data.local.CardOrientation
 import com.shuaji.cards.data.local.ImageSourceType
 import com.shuaji.cards.data.local.cardOrientationEnum
+import com.shuaji.cards.data.local.imageSourceTypeEnum
 
 /**
  * 竖版宽度占父容器比例。
@@ -84,14 +85,10 @@ fun CardVisual(
     card: CardEntity,
     modifier: Modifier = Modifier,
     showNumber: Boolean = true,
-    showBank: Boolean = true,
-    showName: Boolean = true,
     contentLayout: CardVisualContentLayout = CardVisualContentLayout.STANDARD,
 ) {
     val network = CardNetworkProvider.fromKey(card.imageProviderKey)
-    val sourceType =
-        runCatching { ImageSourceType.valueOf(card.imageSourceType) }
-            .getOrDefault(ImageSourceType.NONE)
+    val sourceType = card.imageSourceTypeEnum
     val orientation = card.cardOrientationEnum
 
     Card(
@@ -108,8 +105,6 @@ fun CardVisual(
                     network = network,
                     sourceType = sourceType,
                     showNumber = showNumber,
-                    showBank = showBank,
-                    showName = showName,
                     contentLayout = contentLayout,
                 )
             CardOrientation.PORTRAIT ->
@@ -118,8 +113,6 @@ fun CardVisual(
                     network = network,
                     sourceType = sourceType,
                     showNumber = showNumber,
-                    showBank = showBank,
-                    showName = showName,
                     contentLayout = contentLayout,
                 )
         }
@@ -140,8 +133,6 @@ private fun LandscapeCardBody(
     network: CardNetworkProvider?,
     sourceType: ImageSourceType,
     showNumber: Boolean,
-    showBank: Boolean,
-    showName: Boolean,
     contentLayout: CardVisualContentLayout,
 ) {
     BoxWithConstraints(
@@ -154,8 +145,12 @@ private fun LandscapeCardBody(
         // 严格按 ISO 7810 ID-1 比例，比例单一来源是 CardOrientation.aspectRatio
         val height: Dp =
             (maxWidth / card.cardOrientationEnum.aspectRatio).coerceAtLeast(CARD_MIN_HEIGHT_DP.dp)
-        val networkLayout = resolveCardNetworkVisualLayout(maxWidth)
         val compact = isCompactCardContent(contentLayout, CardOrientation.LANDSCAPE)
+        val networkLayout =
+            resolveCardNetworkVisualLayout(
+                cardWidth = maxWidth,
+                providerDecorationScale = if (compact) COMPACT_PROVIDER_DECORATION_SCALE else 1f,
+            )
         val contentPlacement =
             resolveCardContentPlacement(
                 contentLayout = contentLayout,
@@ -188,8 +183,7 @@ private fun LandscapeCardBody(
             if (shouldShowProviderDecoration(sourceType, network != null)) {
                 ProviderNetworkDecoration(
                     network = checkNotNull(network),
-                    layout = networkLayout,
-                    compact = compact,
+                    layout = networkLayout.providerDecoration,
                 )
             }
             CardContent(
@@ -205,8 +199,6 @@ private fun LandscapeCardBody(
                 card = card,
                 contentEndPaddings = contentEndPaddings,
                 showNumber = showNumber,
-                showBank = showBank,
-                showName = showName,
                 compactName = compact,
             )
             if (shouldShowNetworkBadge(sourceType, network != null)) {
@@ -225,8 +217,6 @@ private fun PortraitCardBody(
     network: CardNetworkProvider?,
     sourceType: ImageSourceType,
     showNumber: Boolean,
-    showBank: Boolean,
-    showName: Boolean,
     contentLayout: CardVisualContentLayout,
 ) {
     BoxWithConstraints(
@@ -275,8 +265,7 @@ private fun PortraitCardBody(
             if (shouldShowProviderDecoration(sourceType, network != null)) {
                 ProviderNetworkDecoration(
                     network = checkNotNull(network),
-                    layout = networkLayout,
-                    compact = compact,
+                    layout = networkLayout.providerDecoration,
                 )
             }
             CardContent(
@@ -292,8 +281,6 @@ private fun PortraitCardBody(
                 card = card,
                 contentEndPaddings = contentEndPaddings,
                 showNumber = showNumber,
-                showBank = showBank,
-                showName = showName,
                 compactName = compact,
             )
             if (shouldShowNetworkBadge(sourceType, network != null)) {
@@ -418,7 +405,7 @@ internal fun resolveCardContentEndPaddings(
     return CardContentEndPaddings(
         bankRow =
             if (compact && shouldShowProviderDecoration(sourceType, networkPresent)) {
-                networkLayout.compactWatermarkEndPadding
+                networkLayout.providerDecoration.motifEndPadding
             } else if (compact) {
                 compactEdgePadding
             } else {
@@ -437,37 +424,31 @@ private fun CardContent(
     card: CardEntity,
     contentEndPaddings: CardContentEndPaddings,
     showNumber: Boolean,
-    showBank: Boolean,
-    showName: Boolean,
     compactName: Boolean,
 ) {
     Column(modifier = modifier) {
-        if (showBank) {
-            BankLabel(
-                card = card,
-                modifier =
-                    Modifier
-                        .fillMaxWidth()
-                        .padding(end = contentEndPaddings.bankRow),
-            )
-            Spacer(Modifier.height(4.dp))
-        }
-        if (showName) {
-            Text(
-                text = card.name.ifBlank { stringResource(R.string.card_default_name) },
-                modifier = Modifier.padding(end = contentEndPaddings.nameRow),
-                style =
-                    if (compactName) {
-                        MaterialTheme.typography.titleMedium.copy(shadow = CardTextShadow)
-                    } else {
-                        MaterialTheme.typography.titleLarge.copy(shadow = CardTextShadow)
-                    },
-                color = Color.White,
-                fontWeight = FontWeight.ExtraBold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
+        BankLabel(
+            card = card,
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .padding(end = contentEndPaddings.bankRow),
+        )
+        Spacer(Modifier.height(4.dp))
+        Text(
+            text = card.name.ifBlank { stringResource(R.string.card_default_name) },
+            modifier = Modifier.padding(end = contentEndPaddings.nameRow),
+            style =
+                if (compactName) {
+                    MaterialTheme.typography.titleMedium.copy(shadow = CardTextShadow)
+                } else {
+                    MaterialTheme.typography.titleLarge.copy(shadow = CardTextShadow)
+                },
+            color = Color.White,
+            fontWeight = FontWeight.ExtraBold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
         if (showNumber && card.cardNumberMasked.isNotBlank()) {
             Spacer(Modifier.height(2.dp))
             Text(

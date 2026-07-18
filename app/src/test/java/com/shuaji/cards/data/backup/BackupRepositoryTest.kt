@@ -156,7 +156,7 @@ class BackupRepositoryTest {
         cards: List<CardEntity> = emptyList(),
         transactions: List<TransactionEntity> = emptyList(),
     ) = runBlocking {
-        folders.forEach { db.cardFolderDao().upsert(it) }
+        folders.forEach { db.cardFolderDao().insert(it) }
         cards.forEach { db.cardDao().upsert(it) }
         transactions.forEach { db.transactionDao().insert(it) }
     }
@@ -182,7 +182,7 @@ class BackupRepositoryTest {
     fun export_writes_complete_bundle_to_uri() =
         runTest {
             val f1 = folder(id = 0L, name = "商旅")
-            val f1Id = db.cardFolderDao().upsert(f1)
+            val f1Id = db.cardFolderDao().insert(f1)
             val c1 =
                 card(
                     id = 0L,
@@ -243,7 +243,7 @@ class BackupRepositoryTest {
         runTest {
             // 1) 现库有数据
             val oldFolder = folder(id = 0L, name = "旧分组")
-            val oldFolderId = db.cardFolderDao().upsert(oldFolder)
+            val oldFolderId = db.cardFolderDao().insert(oldFolder)
             db.cardDao().upsert(card(id = 0L, name = "旧卡", folderId = oldFolderId))
 
             // 2) 备份只有新数据
@@ -307,7 +307,7 @@ class BackupRepositoryTest {
     fun replace_cascade_deletes_transactions() =
         runTest {
             // 1) 现库：1 张卡 + 5 笔流水
-            val folderId = db.cardFolderDao().upsert(folder(id = 0L, name = "X"))
+            val folderId = db.cardFolderDao().insert(folder(id = 0L, name = "X"))
             val cardId = db.cardDao().upsert(card(id = 0L, name = "C", folderId = folderId))
             repeat(5) { i -> db.transactionDao().insert(transaction(cardId = cardId, occurredAtMillis = TestData.FIXED_TIME_MILLIS + i)) }
             assertEquals(5, db.transactionDao().listAll().size)
@@ -328,7 +328,7 @@ class BackupRepositoryTest {
     fun replace_roundtrip_preserves_data() =
         runTest {
             // 1) 准备数据并 export
-            val folderId = db.cardFolderDao().upsert(folder(id = 0L, name = "F"))
+            val folderId = db.cardFolderDao().insert(folder(id = 0L, name = "F"))
             val originalCard =
                 card(
                     id = 0L,
@@ -368,7 +368,7 @@ class BackupRepositoryTest {
     fun futureSchemaOne_replaceRoundtripPreservesEveryEntityField() =
         runTest {
             val folderId =
-                db.cardFolderDao().upsert(
+                db.cardFolderDao().insert(
                     folder(
                         name = "完整分组",
                         colorArgb = 0xFF112233.toInt(),
@@ -946,7 +946,7 @@ class BackupRepositoryTest {
     fun replace_rolls_back_when_orphan_transaction_breaks_FK() =
         runTest {
             // 1) 现库：1 张卡 + 1 笔流水（用户的真实数据）
-            val folderId = db.cardFolderDao().upsert(folder(id = 0L, name = "F"))
+            val folderId = db.cardFolderDao().insert(folder(id = 0L, name = "F"))
             val cardId = db.cardDao().upsert(card(id = 0L, name = "C", folderId = folderId))
             db.transactionDao().insert(transaction(cardId = cardId))
 

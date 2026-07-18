@@ -61,7 +61,7 @@ class BackupRepository(
     private val json =
         Json {
             prettyPrint = true
-            ignoreUnknownKeys = true // 将来加字段时旧备份文件仍能解析
+            ignoreUnknownKeys = true // 忽略导入文件中当前版本不认识的字段，保持向前兼容
             encodeDefaults = true // 默认值字段也写出来，避免空备份看起来"什么都没有"
         }
 
@@ -231,7 +231,7 @@ class BackupRepository(
         val folders = bundle.folders
         val cards = bundle.cards
         val transactions = bundle.transactions
-        folders.forEach { folderDao.upsert(it) }
+        folders.forEach { folderDao.insert(it) }
         var invalidCount = 0
         cards.forEach { card ->
             val safeFolderId =
@@ -288,7 +288,7 @@ class BackupRepository(
         // 2) 写 folders：id 清零让 SQLite 重新分配，记 oldFolderId → newFolderId 映射
         val folderRemap = mutableMapOf<Long, Long>()
         bundle.folders.forEach { folder ->
-            val newId = folderDao.upsert(folder.copy(id = 0L))
+            val newId = folderDao.insert(folder.copy(id = 0L))
             folderRemap[folder.id] = newId
         }
         // 合法 folderId 集合 = 现库已有 + 本次 backup folders 写库后分配的新 id。

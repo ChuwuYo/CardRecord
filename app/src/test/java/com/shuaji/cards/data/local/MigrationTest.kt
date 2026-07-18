@@ -81,7 +81,7 @@ class MigrationTest {
 
         try {
             runBlocking {
-                val folderId = db.cardFolderDao().upsert(CardFolderEntity(name = "商旅", colorArgb = 0xFF1234))
+                val folderId = db.cardFolderDao().insert(CardFolderEntity(name = "商旅", colorArgb = 0xFF1234))
                 val cardId =
                     db.cardDao().upsert(
                         CardEntity(

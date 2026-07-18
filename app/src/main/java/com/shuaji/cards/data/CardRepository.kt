@@ -144,7 +144,7 @@ class CardRepository(
 
     fun observeFolders(): Flow<List<CardFolderEntity>> = folderDao.observeAll()
 
-    suspend fun upsertFolder(folder: CardFolderEntity): Long = folderDao.upsert(folder)
+    suspend fun insertFolder(folder: CardFolderEntity): Long = folderDao.insert(folder)
 
     suspend fun updateFolder(folder: CardFolderEntity) = folderDao.update(folder)
 

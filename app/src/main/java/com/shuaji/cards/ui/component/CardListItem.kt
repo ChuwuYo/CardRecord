@@ -137,11 +137,10 @@ private fun CardListItemContent(
                 contentAlignment = Alignment.Center,
             ) {
                 val cardWidthFraction =
-                    when {
-                        variant is CardListItemVariant.Compact -> 1f
-                        isPortrait -> 0.6f
-                        else -> 0.88f
-                    }
+                    resolveCardVisualWidthFraction(
+                        compact = variant is CardListItemVariant.Compact,
+                        portrait = isPortrait,
+                    )
                 CardVisual(
                     card = card.card,
                     modifier = Modifier.fillMaxWidth(cardWidthFraction),
@@ -171,6 +170,16 @@ private fun CardListItemContent(
         }
     }
 }
+
+internal fun resolveCardVisualWidthFraction(
+    compact: Boolean,
+    portrait: Boolean,
+): Float =
+    when {
+        compact -> 1f
+        portrait -> 1f
+        else -> 0.88f
+    }
 
 /**
  * 已过期红色提示条。复用于 list / grid 两种模式。

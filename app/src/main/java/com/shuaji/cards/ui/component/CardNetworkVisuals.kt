@@ -23,6 +23,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.shuaji.cards.data.CardNetworkProvider
 
+internal const val COMPACT_PROVIDER_DECORATION_SCALE = 0.46f
+
 internal data class RingLayout(
     val diameter: Dp,
     val centerX: Dp,
@@ -35,47 +37,95 @@ internal data class CardNetworkVisualLayout(
     val badgeWidth: Dp,
     val badgeInset: Dp,
     val contentEndPadding: Dp,
+    val providerDecoration: ProviderDecorationLayout,
+) {
+    val badgeHeight: Dp get() = badgeWidth * (2f / 3f)
+}
+
+internal data class ProviderDecorationLayout(
+    val cardWidth: Dp,
     val watermarkWidth: Dp,
     val watermarkHeight: Dp,
     val watermarkRight: Dp,
     val watermarkTop: Dp,
     val largeRing: RingLayout,
     val smallRing: RingLayout,
+    val ringStroke: Dp,
 ) {
-    val badgeHeight: Dp get() = badgeWidth * (2f / 3f)
-    val compactWatermarkWidth: Dp get() = watermarkWidth * 0.75f
-    val compactWatermarkHeight: Dp get() = watermarkHeight * 0.6f
-    val compactWatermarkEndPadding: Dp get() = compactWatermarkWidth + watermarkRight + 4.dp
+    /** 从装饰组最左侧派生文字安全区，不能只按水印宽度忽略向左伸出的圆环。 */
+    val motifEndPadding: Dp
+        get() {
+            val leftEdge =
+                minOf(
+                    cardWidth - watermarkRight - watermarkWidth,
+                    largeRing.centerX - largeRing.radius,
+                    smallRing.centerX - smallRing.radius,
+                )
+            return cardWidth - leftEdge + 4.dp
+        }
 }
 
-internal fun resolveCardNetworkVisualLayout(cardWidth: Dp): CardNetworkVisualLayout {
+/** 以卡面右上角为锚统一缩放水印、双环及描边，保持装饰组内部关系不变。 */
+internal fun ProviderDecorationLayout.scaledFromTopEnd(scale: Float): ProviderDecorationLayout =
+    copy(
+        watermarkWidth = watermarkWidth * scale,
+        watermarkHeight = watermarkHeight * scale,
+        watermarkRight = watermarkRight * scale,
+        watermarkTop = watermarkTop * scale,
+        largeRing = largeRing.scaledFromTopEnd(cardWidth, scale),
+        smallRing = smallRing.scaledFromTopEnd(cardWidth, scale),
+        ringStroke = ringStroke * scale,
+    )
+
+private fun RingLayout.scaledFromTopEnd(
+    cardWidth: Dp,
+    scale: Float,
+): RingLayout =
+    RingLayout(
+        diameter = diameter * scale,
+        centerX = cardWidth + (centerX - cardWidth) * scale,
+        centerY = centerY * scale,
+    )
+
+internal fun resolveCardNetworkVisualLayout(
+    cardWidth: Dp,
+    providerDecorationScale: Float = 1f,
+): CardNetworkVisualLayout {
     val badgeWidth = (cardWidth * 0.22f).coerceIn(36.dp, 64.dp)
     val badgeInset = (cardWidth * 0.025f).coerceIn(6.dp, 10.dp)
     val largeDiameter = cardWidth * 48f / 100f
     val smallDiameter = cardWidth * 34f / 100f
+    val providerDecoration =
+        ProviderDecorationLayout(
+            cardWidth = cardWidth,
+            watermarkWidth = cardWidth * 0.35f,
+            watermarkHeight = cardWidth * 0.24f,
+            watermarkRight = cardWidth * 0.02f,
+            watermarkTop = cardWidth * 0.02f,
+            largeRing = RingLayout(largeDiameter, cardWidth * 0.85f, -cardWidth * 0.05f),
+            smallRing = RingLayout(smallDiameter, cardWidth * 0.66f, cardWidth * 0.16f),
+            ringStroke = 1.dp,
+        )
     return CardNetworkVisualLayout(
         badgeWidth = badgeWidth,
         badgeInset = badgeInset,
         contentEndPadding = badgeWidth + badgeInset + 12.dp,
-        watermarkWidth = cardWidth * 0.35f,
-        watermarkHeight = cardWidth * 0.24f,
-        watermarkRight = cardWidth * 0.02f,
-        watermarkTop = cardWidth * 0.02f,
-        largeRing = RingLayout(largeDiameter, cardWidth * 0.85f, -cardWidth * 0.05f),
-        smallRing = RingLayout(smallDiameter, cardWidth * 0.66f, cardWidth * 0.16f),
+        providerDecoration =
+            if (providerDecorationScale == 1f) {
+                providerDecoration
+            } else {
+                providerDecoration.scaledFromTopEnd(providerDecorationScale)
+            },
     )
 }
 
 @Composable
 internal fun BoxScope.ProviderNetworkDecoration(
     network: CardNetworkProvider,
-    layout: CardNetworkVisualLayout,
-    compact: Boolean,
+    layout: ProviderDecorationLayout,
 ) {
-    if (!compact) {
-        NetworkRing(layout.largeRing)
-        NetworkRing(layout.smallRing)
-    }
+    NetworkRing(layout.largeRing, layout.ringStroke)
+    NetworkRing(layout.smallRing, layout.ringStroke)
     Image(
         painter = painterResource(network.markRes),
         contentDescription = null,
@@ -83,10 +133,7 @@ internal fun BoxScope.ProviderNetworkDecoration(
             Modifier
                 .align(Alignment.TopEnd)
                 .padding(top = layout.watermarkTop, end = layout.watermarkRight)
-                .size(
-                    width = if (compact) layout.compactWatermarkWidth else layout.watermarkWidth,
-                    height = if (compact) layout.compactWatermarkHeight else layout.watermarkHeight,
-                ),
+                .size(width = layout.watermarkWidth, height = layout.watermarkHeight),
         colorFilter = ColorFilter.tint(Color.White),
         contentScale = ContentScale.Fit,
         alpha = 0.16f,
@@ -94,7 +141,10 @@ internal fun BoxScope.ProviderNetworkDecoration(
 }
 
 @Composable
-private fun BoxScope.NetworkRing(layout: RingLayout) {
+private fun BoxScope.NetworkRing(
+    layout: RingLayout,
+    strokeWidth: Dp,
+) {
     Box(
         modifier =
             Modifier
@@ -103,7 +153,7 @@ private fun BoxScope.NetworkRing(layout: RingLayout) {
                     x = layout.centerX - layout.radius,
                     y = layout.centerY - layout.radius,
                 ).size(layout.diameter)
-                .border(1.dp, Color.White.copy(alpha = 0.16f), CircleShape),
+                .border(strokeWidth, Color.White.copy(alpha = 0.16f), CircleShape),
     )
 }
 

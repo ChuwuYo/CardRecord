@@ -24,8 +24,11 @@ import com.shuaji.cards.data.ThemeSettings
  * primary/secondary/tertiary/中性面/容器色都符合 MD3 规范并随种子色协调变化。
  */
 
+/** 默认品牌主色的 ARGB 单一真源。 */
+const val DEFAULT_BRAND_PRIMARY_ARGB: Long = 0xFF0061A4
+
 /** 默认品牌主色，用作动态色回退与默认种子色。 */
-val DefaultBrandPrimary = Color(0xFF0061A4)
+val DefaultBrandPrimary = Color(DEFAULT_BRAND_PRIMARY_ARGB)
 
 @Composable
 fun ShuajiTheme(

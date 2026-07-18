@@ -1,5 +1,6 @@
 package com.shuaji.cards.ui.screen
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.shuaji.cards.data.CardNetworkProvider
@@ -9,6 +10,9 @@ import com.shuaji.cards.data.local.CardEntity
 import com.shuaji.cards.data.local.CardFolderEntity
 import com.shuaji.cards.data.local.CardOrientation
 import com.shuaji.cards.data.local.ImageSourceType
+import com.shuaji.cards.data.local.cardOrientationEnum
+import com.shuaji.cards.data.local.imageSourceTypeEnum
+import com.shuaji.cards.ui.theme.DEFAULT_BRAND_PRIMARY_ARGB
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -53,7 +57,7 @@ data class CardEditUiState(
     val requiredCount: String = "6",
     val validUntilMillis: Long? = null,
     val nextDueDateMillis: Long? = null,
-    val colorArgb: Int = 0xFF0061A4.toInt(),
+    val colorArgb: Int = DEFAULT_BRAND_PRIMARY_ARGB.toInt(),
     val note: String = "",
     // 卡面三态
     val imageSourceType: ImageSourceType = ImageSourceType.PROVIDER,
@@ -117,18 +121,12 @@ class CardEditViewModel(
                         nextDueDateMillis = c.nextDueDateMillis,
                         colorArgb = c.colorArgb,
                         note = c.note,
-                        imageSourceType =
-                            runCatching {
-                                ImageSourceType.valueOf(c.imageSourceType)
-                            }.getOrDefault(ImageSourceType.NONE),
+                        imageSourceType = c.imageSourceTypeEnum,
                         imageProviderKey = c.imageProviderKey,
                         imageUri = c.imageUri,
                         originalImageUri = c.imageUri,
                         acquiredImageUris = emptySet(),
-                        cardOrientation =
-                            runCatching {
-                                CardOrientation.valueOf(c.cardOrientation)
-                            }.getOrDefault(CardOrientation.LANDSCAPE),
+                        cardOrientation = c.cardOrientationEnum,
                         folderId = c.folderId,
                         editingId = c.id,
                         isLoading = false,
@@ -250,7 +248,8 @@ class CardEditViewModel(
                 }
             } catch (cancelled: CancellationException) {
                 throw cancelled
-            } catch (_: Exception) {
+            } catch (error: Exception) {
+                Log.e("CardEditViewModel", "保存卡片失败", error)
                 _uiState.update { it.copy(isSaving = false, saveResult = CardEditSaveResult.Failed) }
             } finally {
                 _uiState.update {

@@ -31,7 +31,7 @@ enum class AppLanguage(
         fun current(): AppLanguage {
             val tags = AppCompatDelegate.getApplicationLocales().toLanguageTags()
             if (tags.isEmpty()) return SYSTEM
-            return entries.firstOrNull { it.tag != null && tags.startsWith(it.tag!!) } ?: SYSTEM
+            return entries.firstOrNull { language -> language.tag?.let(tags::startsWith) == true } ?: SYSTEM
         }
 
         /** 应用所选语言；AppCompat 会持久化并自动重建 Activity 以生效。 */

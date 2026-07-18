@@ -1,6 +1,7 @@
 package com.shuaji.cards.ui.screen
 
 import android.content.Context
+import androidx.compose.ui.graphics.toArgb
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.shuaji.cards.MainDispatcherRule
@@ -9,6 +10,7 @@ import com.shuaji.cards.data.CardRepository
 import com.shuaji.cards.data.local.AppDatabase
 import com.shuaji.cards.data.local.CardEntity
 import com.shuaji.cards.data.local.ImageSourceType
+import com.shuaji.cards.ui.theme.DefaultBrandPrimary
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
@@ -60,6 +62,11 @@ class CardEditViewModelTest {
     @After
     fun tearDown() {
         db.close()
+    }
+
+    @Test
+    fun newCard_usesDefaultBrandPrimaryColor() {
+        assertEquals(DefaultBrandPrimary.toArgb(), CardEditUiState().colorArgb)
     }
 
     @Test

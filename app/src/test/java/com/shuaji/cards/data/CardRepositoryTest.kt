@@ -5,6 +5,7 @@ import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.shuaji.cards.data.local.AppDatabase
 import com.shuaji.cards.data.local.CardEntity
+import com.shuaji.cards.data.local.CardFolderEntity
 import com.shuaji.cards.data.local.TransactionEntity
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
@@ -83,6 +84,47 @@ class CardRepositoryTest {
             assertEquals("修改后", updated.card.name)
             assertEquals(0xFF2E7D32.toInt(), updated.card.colorArgb)
             assertEquals("编辑卡片不能删除已有流水", 2, updated.currentCount)
+        }
+
+    @Test
+    fun insertFolder_existingIdFailsWithoutDetachingAssignedCard() =
+        runBlocking {
+            val folderId =
+                repo.insertFolder(
+                    CardFolderEntity(name = "日常", colorArgb = 0xFF1565C0.toInt()),
+                )
+            val cardId = insertCard(due = null, folderId = folderId)
+
+            val failure =
+                runCatching {
+                    repo.insertFolder(
+                        CardFolderEntity(
+                            id = folderId,
+                            name = "冲突文件夹",
+                            colorArgb = 0xFF2E7D32.toInt(),
+                        ),
+                    )
+                }.exceptionOrNull()
+
+            assertTrue("重复主键应让只插入操作失败", failure is android.database.sqlite.SQLiteConstraintException)
+            assertEquals(folderId, db.cardDao().getById(cardId)?.folderId)
+            assertEquals("日常", db.cardFolderDao().getById(folderId)?.name)
+        }
+
+    @Test
+    fun updateFolder_existingFolderPreservesAssignedCard() =
+        runBlocking {
+            val folderId =
+                repo.insertFolder(
+                    CardFolderEntity(name = "修改前", colorArgb = 0xFF1565C0.toInt()),
+                )
+            val cardId = insertCard(due = null, folderId = folderId)
+            val original = db.cardFolderDao().getById(folderId)!!
+
+            repo.updateFolder(original.copy(name = "修改后", colorArgb = 0xFF2E7D32.toInt()))
+
+            assertEquals(folderId, db.cardDao().getById(cardId)?.folderId)
+            assertEquals("修改后", db.cardFolderDao().getById(folderId)?.name)
         }
 
     @Test
@@ -265,6 +307,7 @@ class CardRepositoryTest {
     private suspend fun insertCard(
         due: String?,
         name: String = "Visa",
+        folderId: Long? = null,
     ): Long =
         repo.upsertCard(
             CardEntity(
@@ -274,6 +317,7 @@ class CardRepositoryTest {
                 nextDueDateMillis = due?.let { DateToken.fromLocalDate(LocalDate.parse(it)) },
                 requiredCount = 6,
                 colorArgb = 0xFF1234,
+                folderId = folderId,
             ),
         )
 

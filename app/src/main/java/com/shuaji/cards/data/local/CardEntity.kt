@@ -85,6 +85,13 @@ data class CardEntity(
 enum class ImageSourceType { NONE, PROVIDER, USER }
 
 /**
+ * 把数据库中的卡面来源安全解析成枚举。未知值按纯色处理，避免外部导入或未来版本
+ * 写入的新枚举值让旧版应用崩溃。
+ */
+val CardEntity.imageSourceTypeEnum: ImageSourceType
+    get() = runCatching { ImageSourceType.valueOf(imageSourceType) }.getOrDefault(ImageSourceType.NONE)
+
+/**
  * CardEntity 的辅助属性：把数据库存的 [CardEntity.cardOrientation] (String)
  * 安全转成 [CardOrientation] enum。**所有读卡面朝向的 UI 代码都走这个**，
  * 不要在调用点再写 `runCatching { CardOrientation.valueOf(...) }.getOrDefault(...)`。
@@ -94,6 +101,9 @@ enum class ImageSourceType { NONE, PROVIDER, USER }
  */
 val CardEntity.cardOrientationEnum: CardOrientation
     get() = runCatching { CardOrientation.valueOf(cardOrientation) }.getOrDefault(CardOrientation.LANDSCAPE)
+
+/** 卡片只在当前时刻严格晚于有效截止时刻后才算过期。 */
+fun CardEntity.isExpiredAt(nowMillis: Long): Boolean = validUntilMillis?.let { nowMillis > it } == true
 
 /**
  * 卡片朝向（与卡面物理方向一致）。

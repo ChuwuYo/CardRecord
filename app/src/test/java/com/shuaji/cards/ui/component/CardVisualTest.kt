@@ -48,14 +48,14 @@ class CardVisualTest {
         assertEquals(64.dp, large.badgeWidth)
         assertEquals(6.dp, compact.badgeInset)
         assertEquals(8.dp, large.badgeInset)
-        assertTrue(abs(compact.watermarkRight.value - 3.2f) < 0.001f)
-        assertTrue(abs(compact.watermarkTop.value - 3.2f) < 0.001f)
-        assertTrue(abs(large.watermarkRight.value - 6.4f) < 0.001f)
-        assertTrue(abs(large.watermarkTop.value - 6.4f) < 0.001f)
+        assertTrue(abs(compact.providerDecoration.watermarkRight.value - 3.2f) < 0.001f)
+        assertTrue(abs(compact.providerDecoration.watermarkTop.value - 3.2f) < 0.001f)
+        assertTrue(abs(large.providerDecoration.watermarkRight.value - 6.4f) < 0.001f)
+        assertTrue(abs(large.providerDecoration.watermarkTop.value - 6.4f) < 0.001f)
         assertEquals(compact.badgeWidth + compact.badgeInset + 12.dp, compact.contentEndPadding)
         assertEquals(large.badgeWidth + large.badgeInset + 12.dp, large.contentEndPadding)
-        assertEquals(76.8.dp, compact.largeRing.diameter)
-        assertEquals(54.4.dp, compact.smallRing.diameter)
+        assertEquals(76.8.dp, compact.providerDecoration.largeRing.diameter)
+        assertEquals(54.4.dp, compact.providerDecoration.smallRing.diameter)
         assertTrue(large.contentEndPadding > compact.contentEndPadding)
     }
 
@@ -101,7 +101,11 @@ class CardVisualTest {
 
     @Test
     fun compactContent_expandsUpperRowsAndKeepsNumberClearOfBadge() {
-        val compactLayout = resolveCardNetworkVisualLayout(160.dp)
+        val compactLayout =
+            resolveCardNetworkVisualLayout(
+                cardWidth = 160.dp,
+                providerDecorationScale = COMPACT_PROVIDER_DECORATION_SCALE,
+            )
         val largeLayout = resolveCardNetworkVisualLayout(320.dp)
 
         val compactPaddings =
@@ -114,11 +118,12 @@ class CardVisualTest {
                 defaultPadding = 16.dp,
             )
 
-        assertEquals(compactLayout.compactWatermarkEndPadding, compactPaddings.bankRow)
+        assertEquals(compactLayout.providerDecoration.motifEndPadding, compactPaddings.bankRow)
+        assertDpClose(41.536f, compactPaddings.bankRow)
 
         assertEquals(
             CardContentEndPaddings(
-                bankRow = compactLayout.compactWatermarkEndPadding,
+                bankRow = compactLayout.providerDecoration.motifEndPadding,
                 nameRow = 6.dp,
                 numberRow = compactLayout.contentEndPadding,
             ),
@@ -201,13 +206,67 @@ class CardVisualTest {
         val layout = resolveCardNetworkVisualLayout(320.dp)
         val distance =
             hypot(
-                layout.largeRing.centerX.value - layout.smallRing.centerX.value,
-                layout.largeRing.centerY.value - layout.smallRing.centerY.value,
+                layout.providerDecoration.largeRing.centerX.value - layout.providerDecoration.smallRing.centerX.value,
+                layout.providerDecoration.largeRing.centerY.value - layout.providerDecoration.smallRing.centerY.value,
             )
-        val sum = layout.largeRing.radius.value + layout.smallRing.radius.value
-        val difference = abs(layout.largeRing.radius.value - layout.smallRing.radius.value)
+        val sum = layout.providerDecoration.largeRing.radius.value + layout.providerDecoration.smallRing.radius.value
+        val difference = abs(layout.providerDecoration.largeRing.radius.value - layout.providerDecoration.smallRing.radius.value)
 
         assertTrue(distance < sum)
         assertTrue(distance > difference)
+    }
+
+    @Test
+    fun compactDecoration_scalesWholeMotifFromTopEnd() {
+        val cardWidth = 160.dp
+        val base = resolveCardNetworkVisualLayout(cardWidth).providerDecoration
+        val compact = base.scaledFromTopEnd(scale = 0.46f)
+
+        assertDpClose(25.76f, compact.watermarkWidth)
+        assertDpClose(17.664f, compact.watermarkHeight)
+        assertDpClose(1.472f, compact.watermarkRight)
+        assertDpClose(1.472f, compact.watermarkTop)
+        assertDpClose(35.328f, compact.largeRing.diameter)
+        assertDpClose(148.96f, compact.largeRing.centerX)
+        assertDpClose(-3.68f, compact.largeRing.centerY)
+        assertDpClose(25.024f, compact.smallRing.diameter)
+        assertDpClose(134.976f, compact.smallRing.centerX)
+        assertDpClose(11.776f, compact.smallRing.centerY)
+        assertDpClose(0.46f, compact.ringStroke)
+
+        val distance =
+            hypot(
+                compact.largeRing.centerX.value - compact.smallRing.centerX.value,
+                compact.largeRing.centerY.value - compact.smallRing.centerY.value,
+            )
+        assertTrue(distance < compact.largeRing.radius.value + compact.smallRing.radius.value)
+        assertTrue(distance > abs(compact.largeRing.radius.value - compact.smallRing.radius.value))
+    }
+
+    @Test
+    fun compactDecoration_bankTextClearsWholeMotifAtGridWidths() {
+        listOf(136.dp, 160.dp).forEach { cardWidth ->
+            val decoration =
+                resolveCardNetworkVisualLayout(
+                    cardWidth = cardWidth,
+                    providerDecorationScale = COMPACT_PROVIDER_DECORATION_SCALE,
+                ).providerDecoration
+            val textRightEdge = cardWidth - decoration.motifEndPadding
+            val motifLeftEdge =
+                minOf(
+                    cardWidth - decoration.watermarkRight - decoration.watermarkWidth,
+                    decoration.largeRing.centerX - decoration.largeRing.radius,
+                    decoration.smallRing.centerX - decoration.smallRing.radius,
+                )
+
+            assertTrue(textRightEdge <= motifLeftEdge - 4.dp)
+        }
+    }
+
+    private fun assertDpClose(
+        expected: Float,
+        actual: androidx.compose.ui.unit.Dp,
+    ) {
+        assertTrue("expected $expected.dp but was $actual", abs(actual.value - expected) < 0.001f)
     }
 }

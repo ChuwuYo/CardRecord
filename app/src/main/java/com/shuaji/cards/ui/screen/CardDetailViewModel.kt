@@ -7,6 +7,7 @@ import com.shuaji.cards.data.CardRepository
 import com.shuaji.cards.data.SwipeRecordResult
 import com.shuaji.cards.data.local.CardWithCount
 import com.shuaji.cards.data.local.TransactionEntity
+import com.shuaji.cards.data.local.isExpiredAt
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -102,7 +103,7 @@ private fun CardWithCount.toDetailUi(
     CardDetailUi(
         card = card,
         currentCount = currentCount,
-        isExpired = card.validUntilMillis?.let { now > it } == true,
+        isExpired = card.isExpiredAt(now),
         lastSwipeAtMillis = lastSwipeAtMillis,
         cycle = cycle,
         swipes = swipes,

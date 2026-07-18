@@ -1,6 +1,7 @@
 package com.shuaji.cards.ui.screen
 
 import android.net.Uri
+import android.util.Log
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -92,6 +93,7 @@ import com.shuaji.cards.data.local.CardOrientation
 import com.shuaji.cards.data.local.ImageSourceType
 import com.shuaji.cards.ui.ViewModelFactories
 import com.shuaji.cards.ui.component.ModernColorPicker
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -116,6 +118,8 @@ fun CardEditScreen(
                     Uri.parse(uri),
                     android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION,
                 )
+            }.onFailure { error ->
+                Log.w("CardEditScreen", "释放卡面图片 URI 权限失败：$uri", error)
             }
         }
     }
@@ -123,7 +127,7 @@ fun CardEditScreen(
     val closeWithoutSaving = close@{
         val closingState = viewModel.beginClosing() ?: return@close
         scope.launch {
-            val releasable = runCatching { viewModel.releasableImageUris(closingState.originalImageUri) }.getOrDefault(emptySet())
+            val releasable = viewModel.releasableImageUrisOrEmpty(closingState.originalImageUri)
             releaseImagePermissions(releasable)
             onBack()
         }
@@ -135,7 +139,7 @@ fun CardEditScreen(
     LaunchedEffect(state.saveResult) {
         when (state.saveResult) {
             is CardEditSaveResult.Saved -> {
-                val releasable = runCatching { viewModel.releasableImageUris(state.imageUri) }.getOrDefault(emptySet())
+                val releasable = viewModel.releasableImageUrisOrEmpty(state.imageUri)
                 releaseImagePermissions(releasable)
                 onBack()
             }
@@ -281,7 +285,6 @@ fun CardEditScreen(
                 )
                 CardNetworkPicker(
                     selectedKey = networkPickerPresentation.selectedKey,
-                    includeNone = true,
                     onSelect = viewModel::selectNetwork,
                 )
             }
@@ -526,8 +529,9 @@ fun CardEditScreen(
     }
 
     // ── 日期选择器 ──
-    if (dateDialogTarget != null) {
-        val target = dateDialogTarget!!
+    val selectedDateField = dateDialogTarget
+    if (selectedDateField != null) {
+        val target = selectedDateField
         val initial =
             when (target) {
                 DateField.VALID_UNTIL -> state.validUntilMillis
@@ -714,7 +718,8 @@ private fun FolderPicker(
         items(allOptions, key = { it.first ?: 0L }) { (id, folder) ->
             val selected = currentId == id
             val leadingIcon: @Composable () -> Unit = {
-                if (id == null) {
+                val folderColorArgb = folder?.colorArgb
+                if (folderColorArgb == null) {
                     Icon(
                         Icons.Default.LayersClear,
                         contentDescription = null,
@@ -728,7 +733,7 @@ private fun FolderPicker(
                                 .clip(CircleShape)
                                 .background(
                                     androidx.compose.ui.graphics
-                                        .Color(folder!!.colorArgb),
+                                        .Color(folderColorArgb),
                                 ),
                     )
                 }
@@ -752,12 +757,11 @@ private fun FolderPicker(
 @Composable
 private fun CardNetworkPicker(
     selectedKey: String?,
-    includeNone: Boolean,
     onSelect: (CardNetworkProvider?) -> Unit,
 ) {
     val networks =
         buildList<CardNetworkProvider?> {
-            if (includeNone) add(null)
+            add(null)
             addAll(CardNetworkProvider.entries)
         }
     LazyRow(
@@ -906,3 +910,14 @@ private fun DateRow(
         }
     }
 }
+
+/** 清理图片权限属于尽力而为边界，但不能吞掉协程取消。 */
+private suspend fun CardEditViewModel.releasableImageUrisOrEmpty(keptUri: String?): Set<String> =
+    try {
+        releasableImageUris(keptUri)
+    } catch (error: CancellationException) {
+        throw error
+    } catch (error: Exception) {
+        Log.w("CardEditScreen", "读取待释放图片 URI 失败", error)
+        emptySet()
+    }

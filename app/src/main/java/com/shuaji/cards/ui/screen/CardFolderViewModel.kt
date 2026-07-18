@@ -43,7 +43,7 @@ class CardFolderViewModel(
         if (name.isBlank()) return
         viewModelScope.launch {
             val order = (folders.value.maxOfOrNull { it.sortOrder } ?: -1) + 1
-            repository.upsertFolder(
+            repository.insertFolder(
                 CardFolderEntity(
                     name = name.trim(),
                     colorArgb = colorArgb,

@@ -11,9 +11,14 @@ class CardDetailViewModelFactory(
     private val repository: com.shuaji.cards.data.CardRepository,
     private val cardId: Long,
 ) : ViewModelProvider.Factory {
-    @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(
         modelClass: Class<T>,
         extras: CreationExtras,
-    ): T = CardDetailViewModel(repository, cardId) as T
+    ): T {
+        require(modelClass.isAssignableFrom(CardDetailViewModel::class.java)) {
+            "Unsupported ViewModel class: ${modelClass.name}"
+        }
+        @Suppress("UNCHECKED_CAST")
+        return CardDetailViewModel(repository, cardId) as T
+    }
 }
