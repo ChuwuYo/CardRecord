@@ -146,6 +146,12 @@ private fun CardListItemContent(
                     card = card.card,
                     modifier = Modifier.fillMaxWidth(cardWidthFraction),
                     showNumber = variant is CardListItemVariant.Full,
+                    contentLayout =
+                        if (variant is CardListItemVariant.Compact) {
+                            CardVisualContentLayout.COMPACT
+                        } else {
+                            CardVisualContentLayout.STANDARD
+                        },
                 )
             }
 

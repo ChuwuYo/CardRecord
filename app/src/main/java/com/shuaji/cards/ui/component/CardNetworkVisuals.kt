@@ -41,7 +41,12 @@ internal data class CardNetworkVisualLayout(
     val watermarkTop: Dp,
     val largeRing: RingLayout,
     val smallRing: RingLayout,
-)
+) {
+    val badgeHeight: Dp get() = badgeWidth * (2f / 3f)
+    val compactWatermarkWidth: Dp get() = watermarkWidth * 0.75f
+    val compactWatermarkHeight: Dp get() = watermarkHeight * 0.6f
+    val compactWatermarkEndPadding: Dp get() = compactWatermarkWidth + watermarkRight + 4.dp
+}
 
 internal fun resolveCardNetworkVisualLayout(cardWidth: Dp): CardNetworkVisualLayout {
     val badgeWidth = (cardWidth * 0.22f).coerceIn(36.dp, 64.dp)
@@ -65,9 +70,12 @@ internal fun resolveCardNetworkVisualLayout(cardWidth: Dp): CardNetworkVisualLay
 internal fun BoxScope.ProviderNetworkDecoration(
     network: CardNetworkProvider,
     layout: CardNetworkVisualLayout,
+    compact: Boolean,
 ) {
-    NetworkRing(layout.largeRing)
-    NetworkRing(layout.smallRing)
+    if (!compact) {
+        NetworkRing(layout.largeRing)
+        NetworkRing(layout.smallRing)
+    }
     Image(
         painter = painterResource(network.markRes),
         contentDescription = null,
@@ -75,7 +83,10 @@ internal fun BoxScope.ProviderNetworkDecoration(
             Modifier
                 .align(Alignment.TopEnd)
                 .padding(top = layout.watermarkTop, end = layout.watermarkRight)
-                .size(width = layout.watermarkWidth, height = layout.watermarkHeight),
+                .size(
+                    width = if (compact) layout.compactWatermarkWidth else layout.watermarkWidth,
+                    height = if (compact) layout.compactWatermarkHeight else layout.watermarkHeight,
+                ),
         colorFilter = ColorFilter.tint(Color.White),
         contentScale = ContentScale.Fit,
         alpha = 0.16f,
@@ -106,7 +117,7 @@ internal fun BoxScope.NetworkCornerBadge(
             Modifier
                 .align(Alignment.BottomEnd)
                 .padding(end = layout.badgeInset, bottom = layout.badgeInset)
-                .size(width = layout.badgeWidth, height = layout.badgeWidth * (2f / 3f))
+                .size(width = layout.badgeWidth, height = layout.badgeHeight)
                 .background(Color.White.copy(alpha = 0.14f), RoundedCornerShape(8.dp))
                 .padding(horizontal = 6.dp, vertical = 4.dp),
         contentAlignment = Alignment.Center,

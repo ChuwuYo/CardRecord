@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -87,6 +86,7 @@ fun CardVisual(
     showNumber: Boolean = true,
     showBank: Boolean = true,
     showName: Boolean = true,
+    contentLayout: CardVisualContentLayout = CardVisualContentLayout.STANDARD,
 ) {
     val network = CardNetworkProvider.fromKey(card.imageProviderKey)
     val sourceType =
@@ -110,6 +110,7 @@ fun CardVisual(
                     showNumber = showNumber,
                     showBank = showBank,
                     showName = showName,
+                    contentLayout = contentLayout,
                 )
             CardOrientation.PORTRAIT ->
                 PortraitCardBody(
@@ -119,9 +120,16 @@ fun CardVisual(
                     showNumber = showNumber,
                     showBank = showBank,
                     showName = showName,
+                    contentLayout = contentLayout,
                 )
         }
     }
+}
+
+/** 卡面文字布局。双列列表必须显式选择紧凑布局，不能再由卡宽猜测调用场景。 */
+enum class CardVisualContentLayout {
+    STANDARD,
+    COMPACT,
 }
 
 // ── 横版 / 竖版 body ──────────────────────────────────────────────
@@ -134,6 +142,7 @@ private fun LandscapeCardBody(
     showNumber: Boolean,
     showBank: Boolean,
     showName: Boolean,
+    contentLayout: CardVisualContentLayout,
 ) {
     BoxWithConstraints(
         modifier =
@@ -146,19 +155,22 @@ private fun LandscapeCardBody(
         val height: Dp =
             (maxWidth / card.cardOrientationEnum.aspectRatio).coerceAtLeast(CARD_MIN_HEIGHT_DP.dp)
         val networkLayout = resolveCardNetworkVisualLayout(maxWidth)
-        val textLift =
-            resolveCardTextLift(
+        val compact = isCompactCardContent(contentLayout, CardOrientation.LANDSCAPE)
+        val contentPlacement =
+            resolveCardContentPlacement(
+                contentLayout = contentLayout,
                 orientation = CardOrientation.LANDSCAPE,
-                sourceType = sourceType,
-                networkPresent = network != null,
-                cardWidth = maxWidth,
+                networkLayout = networkLayout,
+                badgeVisible = shouldShowNetworkBadge(sourceType, network != null),
+                defaultPadding = 16.dp,
             )
         val contentEndPaddings =
             resolveCardContentEndPaddings(
                 sourceType = sourceType,
                 networkPresent = network != null,
                 networkLayout = networkLayout,
-                textLift = textLift,
+                contentLayout = contentLayout,
+                orientation = CardOrientation.LANDSCAPE,
                 defaultPadding = 16.dp,
             )
         Box(
@@ -177,6 +189,7 @@ private fun LandscapeCardBody(
                 ProviderNetworkDecoration(
                     network = checkNotNull(network),
                     layout = networkLayout,
+                    compact = compact,
                 )
             }
             CardContent(
@@ -184,13 +197,17 @@ private fun LandscapeCardBody(
                     Modifier
                         .align(Alignment.BottomStart)
                         .fillMaxWidth()
-                        .offset(y = -textLift)
-                        .padding(start = 16.dp, top = 16.dp, bottom = 16.dp),
+                        .padding(
+                            start = contentPlacement.start,
+                            top = contentPlacement.top,
+                            bottom = contentPlacement.bottom,
+                        ),
                 card = card,
                 contentEndPaddings = contentEndPaddings,
                 showNumber = showNumber,
                 showBank = showBank,
                 showName = showName,
+                compactName = compact,
             )
             if (shouldShowNetworkBadge(sourceType, network != null)) {
                 NetworkCornerBadge(
@@ -210,6 +227,7 @@ private fun PortraitCardBody(
     showNumber: Boolean,
     showBank: Boolean,
     showName: Boolean,
+    contentLayout: CardVisualContentLayout,
 ) {
     BoxWithConstraints(
         modifier = Modifier.fillMaxWidth(),
@@ -222,19 +240,22 @@ private fun PortraitCardBody(
         // 高度严格按 1.586:1 比例，比例单一来源是 CardOrientation.aspectRatio
         val height: Dp = (width * card.cardOrientationEnum.aspectRatio).coerceAtMost(280.dp)
         val networkLayout = resolveCardNetworkVisualLayout(width)
-        val textLift =
-            resolveCardTextLift(
+        val compact = isCompactCardContent(contentLayout, CardOrientation.PORTRAIT)
+        val contentPlacement =
+            resolveCardContentPlacement(
+                contentLayout = contentLayout,
                 orientation = CardOrientation.PORTRAIT,
-                sourceType = sourceType,
-                networkPresent = network != null,
-                cardWidth = width,
+                networkLayout = networkLayout,
+                badgeVisible = shouldShowNetworkBadge(sourceType, network != null),
+                defaultPadding = 14.dp,
             )
         val contentEndPaddings =
             resolveCardContentEndPaddings(
                 sourceType = sourceType,
                 networkPresent = network != null,
                 networkLayout = networkLayout,
-                textLift = textLift,
+                contentLayout = contentLayout,
+                orientation = CardOrientation.PORTRAIT,
                 defaultPadding = 14.dp,
             )
         Box(
@@ -255,6 +276,7 @@ private fun PortraitCardBody(
                 ProviderNetworkDecoration(
                     network = checkNotNull(network),
                     layout = networkLayout,
+                    compact = compact,
                 )
             }
             CardContent(
@@ -262,13 +284,17 @@ private fun PortraitCardBody(
                     Modifier
                         .align(Alignment.BottomStart)
                         .fillMaxWidth()
-                        .offset(y = -textLift)
-                        .padding(start = 14.dp, top = 14.dp, bottom = 14.dp),
+                        .padding(
+                            start = contentPlacement.start,
+                            top = contentPlacement.top,
+                            bottom = contentPlacement.bottom,
+                        ),
                 card = card,
                 contentEndPaddings = contentEndPaddings,
                 showNumber = showNumber,
                 showBank = showBank,
                 showName = showName,
+                compactName = compact,
             )
             if (shouldShowNetworkBadge(sourceType, network != null)) {
                 NetworkCornerBadge(
@@ -329,24 +355,47 @@ internal fun shouldShowNetworkBadge(
     networkPresent: Boolean,
 ): Boolean = sourceType != ImageSourceType.USER && networkPresent
 
-internal fun resolveCardTextLift(
+internal data class CardContentPlacement(
+    val start: Dp,
+    val top: Dp,
+    val bottom: Dp,
+)
+
+internal fun isCompactCardContent(
+    contentLayout: CardVisualContentLayout,
     orientation: CardOrientation,
-    sourceType: ImageSourceType,
-    networkPresent: Boolean,
-    cardWidth: Dp,
-): Dp =
-    if (
-        orientation == CardOrientation.LANDSCAPE &&
-        shouldShowNetworkBadge(sourceType, networkPresent) &&
-        cardWidth <= 180.dp
-    ) {
-        8.dp
+): Boolean = contentLayout == CardVisualContentLayout.COMPACT && orientation == CardOrientation.LANDSCAPE
+
+internal fun resolveCardContentPlacement(
+    contentLayout: CardVisualContentLayout,
+    orientation: CardOrientation,
+    networkLayout: CardNetworkVisualLayout,
+    badgeVisible: Boolean,
+    defaultPadding: Dp,
+): CardContentPlacement =
+    if (isCompactCardContent(contentLayout, orientation)) {
+        val compactInset = networkLayout.badgeInset
+        CardContentPlacement(
+            start = compactInset,
+            top = compactInset,
+            bottom =
+                if (badgeVisible) {
+                    compactInset + networkLayout.badgeHeight + 4.dp
+                } else {
+                    compactInset
+                },
+        )
     } else {
-        0.dp
+        CardContentPlacement(
+            start = defaultPadding,
+            top = defaultPadding,
+            bottom = defaultPadding,
+        )
     }
 
 internal data class CardContentEndPaddings(
-    val upperRows: Dp,
+    val bankRow: Dp,
+    val nameRow: Dp,
     val numberRow: Dp,
 )
 
@@ -354,7 +403,8 @@ internal fun resolveCardContentEndPaddings(
     sourceType: ImageSourceType,
     networkPresent: Boolean,
     networkLayout: CardNetworkVisualLayout,
-    textLift: Dp,
+    contentLayout: CardVisualContentLayout,
+    orientation: CardOrientation,
     defaultPadding: Dp,
 ): CardContentEndPaddings {
     val badgePadding =
@@ -363,8 +413,18 @@ internal fun resolveCardContentEndPaddings(
         } else {
             defaultPadding
         }
+    val compact = isCompactCardContent(contentLayout, orientation)
+    val compactEdgePadding = networkLayout.badgeInset
     return CardContentEndPaddings(
-        upperRows = if (textLift > 0.dp) defaultPadding else badgePadding,
+        bankRow =
+            if (compact && shouldShowProviderDecoration(sourceType, networkPresent)) {
+                networkLayout.compactWatermarkEndPadding
+            } else if (compact) {
+                compactEdgePadding
+            } else {
+                badgePadding
+            },
+        nameRow = if (compact) compactEdgePadding else badgePadding,
         numberRow = badgePadding,
     )
 }
@@ -379,6 +439,7 @@ private fun CardContent(
     showNumber: Boolean,
     showBank: Boolean,
     showName: Boolean,
+    compactName: Boolean,
 ) {
     Column(modifier = modifier) {
         if (showBank) {
@@ -387,15 +448,20 @@ private fun CardContent(
                 modifier =
                     Modifier
                         .fillMaxWidth()
-                        .padding(end = contentEndPaddings.upperRows),
+                        .padding(end = contentEndPaddings.bankRow),
             )
             Spacer(Modifier.height(4.dp))
         }
         if (showName) {
             Text(
                 text = card.name.ifBlank { stringResource(R.string.card_default_name) },
-                modifier = Modifier.padding(end = contentEndPaddings.upperRows),
-                style = MaterialTheme.typography.titleLarge.copy(shadow = CardTextShadow),
+                modifier = Modifier.padding(end = contentEndPaddings.nameRow),
+                style =
+                    if (compactName) {
+                        MaterialTheme.typography.titleMedium.copy(shadow = CardTextShadow)
+                    } else {
+                        MaterialTheme.typography.titleLarge.copy(shadow = CardTextShadow)
+                    },
                 color = Color.White,
                 fontWeight = FontWeight.ExtraBold,
                 maxLines = 1,

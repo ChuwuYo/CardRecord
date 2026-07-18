@@ -60,114 +60,140 @@ class CardVisualTest {
     }
 
     @Test
-    fun compactTextLift_requiresLandscapeBadgeAndCompactWidth() {
+    fun compactContent_usesBadgeInsetAndClearsBadgeVerticalBand() {
+        val compactLayout = resolveCardNetworkVisualLayout(140.dp)
+
         assertEquals(
-            8.dp,
-            resolveCardTextLift(
-                orientation = CardOrientation.LANDSCAPE,
-                sourceType = ImageSourceType.NONE,
-                networkPresent = true,
-                cardWidth = 160.dp,
+            CardContentPlacement(
+                start = 6.dp,
+                top = 6.dp,
+                bottom = 34.dp,
             ),
-        )
-        assertEquals(
-            8.dp,
-            resolveCardTextLift(
+            resolveCardContentPlacement(
+                contentLayout = CardVisualContentLayout.COMPACT,
                 orientation = CardOrientation.LANDSCAPE,
-                sourceType = ImageSourceType.PROVIDER,
-                networkPresent = true,
-                cardWidth = 180.dp,
-            ),
-        )
-        assertEquals(
-            0.dp,
-            resolveCardTextLift(
-                orientation = CardOrientation.LANDSCAPE,
-                sourceType = ImageSourceType.PROVIDER,
-                networkPresent = true,
-                cardWidth = 320.dp,
-            ),
-        )
-        assertEquals(
-            0.dp,
-            resolveCardTextLift(
-                orientation = CardOrientation.PORTRAIT,
-                sourceType = ImageSourceType.PROVIDER,
-                networkPresent = true,
-                cardWidth = 160.dp,
-            ),
-        )
-        assertEquals(
-            0.dp,
-            resolveCardTextLift(
-                orientation = CardOrientation.LANDSCAPE,
-                sourceType = ImageSourceType.USER,
-                networkPresent = true,
-                cardWidth = 160.dp,
-            ),
-        )
-        assertEquals(
-            0.dp,
-            resolveCardTextLift(
-                orientation = CardOrientation.LANDSCAPE,
-                sourceType = ImageSourceType.PROVIDER,
-                networkPresent = false,
-                cardWidth = 160.dp,
+                networkLayout = compactLayout,
+                badgeVisible = true,
+                defaultPadding = 16.dp,
             ),
         )
     }
 
     @Test
-    fun compactLiftedText_expandsOnlyUpperRowsAndKeepsNumberClearOfBadge() {
+    fun compactContent_withoutBadgeKeepsSymmetricEdgeInsets() {
+        val compactLayout = resolveCardNetworkVisualLayout(140.dp)
+
+        assertEquals(
+            CardContentPlacement(
+                start = 6.dp,
+                top = 6.dp,
+                bottom = 6.dp,
+            ),
+            resolveCardContentPlacement(
+                contentLayout = CardVisualContentLayout.COMPACT,
+                orientation = CardOrientation.LANDSCAPE,
+                networkLayout = compactLayout,
+                badgeVisible = false,
+                defaultPadding = 16.dp,
+            ),
+        )
+    }
+
+    @Test
+    fun compactContent_expandsUpperRowsAndKeepsNumberClearOfBadge() {
         val compactLayout = resolveCardNetworkVisualLayout(160.dp)
         val largeLayout = resolveCardNetworkVisualLayout(320.dp)
 
-        assertEquals(
-            CardContentEndPaddings(upperRows = 16.dp, numberRow = compactLayout.contentEndPadding),
+        val compactPaddings =
             resolveCardContentEndPaddings(
                 sourceType = ImageSourceType.PROVIDER,
                 networkPresent = true,
                 networkLayout = compactLayout,
-                textLift = 8.dp,
+                contentLayout = CardVisualContentLayout.COMPACT,
+                orientation = CardOrientation.LANDSCAPE,
                 defaultPadding = 16.dp,
+            )
+
+        assertEquals(compactLayout.compactWatermarkEndPadding, compactPaddings.bankRow)
+
+        assertEquals(
+            CardContentEndPaddings(
+                bankRow = compactLayout.compactWatermarkEndPadding,
+                nameRow = 6.dp,
+                numberRow = compactLayout.contentEndPadding,
             ),
+            compactPaddings,
         )
         assertEquals(
             CardContentEndPaddings(
-                upperRows = largeLayout.contentEndPadding,
+                bankRow = largeLayout.contentEndPadding,
+                nameRow = largeLayout.contentEndPadding,
                 numberRow = largeLayout.contentEndPadding,
             ),
             resolveCardContentEndPaddings(
                 sourceType = ImageSourceType.PROVIDER,
                 networkPresent = true,
                 networkLayout = largeLayout,
-                textLift = 0.dp,
+                contentLayout = CardVisualContentLayout.STANDARD,
+                orientation = CardOrientation.LANDSCAPE,
                 defaultPadding = 16.dp,
             ),
         )
         assertEquals(
             CardContentEndPaddings(
-                upperRows = compactLayout.contentEndPadding,
+                bankRow = compactLayout.contentEndPadding,
+                nameRow = compactLayout.contentEndPadding,
                 numberRow = compactLayout.contentEndPadding,
             ),
             resolveCardContentEndPaddings(
                 sourceType = ImageSourceType.PROVIDER,
                 networkPresent = true,
                 networkLayout = compactLayout,
-                textLift = 0.dp,
+                contentLayout = CardVisualContentLayout.STANDARD,
+                orientation = CardOrientation.PORTRAIT,
                 defaultPadding = 14.dp,
             ),
         )
         assertEquals(
-            CardContentEndPaddings(upperRows = 16.dp, numberRow = 16.dp),
+            CardContentEndPaddings(bankRow = 16.dp, nameRow = 16.dp, numberRow = 16.dp),
             resolveCardContentEndPaddings(
                 sourceType = ImageSourceType.USER,
                 networkPresent = true,
                 networkLayout = compactLayout,
-                textLift = 0.dp,
+                contentLayout = CardVisualContentLayout.STANDARD,
+                orientation = CardOrientation.LANDSCAPE,
                 defaultPadding = 16.dp,
             ),
         )
+    }
+
+    @Test
+    fun compactMode_isExplicitAndDoesNotDependOnCardWidth() {
+        val wideGridLayout = resolveCardNetworkVisualLayout(220.dp)
+
+        assertEquals(
+            wideGridLayout.badgeInset,
+            resolveCardContentPlacement(
+                contentLayout = CardVisualContentLayout.COMPACT,
+                orientation = CardOrientation.LANDSCAPE,
+                networkLayout = wideGridLayout,
+                badgeVisible = true,
+                defaultPadding = 16.dp,
+            ).start,
+        )
+        assertEquals(
+            14.dp,
+            resolveCardContentPlacement(
+                contentLayout = CardVisualContentLayout.COMPACT,
+                orientation = CardOrientation.PORTRAIT,
+                networkLayout = wideGridLayout,
+                badgeVisible = true,
+                defaultPadding = 14.dp,
+            ).start,
+        )
+        assertTrue(isCompactCardContent(CardVisualContentLayout.COMPACT, CardOrientation.LANDSCAPE))
+        assertFalse(isCompactCardContent(CardVisualContentLayout.COMPACT, CardOrientation.PORTRAIT))
+        assertFalse(isCompactCardContent(CardVisualContentLayout.STANDARD, CardOrientation.LANDSCAPE))
     }
 
     @Test
