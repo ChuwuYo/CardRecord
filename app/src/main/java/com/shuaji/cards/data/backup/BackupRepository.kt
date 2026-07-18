@@ -182,7 +182,6 @@ class BackupRepository(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: BackupSizeLimitExceededException) {
-                currentCoroutineContext().ensureActive()
                 throw BackupException(
                     context.getString(
                         R.string.backup_error_file_too_large,
@@ -191,7 +190,6 @@ class BackupRepository(
                     e,
                 )
             } catch (e: OperationCanceledException) {
-                currentCoroutineContext().ensureActive()
                 throw BackupException(
                     context.getString(
                         R.string.backup_error_write_failed,
@@ -200,7 +198,6 @@ class BackupRepository(
                     e,
                 )
             } catch (e: IOException) {
-                currentCoroutineContext().ensureActive()
                 throw BackupException(
                     context.getString(
                         R.string.backup_error_write_failed,
@@ -314,10 +311,8 @@ class BackupRepository(
         } catch (e: CancellationException) {
             throw e
         } catch (e: BackupException) {
-            currentCoroutineContext().ensureActive()
             throw e
         } catch (e: BackupSizeLimitExceededException) {
-            currentCoroutineContext().ensureActive()
             throw BackupException(
                 context.getString(
                     R.string.backup_error_file_too_large,
@@ -326,7 +321,6 @@ class BackupRepository(
                 e,
             )
         } catch (e: FileNotFoundException) {
-            currentCoroutineContext().ensureActive()
             throw BackupException(
                 context.getString(
                     R.string.backup_error_source_missing,
@@ -335,10 +329,8 @@ class BackupRepository(
                 e,
             )
         } catch (e: SerializationException) {
-            currentCoroutineContext().ensureActive()
             throw BackupException(context.getString(R.string.backup_error_malformed_json), e)
         } catch (e: OperationCanceledException) {
-            currentCoroutineContext().ensureActive()
             throw BackupException(
                 context.getString(
                     R.string.backup_error_read_failed,
@@ -347,11 +339,8 @@ class BackupRepository(
                 e,
             )
         } catch (e: IllegalArgumentException) {
-            currentCoroutineContext().ensureActive()
             throw BackupException(context.getString(R.string.backup_error_malformed_json), e)
         } catch (e: IOException) {
-            // cancelActive 关闭流时通常表现为 IOException；取消必须保持为取消，不能伪装成读取失败。
-            currentCoroutineContext().ensureActive()
             throw BackupException(
                 context.getString(
                     R.string.backup_error_read_failed,
@@ -380,9 +369,10 @@ class BackupRepository(
         } catch (e: CancellationException) {
             throw e
         } catch (_: OperationCanceledException) {
-            currentCoroutineContext().ensureActive()
+            checkNotNull(activeOperation).ensureCallerActive()
             null
         } catch (_: Exception) {
+            checkNotNull(activeOperation).ensureCallerActive()
             null
         }
 
@@ -394,22 +384,30 @@ class BackupRepository(
         val operation = ActiveOperation(checkNotNull(currentCoroutineContext()[Job]))
         activeOperation = operation
         return try {
-            coroutineScope {
-                // 普通 Job.cancel() 也必须取消 Provider 并关流；只依赖 finally 会被阻塞 I/O 卡住。
-                val operationFinished = AtomicBoolean(false)
-                val resourceCloser =
-                    launch(start = CoroutineStart.UNDISPATCHED) {
-                        try {
-                            awaitCancellation()
-                        } finally {
-                            if (!operationFinished.get()) operation.cancelBlockingIo()
+            try {
+                coroutineScope {
+                    // 普通 Job.cancel() 也必须取消 Provider 并关流；只依赖 finally 会被阻塞 I/O 卡住。
+                    val operationFinished = AtomicBoolean(false)
+                    val resourceCloser =
+                        launch(start = CoroutineStart.UNDISPATCHED) {
+                            try {
+                                awaitCancellation()
+                            } finally {
+                                if (!operationFinished.get()) operation.cancelBlockingIo()
+                            }
                         }
+                    try {
+                        withContext(Dispatchers.IO) { block() }.also { operationFinished.set(true) }
+                    } finally {
+                        resourceCloser.cancel()
                     }
-                try {
-                    withContext(Dispatchers.IO) { block() }.also { operationFinished.set(true) }
-                } finally {
-                    resourceCloser.cancel()
                 }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // 关闭阻塞流后，I/O 子上下文可能短暂仍为 active；最初 caller Job 才是取消真源。
+                operation.ensureCallerActive()
+                throw e
             }
         } finally {
             operation.closeResource()
@@ -648,6 +646,10 @@ private class ActiveOperation(
         }
 
     fun beginCommit(): Boolean = phase.compareAndSet(OperationPhase.CANCELLABLE, OperationPhase.COMMITTING)
+
+    fun ensureCallerActive() {
+        job.ensureActive()
+    }
 
     fun cancelBlockingIo() {
         try {

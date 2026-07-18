@@ -1346,32 +1346,34 @@ class BackupRepositoryTest {
 
     @Test
     fun ordinaryJobCancellation_closesBlockingExportStream_andStaysCancellation() {
-        val blockingOutput = CloseBlockingOutputStream()
-        val blockingRepository =
-            BackupRepository(
-                context = context,
-                database = db,
-                cardDao = db.cardDao(),
-                folderDao = db.cardFolderDao(),
-                transactionDao = db.transactionDao(),
-                normalizeInTransaction = cardRepository::normalizeOverdueCyclesInTransaction,
-                openOutputStream = { _, _, _ -> blockingOutput },
-            )
-        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        repeat(CANCELLATION_RACE_ITERATIONS) { iteration ->
+            val blockingOutput = CloseBlockingOutputStream()
+            val blockingRepository =
+                BackupRepository(
+                    context = context,
+                    database = db,
+                    cardDao = db.cardDao(),
+                    folderDao = db.cardFolderDao(),
+                    transactionDao = db.transactionDao(),
+                    normalizeInTransaction = cardRepository::normalizeOverdueCyclesInTransaction,
+                    openOutputStream = { _, _, _ -> blockingOutput },
+                )
+            val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
-        try {
-            val active = scope.async { blockingRepository.export(Uri.EMPTY) }
-            assertTrue("导出应已进入阻塞写入", blockingOutput.writeStarted.await(5, TimeUnit.SECONDS))
+            try {
+                val active = scope.async { blockingRepository.export(Uri.EMPTY) }
+                assertTrue("导出应已进入阻塞写入", blockingOutput.writeStarted.await(5, TimeUnit.SECONDS))
 
-            active.cancel(CancellationException("ordinary caller cancellation"))
+                active.cancel(CancellationException("ordinary caller cancellation"))
 
-            assertTrue("普通 Job.cancel 也必须关闭导出流", blockingOutput.closed.await(5, TimeUnit.SECONDS))
-            assertThrows(CancellationException::class.java) {
-                runBlocking { active.await() }
+                assertTrue("普通 Job.cancel 也必须关闭导出流", blockingOutput.closed.await(5, TimeUnit.SECONDS))
+                assertThrows("第 ${iteration + 1} 轮必须保持取消语义", CancellationException::class.java) {
+                    runBlocking { active.await() }
+                }
+            } finally {
+                scope.cancel()
+                blockingOutput.close()
             }
-        } finally {
-            scope.cancel()
-            blockingOutput.close()
         }
     }
 
@@ -1841,6 +1843,7 @@ class BackupRepositoryTest {
     }
 
     private companion object {
+        const val CANCELLATION_RACE_ITERATIONS = 25
         val PUBLISHED_TOP_LEVEL_FIELDS = setOf("version", "cards", "folders", "transactions")
         val PUBLISHED_CARD_FIELDS =
             setOf(
