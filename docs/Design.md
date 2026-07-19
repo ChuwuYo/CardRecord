@@ -28,13 +28,15 @@ Room DAO / DataStore / SAF
 
 ## 3. 数据模型
 
-Room v7 有三张表：
+Room v8 有三张表：
 
-- `cards`：卡片文本、有效期、下次结算日、目标笔数、底色、卡面样式、卡组织、朝向、文件夹和创建时间。
+- `cards`：卡片文本、三态卡类型、信用卡账单日/还款日、有效期、下次结算日、目标笔数、底色、卡面样式、卡组织、朝向、文件夹和创建时间。
 - `transactions`：流水主键、卡片主键和发生时间；删除卡片时 `CASCADE`。
 - `card_folders`：名称、颜色、排序和创建时间；删除文件夹时卡片的 `folder_id` 通过 `SET NULL` 归为未分类。
 
 `currentCount` 不存表。Repository 合并卡片与流水，在 Kotlin 中按当前周期派生 `CardWithCount`，避免“存储计数”和“流水事实”成为两个会漂移的真源。
+
+卡类型使用稳定 key `UNSPECIFIED / DEBIT / CREDIT`。历史行和 schema 1 备份没有这项事实，迁移后保持 `UNSPECIFIED`，不根据名称、卡组织或年费设置猜测。账单日与还款日是可空的每月日号（1..31）；只有 `CREDIT` 可以持久化这两个值，其他类型在写入边界清空。
 
 ### 写入不变量
 
@@ -79,7 +81,7 @@ Room v7 有三张表：
 
 ## 6. UI 状态与失败语义
 
-- 列表的文件夹筛选会随当前文件夹集合归一化；文件夹删除后不会保留幽灵筛选。Lazy 容器使用稳定 ID/key，不用可重复标题作 key。
+- 列表的卡类型与文件夹筛选共享一个明确的筛选模型；文件夹删除后不会保留幽灵筛选。下拉菜单限制可视高度并滚动，不限制文件夹数量；Lazy 容器使用稳定 ID/key，不用可重复标题作 key。
 - 详情页区分 `Loading / Loaded / Missing`。删除成功事件发出后才导航返回；失败保留当前页面。
 - 编辑页区分 `New / Loading / Ready / Missing / Failed`。加载失败可重试，目标不存在时不显示空白“新建卡”表单。
 - 流水历史是 LazyColumn 的真实 item，不把全部历史一次性组合在单个 item 中。
@@ -87,7 +89,7 @@ Room v7 有三张表：
 
 ## 7. 备份与恢复
 
-备份 schema 当前为 `1`，顶层对象显式包含版本号与三张表。备份 DTO 独立于 Room Entity，数据库实现细节变化不能无意改变公开文件格式；破坏性格式变更必须提升 schema 版本并提供明确迁移策略。
+备份当前导出 schema `2`，顶层对象显式包含版本号与三张表；导入同时支持 schema `1`。schema 1 卡片缺少类型、账单日与还款日，导入时明确补为 `UNSPECIFIED / null / null`。备份 DTO 独立于 Room Entity，数据库实现细节变化不能无意改变公开文件格式；后续格式变更必须提升版本并保留明确的兼容边界。
 
 ### 导出
 
@@ -108,7 +110,7 @@ Room v7 有三张表：
 
 ## 8. 数据库迁移
 
-所有 v1→v7 迁移显式注册在 `AppDatabase.ALL_MIGRATIONS`，数据库打开采用 fail closed，没有 destructive fallback。
+所有 v1→v8 迁移显式注册在 `AppDatabase.ALL_MIGRATIONS`，数据库打开采用 fail closed，没有 destructive fallback。v7→v8 只增加卡类型与两个信用卡日号字段，旧行统一保持未选择。
 
 迁移遵循：
 

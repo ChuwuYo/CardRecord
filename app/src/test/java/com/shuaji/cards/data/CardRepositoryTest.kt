@@ -6,6 +6,7 @@ import androidx.test.core.app.ApplicationProvider
 import com.shuaji.cards.data.local.AppDatabase
 import com.shuaji.cards.data.local.CardEntity
 import com.shuaji.cards.data.local.CardFolderEntity
+import com.shuaji.cards.data.local.CardType
 import com.shuaji.cards.data.local.TransactionEntity
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
@@ -13,6 +14,7 @@ import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -106,6 +108,65 @@ class CardRepositoryTest {
             assertEquals("修改后", updated.card.name)
             assertEquals(0xFF2E7D32.toInt(), updated.card.colorArgb)
             assertEquals("编辑卡片不能删除已有流水", 2, updated.currentCount)
+        }
+
+    @Test
+    fun cardWriteBoundary_keepsCreditDaysOnlyForCreditCards() =
+        runBlocking {
+            val id =
+                repo.upsertCard(
+                    CardEntity(
+                        name = "借记卡",
+                        bank = "某银行",
+                        cardNumberMasked = "**** 1234",
+                        cardType = CardType.DEBIT.key,
+                        statementDay = 8,
+                        repaymentDay = 26,
+                        requiredCount = 6,
+                        colorArgb = 0,
+                    ),
+                )
+            val debit = requireNotNull(db.cardDao().getById(id))
+            assertNull(debit.statementDay)
+            assertNull(debit.repaymentDay)
+
+            assertTrue(
+                repo.updateCard(
+                    debit.copy(
+                        cardType = CardType.CREDIT.key,
+                        statementDay = 8,
+                        repaymentDay = 26,
+                    ),
+                ),
+            )
+            val credit = requireNotNull(db.cardDao().getById(id))
+            assertEquals(8, credit.statementDay)
+            assertEquals(26, credit.repaymentDay)
+        }
+
+    @Test
+    fun cardWriteBoundary_rejectsInvalidCreditDayBeforeDatabaseWrite() =
+        runBlocking {
+            val failure =
+                try {
+                    repo.upsertCard(
+                        CardEntity(
+                            name = "异常信用卡",
+                            bank = "某银行",
+                            cardNumberMasked = "**** 1234",
+                            cardType = CardType.CREDIT.key,
+                            statementDay = 32,
+                            requiredCount = 6,
+                            colorArgb = 0,
+                        ),
+                    )
+                    null
+                } catch (error: IllegalArgumentException) {
+                    error
+                }
+
+            assertTrue(failure != null)
+            assertTrue(db.cardDao().listAll().isEmpty())
         }
 
     @Test

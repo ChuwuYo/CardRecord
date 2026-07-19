@@ -19,6 +19,8 @@ internal const val CARD_ORIENTATION_LANDSCAPE_KEY = "LANDSCAPE"
  * - [validUntilMillis] 卡片有效截止日（设置了就该有「已过期」提示）
  * - [nextDueDateMillis] 下次年费结算日
  * - [colorArgb] 卡片主题色
+ * - [cardType] 借记卡 / 信用卡 / 未选择的稳定 key；旧卡保持未选择
+ * - [statementDay] / [repaymentDay] 仅信用卡使用，都是每月 1..31 的日号
  *
  * `currentCount` 不存表。Repository 同时观察卡片与全部流水，并按该卡当前年费统计窗口
  * 在 Kotlin 中派生有效笔数；未设置结算日的卡为兼容旧行为，仍统计全部流水。
@@ -56,6 +58,12 @@ data class CardEntity(
     val bank: String,
     @ColumnInfo(name = "card_number_masked")
     val cardNumberMasked: String,
+    @ColumnInfo(name = "card_type", defaultValue = CARD_TYPE_UNSPECIFIED_KEY)
+    val cardType: String = CARD_TYPE_UNSPECIFIED_KEY,
+    @ColumnInfo(name = "statement_day")
+    val statementDay: Int? = null,
+    @ColumnInfo(name = "repayment_day")
+    val repaymentDay: Int? = null,
     @ColumnInfo(name = "valid_until_millis")
     val validUntilMillis: Long? = null,
     @ColumnInfo(name = "next_due_date_millis")

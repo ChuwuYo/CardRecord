@@ -62,6 +62,7 @@ import com.shuaji.cards.R
 import com.shuaji.cards.ShuajiApplication
 import com.shuaji.cards.data.AnnualFeeCycle
 import com.shuaji.cards.data.DateToken
+import com.shuaji.cards.data.local.CardType
 import com.shuaji.cards.data.local.TransactionEntity
 import com.shuaji.cards.ui.component.CardVisual
 import com.shuaji.cards.ui.component.CycleProgressContent
@@ -219,7 +220,7 @@ fun CardDetailScreen(
                             requiredCount = current.requiredCount,
                         )
                     }
-                    if (current.card.hasDetailInfo) {
+                    if (current.hasDetailInfo) {
                         item { CardInfoSection(detail = current) }
                     }
                     swipeListItems(
@@ -499,6 +500,20 @@ private fun CardInfoSection(detail: CardDetailUi) {
     val c = detail.card
     val rows =
         listOfNotNull(
+            detail.selectedCardType?.let { cardType ->
+                CardInfoRow(
+                    icon = Icons.Default.CreditCard,
+                    label = stringResource(R.string.detail_card_type),
+                    value =
+                        stringResource(
+                            when (cardType) {
+                                CardType.DEBIT -> R.string.card_type_debit
+                                CardType.CREDIT -> R.string.card_type_credit
+                                CardType.UNSPECIFIED -> R.string.card_type_unspecified
+                            },
+                        ),
+                )
+            },
             c.bank.takeIf(String::isNotBlank)?.let {
                 CardInfoRow(
                     icon = Icons.Default.CreditCard,
@@ -526,6 +541,20 @@ private fun CardInfoSection(detail: CardDetailUi) {
                     icon = Icons.Default.Event,
                     label = stringResource(R.string.card_label_next_due),
                     value = DateToken.formatAnnualDue(it),
+                )
+            },
+            detail.statementDay?.let {
+                CardInfoRow(
+                    icon = Icons.Default.Event,
+                    label = stringResource(R.string.detail_statement_day),
+                    value = stringResource(R.string.card_day_of_month, it),
+                )
+            },
+            detail.repaymentDay?.let {
+                CardInfoRow(
+                    icon = Icons.Default.Event,
+                    label = stringResource(R.string.detail_repayment_day),
+                    value = stringResource(R.string.card_day_of_month, it),
                 )
             },
             c.note.takeIf(String::isNotBlank)?.let {
@@ -566,14 +595,6 @@ private data class CardInfoRow(
     val valueColor: androidx.compose.ui.graphics.Color? = null,
     val multiline: Boolean = false,
 )
-
-private val com.shuaji.cards.data.local.CardEntity.hasDetailInfo: Boolean
-    get() =
-        bank.isNotBlank() ||
-            cardNumberMasked.isNotBlank() ||
-            validUntilMillis != null ||
-            nextDueDateMillis != null ||
-            note.isNotBlank()
 
 @Composable
 private fun DividerLine() {

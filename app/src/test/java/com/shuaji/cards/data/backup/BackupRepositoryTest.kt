@@ -15,6 +15,7 @@ import com.shuaji.cards.data.backup.TestData.transaction
 import com.shuaji.cards.data.local.AppDatabase
 import com.shuaji.cards.data.local.CardEntity
 import com.shuaji.cards.data.local.CardFolderEntity
+import com.shuaji.cards.data.local.CardType
 import com.shuaji.cards.data.local.ImageSourceType
 import com.shuaji.cards.data.local.TransactionEntity
 import kotlinx.coroutines.CancellationException
@@ -272,7 +273,7 @@ class BackupRepositoryTest {
             assertEquals("PROVIDER", bundle.cards.single().imageSourceType)
             assertEquals("visa", bundle.cards.single().imageProviderKey)
             assertEquals(f1.copy(id = f1Id), bundle.folders.single().toEntity())
-            assertEquals(c1.copy(id = c1Id), bundle.cards.single().toEntity())
+            assertEquals(c1.copy(id = c1Id), bundle.cards.single().toEntity(bundle.version))
             assertEquals(sourceTransaction.copy(id = transactionId), bundle.transactions.single().toEntity())
             assertFalse(
                 "BackupBundle 不应再含 exportedAtMillis 字段",
@@ -665,7 +666,7 @@ class BackupRepositoryTest {
         }
 
     @Test
-    fun futureSchemaOne_replaceRoundtripPreservesEveryEntityField() =
+    fun schemaTwo_replaceRoundtripPreservesEveryEntityField() =
         runTest {
             val folderId =
                 db.cardFolderDao().insert(
@@ -682,6 +683,9 @@ class BackupRepositoryTest {
                         name = "完整卡片",
                         bank = "完整银行",
                         cardNumberMasked = "**** 9876",
+                        cardType = CardType.CREDIT.key,
+                        statementDay = 12,
+                        repaymentDay = 27,
                         validUntilMillis = 222L,
                         nextDueDateMillis = DateToken.fromLocalDate(LocalDate.of(2029, 6, 1)),
                         requiredCount = 9,
@@ -720,13 +724,22 @@ class BackupRepositoryTest {
             importInspected(file, ImportMode.REPLACE)
 
             assertEquals(BackupBundle.SCHEMA_VERSION, json().decodeFromString<BackupBundle>(file.readText()).version)
-            assertEquals(1, BackupBundle.SCHEMA_VERSION)
-            assertEquals(7, db.openHelper.readableDatabase.version)
+            assertEquals(2, BackupBundle.SCHEMA_VERSION)
+            assertEquals(8, db.openHelper.readableDatabase.version)
             assertLogicalSnapshotEquals(before, snapshotDatabase())
 
             importInspected(file, ImportMode.MERGE)
 
             val mergedCards = db.cardDao().listAll()
+            assertEquals(
+                2,
+                mergedCards.count {
+                    it.name == "完整卡片" &&
+                        it.cardType == CardType.CREDIT.key &&
+                        it.statementDay == 12 &&
+                        it.repaymentDay == 27
+                },
+            )
             assertEquals(
                 2,
                 mergedCards.count {
@@ -759,6 +772,69 @@ class BackupRepositoryTest {
                     .distinct()
                     .size,
             )
+        }
+
+    @Test
+    fun schemaTwo_nonCreditCardsDiscardCreditOnlyDays() =
+        runTest {
+            val validDebit =
+                backupBundle(
+                    cards = listOf(card(id = 20L, name = "借记卡", cardType = CardType.DEBIT.key)),
+                )
+            val inconsistentDebit =
+                validDebit.copy(
+                    cards = validDebit.cards.map { it.copy(statementDay = 8, repaymentDay = 21) },
+                )
+            val file = tempJsonFile("debit-with-credit-days.json")
+            file.writeText(json().encodeToString(inconsistentDebit), Charsets.UTF_8)
+
+            importInspected(file, ImportMode.REPLACE)
+
+            val stored = db.cardDao().listAll().single()
+            assertEquals(CardType.DEBIT.key, stored.cardType)
+            assertNull(stored.statementDay)
+            assertNull(stored.repaymentDay)
+        }
+
+    @Test
+    fun schemaTwo_rejectsMissingOrUnknownTypeAndInvalidDaysBeforeWriting() =
+        runTest {
+            val originalId = db.cardDao().upsert(card(name = "原卡"))
+            val valid =
+                backupBundle(
+                    cards =
+                        listOf(
+                            card(
+                                id = 20L,
+                                name = "信用卡",
+                                cardType = CardType.CREDIT.key,
+                                statementDay = 8,
+                                repaymentDay = 21,
+                            ),
+                        ),
+                )
+            val invalidCards =
+                listOf(
+                    valid.cards.single().copy(cardType = null),
+                    valid.cards.single().copy(cardType = "FUTURE_TYPE"),
+                    valid.cards.single().copy(statementDay = 0),
+                    valid.cards.single().copy(statementDay = 32),
+                    valid.cards.single().copy(repaymentDay = -1),
+                    valid.cards.single().copy(repaymentDay = 32),
+                )
+
+            invalidCards.forEachIndexed { index, invalidCard ->
+                val file = tempJsonFile("invalid-card-details-$index.json")
+                file.writeText(
+                    json().encodeToString(valid.copy(cards = listOf(invalidCard))),
+                    Charsets.UTF_8,
+                )
+
+                assertThrows(BackupException::class.java) {
+                    runBlocking { importInspected(file, ImportMode.REPLACE) }
+                }
+                assertEquals("无效备份不能改动现库", "原卡", db.cardDao().getById(originalId)?.name)
+            }
         }
 
     @Test
@@ -1550,7 +1626,7 @@ class BackupRepositoryTest {
     fun schemaOneDto_rejectsEveryMissingPublishedEntityField() {
         val requiredFields =
             mapOf(
-                "cards" to PUBLISHED_CARD_FIELDS,
+                "cards" to SCHEMA_ONE_CARD_FIELDS,
                 "folders" to PUBLISHED_FOLDER_FIELDS,
                 "transactions" to PUBLISHED_TRANSACTION_FIELDS,
             )
@@ -1602,6 +1678,9 @@ class BackupRepositoryTest {
                 expectedCard.copy(id = replacedCard.id, folderId = replacedFolder.id),
                 replacedCard,
             )
+            assertEquals(CardType.UNSPECIFIED.key, replacedCard.cardType)
+            assertNull(replacedCard.statementDay)
+            assertNull(replacedCard.repaymentDay)
             assertEquals(replacedFolder.id, replacedCard.folderId)
             assertEquals(
                 transaction(id = replacedTransaction.id, cardId = replacedCard.id, occurredAtMillis = 444L),
@@ -1862,7 +1941,12 @@ class BackupRepositoryTest {
                 "cardOrientation",
                 "folderId",
                 "createdAtMillis",
+                "cardType",
+                "statementDay",
+                "repaymentDay",
             )
+        val SCHEMA_ONE_CARD_FIELDS =
+            PUBLISHED_CARD_FIELDS - setOf("cardType", "statementDay", "repaymentDay")
         val PUBLISHED_FOLDER_FIELDS = setOf("id", "name", "colorArgb", "sortOrder", "createdAtMillis")
         val PUBLISHED_TRANSACTION_FIELDS = setOf("id", "cardId", "occurredAtMillis")
 

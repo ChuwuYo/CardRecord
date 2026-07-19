@@ -2,19 +2,23 @@ package com.shuaji.cards.data.backup
 
 import com.shuaji.cards.data.local.CardEntity
 import com.shuaji.cards.data.local.CardFolderEntity
+import com.shuaji.cards.data.local.CardType
 import com.shuaji.cards.data.local.TransactionEntity
+import com.shuaji.cards.data.local.cardTypeEnum
+import com.shuaji.cards.data.local.withNormalizedCreditDetails
 import kotlinx.serialization.Required
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 /**
- * 备份文件 schema 1。
+ * 备份文件当前 schema。
  *
- * 顶层必须显式包含 `version`、`cards`、`folders`、`transactions`。表内字段由独立的 V1 DTO
+ * 顶层必须显式包含 `version`、`cards`、`folders`、`transactions`。表内字段由独立 DTO
  * 固定，不直接序列化 Room Entity，避免数据库模型的默认值或重构悄悄改变已经发布的文件协议。
- * 破坏性格式变更必须提升 [version] 并在导入边界显式迁移。
+ * schema 2 在卡片记录中新增卡类型、账单日和还款日；导入仍兼容冻结的 schema 1，
+ * 并把 schema 1 卡片明确映射成“未选择”，不猜测其历史类型。
  *
- * `imageUri` 是设备相关的 `content://` 引用。仍按 schema 1 原样导出以支持同设备恢复；
+ * `imageUri` 是设备相关的 `content://` 引用。仍原样导出以支持同设备恢复；
  * UI 通过 [ImportResult.imageUriUserCount] 提醒用户跨设备后可能需要重新选择图片。
  */
 @Serializable
@@ -24,7 +28,7 @@ data class BackupBundle(
     val version: Int = SCHEMA_VERSION,
     @Required
     @SerialName("cards")
-    val cards: List<BackupCardV1> = emptyList(),
+    val cards: List<BackupCard> = emptyList(),
     @Required
     @SerialName("folders")
     val folders: List<BackupFolderV1> = emptyList(),
@@ -33,13 +37,19 @@ data class BackupBundle(
     val transactions: List<BackupTransactionV1> = emptyList(),
 ) {
     companion object {
-        const val SCHEMA_VERSION: Int = 1
+        const val MIN_SUPPORTED_SCHEMA_VERSION: Int = 1
+        const val SCHEMA_VERSION: Int = 2
     }
 }
 
-/** schema 1 的卡片记录。所有字段都是已发布协议中的必填字段，包括可空字段。 */
+/**
+ * 卡片备份记录。
+ *
+ * schema 1 已发布字段继续保持必填；schema 2 的三个新增字段带解码默认值，只为让旧文件可读取。
+ * schema 2 文件仍由结构校验要求显式提供 [cardType]，不能靠该默认值掩盖损坏文件。
+ */
 @Serializable
-data class BackupCardV1(
+data class BackupCard(
     @SerialName("id")
     val id: Long,
     @SerialName("name")
@@ -70,6 +80,12 @@ data class BackupCardV1(
     val folderId: Long?,
     @SerialName("createdAtMillis")
     val createdAtMillis: Long,
+    @SerialName("cardType")
+    val cardType: String? = null,
+    @SerialName("statementDay")
+    val statementDay: Int? = null,
+    @SerialName("repaymentDay")
+    val repaymentDay: Int? = null,
 )
 
 /** schema 1 的文件夹记录。 */
@@ -98,8 +114,9 @@ data class BackupTransactionV1(
     val occurredAtMillis: Long,
 )
 
-internal fun CardEntity.toBackupV1(): BackupCardV1 =
-    BackupCardV1(
+internal fun CardEntity.toBackup(): BackupCard {
+    val normalized = withNormalizedCreditDetails()
+    return BackupCard(
         id = id,
         name = name,
         bank = bank,
@@ -115,14 +132,27 @@ internal fun CardEntity.toBackupV1(): BackupCardV1 =
         cardOrientation = cardOrientation,
         folderId = folderId,
         createdAtMillis = createdAtMillis,
+        cardType = normalized.cardTypeEnum.key,
+        statementDay = normalized.statementDay,
+        repaymentDay = normalized.repaymentDay,
     )
+}
 
-internal fun BackupCardV1.toEntity(): CardEntity =
-    CardEntity(
+internal fun BackupCard.toEntity(schemaVersion: Int): CardEntity {
+    val resolvedType =
+        if (schemaVersion == BackupBundle.MIN_SUPPORTED_SCHEMA_VERSION) {
+            CardType.UNSPECIFIED
+        } else {
+            checkNotNull(cardType?.let(CardType::fromKeyOrNull))
+        }
+    return CardEntity(
         id = id,
         name = name,
         bank = bank,
         cardNumberMasked = cardNumberMasked,
+        cardType = resolvedType.key,
+        statementDay = statementDay.takeIf { resolvedType == CardType.CREDIT },
+        repaymentDay = repaymentDay.takeIf { resolvedType == CardType.CREDIT },
         validUntilMillis = validUntilMillis,
         nextDueDateMillis = nextDueDateMillis,
         requiredCount = requiredCount,
@@ -135,6 +165,7 @@ internal fun BackupCardV1.toEntity(): CardEntity =
         folderId = folderId,
         createdAtMillis = createdAtMillis,
     )
+}
 
 internal fun CardFolderEntity.toBackupV1(): BackupFolderV1 =
     BackupFolderV1(

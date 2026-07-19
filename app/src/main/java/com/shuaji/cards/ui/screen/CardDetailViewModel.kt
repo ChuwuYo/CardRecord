@@ -6,9 +6,12 @@ import com.shuaji.cards.core.OneShotEventQueue
 import com.shuaji.cards.data.AnnualFeeCycle
 import com.shuaji.cards.data.CardRepository
 import com.shuaji.cards.data.SwipeRecordResult
+import com.shuaji.cards.data.local.CardType
 import com.shuaji.cards.data.local.CardWithCount
 import com.shuaji.cards.data.local.TransactionEntity
+import com.shuaji.cards.data.local.cardTypeEnum
 import com.shuaji.cards.data.local.isExpiredAt
+import com.shuaji.cards.data.local.isValidCardMonthDay
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.Flow
@@ -41,6 +44,22 @@ data class CardDetailUi(
     val swipes: List<TransactionEntity> = emptyList(),
 ) {
     val requiredCount: Int get() = card.requiredCount
+    val selectedCardType: CardType?
+        get() = card.cardTypeEnum.takeUnless { it == CardType.UNSPECIFIED }
+    val statementDay: Int?
+        get() = card.statementDay?.takeIf { selectedCardType == CardType.CREDIT && it.isValidCardMonthDay() }
+    val repaymentDay: Int?
+        get() = card.repaymentDay?.takeIf { selectedCardType == CardType.CREDIT && it.isValidCardMonthDay() }
+    val hasDetailInfo: Boolean
+        get() =
+            selectedCardType != null ||
+                card.bank.isNotBlank() ||
+                card.cardNumberMasked.isNotBlank() ||
+                card.validUntilMillis != null ||
+                card.nextDueDateMillis != null ||
+                statementDay != null ||
+                repaymentDay != null ||
+                card.note.isNotBlank()
 
     fun isCurrentPeriod(transaction: TransactionEntity): Boolean = cycle.includes(transaction.occurredAtMillis)
 }

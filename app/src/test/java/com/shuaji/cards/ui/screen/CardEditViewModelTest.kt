@@ -10,6 +10,7 @@ import com.shuaji.cards.data.CardRepository
 import com.shuaji.cards.data.UserImagePermissionStore
 import com.shuaji.cards.data.local.AppDatabase
 import com.shuaji.cards.data.local.CardEntity
+import com.shuaji.cards.data.local.CardType
 import com.shuaji.cards.data.local.ImageSourceType
 import com.shuaji.cards.ui.theme.DefaultBrandPrimary
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -70,6 +71,46 @@ class CardEditViewModelTest {
     @Test
     fun newCard_usesDefaultBrandPrimaryColor() {
         assertEquals(DefaultBrandPrimary.toArgb(), CardEditUiState().colorArgb)
+    }
+
+    @Test
+    fun newCard_keepsTypeUnspecifiedUntilUserChooses() {
+        val state = CardEditUiState()
+
+        assertEquals(CardType.UNSPECIFIED, state.cardType)
+        assertEquals("", state.statementDay)
+        assertEquals("", state.repaymentDay)
+    }
+
+    @Test
+    fun creditMonthDays_areOptionalAndMustBeWithinCalendarRange() {
+        assertTrue(isOptionalCardMonthDayValid(""))
+        assertTrue(isOptionalCardMonthDayValid("1"))
+        assertTrue(isOptionalCardMonthDayValid("31"))
+        assertFalse(isOptionalCardMonthDayValid("0"))
+        assertFalse(isOptionalCardMonthDayValid("32"))
+        assertFalse(isOptionalCardMonthDayValid("invalid"))
+
+        val invalid =
+            CardEditUiState(
+                name = "信用卡",
+                cardType = CardType.CREDIT,
+                statementDay = "32",
+            )
+        val ignoredForDebit = invalid.copy(cardType = CardType.DEBIT)
+
+        assertTrue(invalid.isStatementDayInvalid)
+        assertFalse(invalid.canSave)
+        assertFalse(ignoredForDebit.isStatementDayInvalid)
+        assertTrue(ignoredForDebit.canSave)
+    }
+
+    @Test
+    fun persistedMonthDay_isCreditOnly() {
+        assertEquals(12, persistedCardMonthDay(CardType.CREDIT, "12"))
+        assertNull(persistedCardMonthDay(CardType.CREDIT, ""))
+        assertNull(persistedCardMonthDay(CardType.DEBIT, "12"))
+        assertNull(persistedCardMonthDay(CardType.UNSPECIFIED, "12"))
     }
 
     @Test
@@ -165,6 +206,76 @@ class CardEditViewModelTest {
 
             assertFalse(state.canSave)
             assertNull(state.editingId)
+        }
+
+    @Test
+    fun loadExistingUnclassifiedCard_keepsTypeUnspecifiedForUserChoice() =
+        runTest {
+            val id =
+                repository.upsertCard(
+                    CardEntity(
+                        name = "历史卡",
+                        bank = "",
+                        cardNumberMasked = "",
+                        requiredCount = 6,
+                        colorArgb = 0,
+                    ),
+                )
+            val viewModel = CardEditViewModel(repository)
+
+            viewModel.load(id)
+            val state = viewModel.uiState.first { it.loadState == CardEditLoadState.READY }
+
+            assertEquals(CardType.UNSPECIFIED, state.cardType)
+            assertEquals("", state.statementDay)
+            assertEquals("", state.repaymentDay)
+        }
+
+    @Test
+    fun saveAndLoadCreditCard_roundTripsTypeAndMonthDays() =
+        runTest {
+            val writer = CardEditViewModel(repository)
+            writer.update {
+                it.copy(
+                    name = "信用卡",
+                    cardType = CardType.CREDIT,
+                    statementDay = "8",
+                    repaymentDay = "26",
+                )
+            }
+
+            writer.save()
+            val saved = writer.uiState.first { it.saveResult is CardEditSaveResult.Saved }
+            val id = requireNotNull((saved.saveResult as? CardEditSaveResult.Saved)?.id)
+            val reader = CardEditViewModel(repository)
+            reader.load(id)
+            val loaded = reader.uiState.first { it.loadState == CardEditLoadState.READY }
+
+            assertEquals(CardType.CREDIT, loaded.cardType)
+            assertEquals("8", loaded.statementDay)
+            assertEquals("26", loaded.repaymentDay)
+        }
+
+    @Test
+    fun saveDebitCard_dropsStaleCreditMonthDays() =
+        runTest {
+            val viewModel = CardEditViewModel(repository)
+            viewModel.update {
+                it.copy(
+                    name = "借记卡",
+                    cardType = CardType.DEBIT,
+                    statementDay = "8",
+                    repaymentDay = "26",
+                )
+            }
+
+            viewModel.save()
+            viewModel.uiState.first { it.saveResult is CardEditSaveResult.Saved }
+            val stored = db.cardDao().listAll().single()
+
+            assertEquals(CardType.DEBIT.key, stored.cardType)
+            assertNull(stored.statementDay)
+            assertNull(stored.repaymentDay)
         }
 
     @Test

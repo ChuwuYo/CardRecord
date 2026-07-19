@@ -8,7 +8,9 @@ import com.shuaji.cards.data.CardRepository
 import com.shuaji.cards.data.SwipeRecordResult
 import com.shuaji.cards.data.local.CardEntity
 import com.shuaji.cards.data.local.CardFolderEntity
+import com.shuaji.cards.data.local.CardType
 import com.shuaji.cards.data.local.CardWithCount
+import com.shuaji.cards.data.local.cardTypeEnum
 import com.shuaji.cards.data.local.isExpiredAt
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -28,20 +30,24 @@ import java.time.ZoneId
 enum class ListLayoutMode { LIST, GRID }
 
 /**
- * 过滤模式：
- * - [All] 全部卡片（不按文件夹过滤），按文件夹分组在 UI 层处理
- * - [Folder] 显示某个文件夹下的卡
- * - [Unfiled] 显示 folder_id 为空的卡
+ * 卡片筛选是与文件夹并列的视图条件，不会修改卡片归属。
+ *
+ * 借记卡和信用卡只匹配用户明确选择过的类型；历史卡片的“未选择”状态仍会出现在
+ * [All]、[Folder] 和 [Unfiled] 中，避免升级后被错误归类。
  */
-sealed interface FolderFilter {
-    data object All : FolderFilter
+sealed interface CardFilter {
+    data object All : CardFilter
 
-    data object Unfiled : FolderFilter
+    data object Debit : CardFilter
+
+    data object Credit : CardFilter
+
+    data object Unfiled : CardFilter
 
     data class Folder(
         val folderId: Long,
         val folderName: String,
-    ) : FolderFilter
+    ) : CardFilter
 }
 
 /**
@@ -99,7 +105,7 @@ data class CardListGroup(
 data class ListUiState(
     val allCards: List<CardUi> = emptyList(),
     val folders: List<CardFolderEntity> = emptyList(),
-    val filter: FolderFilter = FolderFilter.All,
+    val filter: CardFilter = CardFilter.All,
     val layoutMode: ListLayoutMode = ListLayoutMode.LIST,
     val grouped: List<CardListGroup> = emptyList(),
 ) {
@@ -113,7 +119,7 @@ data class ListUiState(
 class CardListViewModel(
     private val repository: CardRepository,
 ) : ViewModel() {
-    private val selectedFilter = MutableStateFlow<FolderFilter>(FolderFilter.All)
+    private val selectedFilter = MutableStateFlow<CardFilter>(CardFilter.All)
 
     private val selectedLayoutMode = MutableStateFlow(ListLayoutMode.LIST)
 
@@ -141,8 +147,8 @@ class CardListViewModel(
             repository.observeFolders(),
             selectedFilter,
             selectedLayoutMode,
-        ) { cards, folders, flt, mode ->
-            val normalizedFilter = normalizeFolderFilter(flt, folders)
+        ) { cards, folders, filter, mode ->
+            val normalizedFilter = normalizeCardFilter(filter, folders)
             val grouped = groupCardsForList(cards, folders, normalizedFilter)
             ListUiState(
                 allCards = cards,
@@ -157,8 +163,8 @@ class CardListViewModel(
             initialValue = ListUiState(),
         )
 
-    fun selectFilter(flt: FolderFilter) {
-        selectedFilter.value = flt
+    fun selectFilter(filter: CardFilter) {
+        selectedFilter.value = filter
     }
 
     fun toggleLayoutMode() {
@@ -219,19 +225,21 @@ class CardListViewModel(
  * 文件夹可在管理页被改名或删除，因此筛选项只把 id 当作身份真源。
  * 已删除的筛选目标回退到“全部”，仍存在的目标则刷新展示名称。
  */
-internal fun normalizeFolderFilter(
-    filter: FolderFilter,
+internal fun normalizeCardFilter(
+    filter: CardFilter,
     folders: List<CardFolderEntity>,
-): FolderFilter =
+): CardFilter =
     when (filter) {
-        FolderFilter.All,
-        FolderFilter.Unfiled,
+        CardFilter.All,
+        CardFilter.Debit,
+        CardFilter.Credit,
+        CardFilter.Unfiled,
         -> filter
-        is FolderFilter.Folder ->
+        is CardFilter.Folder ->
             folders
                 .firstOrNull { it.id == filter.folderId }
-                ?.let { FolderFilter.Folder(folderId = it.id, folderName = it.name) }
-                ?: FolderFilter.All
+                ?.let { CardFilter.Folder(folderId = it.id, folderName = it.name) }
+                ?: CardFilter.All
     }
 
 /**
@@ -285,60 +293,41 @@ private fun cappedProgressRatio(card: CardUi): Double =
     if (card.card.requiredCount <= 0) 0.0 else (card.currentCount.toDouble() / card.card.requiredCount).coerceAtMost(1.0)
 
 /**
- * 按当前 [flt] 把 [cards] 分成 [CardListGroup] 列表。
+ * 按当前 [filter] 把 [cards] 分成 [CardListGroup] 列表。
  *
  * 排序：
- * - filter=All 时：每个文件夹一组 + "未分类"组（若有）
- * - filter=Folder/Unfiled 时：单组
- * - 组内：filter=All 按 progress 降序（最接近达标的在最上面），其他按创建时间倒序
+ * - filter=All/Debit/Credit 时：先按类型筛选，再按文件夹分组
+ * - filter=Folder/Unfiled 时：单组，包含未选择卡类型的历史数据
+ * - 组内：全局筛选按 progress 降序，文件夹筛选按创建时间倒序
  */
 internal fun groupCardsForList(
     cards: List<CardUi>,
     folders: List<CardFolderEntity>,
-    flt: FolderFilter,
+    filter: CardFilter,
 ): List<CardListGroup> =
-    when (flt) {
-        is FolderFilter.All -> {
-            val groups = mutableListOf<CardListGroup>()
-            folders.forEach { f ->
-                val inFolder = cards.filter { it.card.folderId == f.id }
-                if (inFolder.isNotEmpty()) {
-                    val sorted = sortCardsForOverall(inFolder)
-                    groups +=
-                        CardListGroup(
-                            key = "f-${f.id}",
-                            title = f.name,
-                            colorArgb = f.colorArgb,
-                            cards = sorted,
-                            isUnfiledGroup = false,
-                        )
-                }
-            }
-            val unfiled = cards.filter { it.card.folderId == null }
-            if (unfiled.isNotEmpty()) {
-                val sorted = sortCardsForOverall(unfiled)
-                groups +=
-                    CardListGroup(
-                        key = "unfiled",
-                        title = "",
-                        colorArgb = 0,
-                        cards = sorted,
-                        isUnfiledGroup = true,
-                    )
-            }
-            groups
-        }
-        is FolderFilter.Folder -> {
-            val folder = folders.firstOrNull { it.id == flt.folderId }
-            val title = folder?.name ?: flt.folderName
+    when (filter) {
+        CardFilter.All -> groupCardsAcrossFolders(cards, folders)
+        CardFilter.Debit ->
+            groupCardsAcrossFolders(
+                cards = cards.filter { it.card.cardTypeEnum == CardType.DEBIT },
+                folders = folders,
+            )
+        CardFilter.Credit ->
+            groupCardsAcrossFolders(
+                cards = cards.filter { it.card.cardTypeEnum == CardType.CREDIT },
+                folders = folders,
+            )
+        is CardFilter.Folder -> {
+            val folder = folders.firstOrNull { it.id == filter.folderId }
+            val title = folder?.name ?: filter.folderName
             val color = folder?.colorArgb ?: 0
             val inFolder =
                 cards
-                    .filter { it.card.folderId == flt.folderId }
+                    .filter { it.card.folderId == filter.folderId }
                     .sortedByDescending { it.card.createdAtMillis }
             listOf(
                 CardListGroup(
-                    key = "f-${flt.folderId}",
+                    key = "f-${filter.folderId}",
                     title = title,
                     colorArgb = color,
                     cards = inFolder,
@@ -346,7 +335,7 @@ internal fun groupCardsForList(
                 ),
             )
         }
-        is FolderFilter.Unfiled -> {
+        CardFilter.Unfiled -> {
             val unfiled =
                 cards
                     .filter { it.card.folderId == null }
@@ -362,3 +351,36 @@ internal fun groupCardsForList(
             )
         }
     }
+
+private fun groupCardsAcrossFolders(
+    cards: List<CardUi>,
+    folders: List<CardFolderEntity>,
+): List<CardListGroup> {
+    val cardsByFolderId = cards.groupBy { it.card.folderId }
+    val groups = mutableListOf<CardListGroup>()
+    folders.forEach { folder ->
+        val inFolder = cardsByFolderId[folder.id].orEmpty()
+        if (inFolder.isNotEmpty()) {
+            groups +=
+                CardListGroup(
+                    key = "f-${folder.id}",
+                    title = folder.name,
+                    colorArgb = folder.colorArgb,
+                    cards = sortCardsForOverall(inFolder),
+                    isUnfiledGroup = false,
+                )
+        }
+    }
+    val unfiled = cardsByFolderId[null].orEmpty()
+    if (unfiled.isNotEmpty()) {
+        groups +=
+            CardListGroup(
+                key = "unfiled",
+                title = "",
+                colorArgb = 0,
+                cards = sortCardsForOverall(unfiled),
+                isUnfiledGroup = true,
+            )
+    }
+    return groups
+}

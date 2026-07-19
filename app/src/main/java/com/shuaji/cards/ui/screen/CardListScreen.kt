@@ -51,6 +51,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -75,10 +76,10 @@ import com.shuaji.cards.ui.component.CardListItem
 import com.shuaji.cards.ui.component.CompactCardListItem
 
 /**
- * 主页：文件夹过滤 + 卡片列表/网格切换。
+ * 主页：卡类型/文件夹过滤 + 卡片列表/网格切换。
  *
- * 排序策略：filter=All 时按"距离达标"倒序（最接近达标的在最上面，提醒用户刷），
- * filter=Folder/Unfiled 时按创建时间倒序（最新添加的最上）。
+ * 排序策略：全部/借记/信用筛选在每个文件夹内按进度排序，
+ * 文件夹/未分类筛选按创建时间倒序。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -152,7 +153,10 @@ fun CardListScreen(
             )
             // 主体：列表 / 网格
             if (state.visibleCards.isEmpty()) {
-                EmptyState(modifier = Modifier.fillMaxSize())
+                EmptyState(
+                    hasCardsOutsideCurrentFilter = state.allCards.isNotEmpty(),
+                    modifier = Modifier.fillMaxSize(),
+                )
             } else {
                 when (state.layoutMode) {
                     ListLayoutMode.LIST ->
@@ -267,6 +271,23 @@ private fun ListTopBar(
 
 private const val LIST_SUBTITLE_MAX_LINES = 2
 
+internal val DEFAULT_CARD_FILTERS: List<CardFilter> =
+    listOf(
+        CardFilter.All,
+        CardFilter.Debit,
+        CardFilter.Credit,
+        CardFilter.Unfiled,
+    )
+
+internal fun cardFilterKey(filter: CardFilter): String =
+    when (filter) {
+        CardFilter.All -> "all"
+        CardFilter.Debit -> "debit"
+        CardFilter.Credit -> "credit"
+        CardFilter.Unfiled -> "unfiled"
+        is CardFilter.Folder -> "folder-${filter.folderId}"
+    }
+
 /** TopAppBar 的默认固定高度不足以容纳大字体下的标题与两行副标题。 */
 internal fun resolveListTopBarMinimumHeight(
     titleLineHeight: Dp,
@@ -320,17 +341,12 @@ private fun OverallProgress(state: ListUiState) {
 @Composable
 private fun FilterBar(
     state: ListUiState,
-    onSelectFilter: (FolderFilter) -> Unit,
+    onSelectFilter: (CardFilter) -> Unit,
     onManageFolders: () -> Unit,
 ) {
     var expanded by rememberSaveable { mutableStateOf(false) }
     val anchorLabel = stringResource(R.string.list_filter_anchor_label)
-    val currentLabel =
-        when (val f = state.filter) {
-            is FolderFilter.All -> stringResource(R.string.list_filter_all)
-            is FolderFilter.Unfiled -> stringResource(R.string.list_filter_unfiled)
-            is FolderFilter.Folder -> f.folderName
-        }
+    val currentLabel = cardFilterLabel(state.filter)
 
     Box(
         modifier =
@@ -361,27 +377,24 @@ private fun FilterBar(
                         .fillMaxWidth()
                         .menuAnchor(MenuAnchorType.PrimaryNotEditable, enabled = true),
             )
-            // 显式 heightIn 上限：文件夹数量多时出现滚动条（自带 scrollState）。
-            // 同时加一个开关项"管理文件夹…"用于跳转。
+            // 菜单只展示约四行；更多默认筛选和用户文件夹由
+            // ExposedDropdownMenu 自带的纵向 scrollState 承载，数据层不截断。
             ExposedDropdownMenu(
                 expanded = expanded,
                 onDismissRequest = { expanded = false },
-                modifier = Modifier.heightIn(max = 320.dp),
+                modifier = Modifier.heightIn(max = FILTER_MENU_MAX_HEIGHT),
             ) {
-                DropdownMenuItem(
-                    text = { Text(stringResource(R.string.list_filter_all)) },
-                    onClick = {
-                        onSelectFilter(FolderFilter.All)
-                        expanded = false
-                    },
-                )
-                DropdownMenuItem(
-                    text = { Text(stringResource(R.string.list_filter_unfiled)) },
-                    onClick = {
-                        onSelectFilter(FolderFilter.Unfiled)
-                        expanded = false
-                    },
-                )
+                DEFAULT_CARD_FILTERS.forEach { filter ->
+                    key(cardFilterKey(filter)) {
+                        DropdownMenuItem(
+                            text = { Text(cardFilterLabel(filter)) },
+                            onClick = {
+                                onSelectFilter(filter)
+                                expanded = false
+                            },
+                        )
+                    }
+                }
                 if (state.folders.isNotEmpty()) {
                     HorizontalDivider()
                     Text(
@@ -396,29 +409,31 @@ private fun FilterBar(
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
                     )
                     state.folders.forEach { folder ->
-                        val isCurrent =
-                            (state.filter as? FolderFilter.Folder)?.folderId == folder.id
-                        DropdownMenuItem(
-                            text = {
-                                Text(
-                                    text = folder.name,
-                                    fontWeight = if (isCurrent) FontWeight.SemiBold else FontWeight.Normal,
-                                )
-                            },
-                            leadingIcon = {
-                                Box(
-                                    modifier =
-                                        Modifier
-                                            .size(14.dp)
-                                            .clip(RoundedCornerShape(50))
-                                            .background(Color(folder.colorArgb)),
-                                )
-                            },
-                            onClick = {
-                                onSelectFilter(FolderFilter.Folder(folder.id, folder.name))
-                                expanded = false
-                            },
-                        )
+                        key(cardFilterKey(CardFilter.Folder(folder.id, folder.name))) {
+                            val isCurrent =
+                                (state.filter as? CardFilter.Folder)?.folderId == folder.id
+                            DropdownMenuItem(
+                                text = {
+                                    Text(
+                                        text = folder.name,
+                                        fontWeight = if (isCurrent) FontWeight.SemiBold else FontWeight.Normal,
+                                    )
+                                },
+                                leadingIcon = {
+                                    Box(
+                                        modifier =
+                                            Modifier
+                                                .size(14.dp)
+                                                .clip(RoundedCornerShape(50))
+                                                .background(Color(folder.colorArgb)),
+                                    )
+                                },
+                                onClick = {
+                                    onSelectFilter(CardFilter.Folder(folder.id, folder.name))
+                                    expanded = false
+                                },
+                            )
+                        }
                     }
                     HorizontalDivider()
                 }
@@ -446,6 +461,19 @@ private fun FilterBar(
         }
     }
 }
+
+// Material 3 菜单项最小高度为 48dp，外加菜单上下内边距，可见区约四行。
+private val FILTER_MENU_MAX_HEIGHT = 208.dp
+
+@Composable
+private fun cardFilterLabel(filter: CardFilter): String =
+    when (filter) {
+        CardFilter.All -> stringResource(R.string.list_filter_all)
+        CardFilter.Debit -> stringResource(R.string.list_filter_debit)
+        CardFilter.Credit -> stringResource(R.string.list_filter_credit)
+        CardFilter.Unfiled -> stringResource(R.string.list_filter_unfiled)
+        is CardFilter.Folder -> filter.folderName
+    }
 
 @Composable
 private fun CardsList(
@@ -590,20 +618,31 @@ private fun CardsGrid(
 }
 
 @Composable
-private fun EmptyState(modifier: Modifier = Modifier) {
+private fun EmptyState(
+    hasCardsOutsideCurrentFilter: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    val title =
+        stringResource(
+            if (hasCardsOutsideCurrentFilter) R.string.list_filter_empty_title else R.string.list_empty_title,
+        )
+    val subtitle =
+        stringResource(
+            if (hasCardsOutsideCurrentFilter) R.string.list_filter_empty_subtitle else R.string.list_empty_subtitle,
+        )
     Box(modifier = modifier, contentAlignment = Alignment.Center) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
             modifier = Modifier.padding(32.dp),
         ) {
             Text(
-                text = stringResource(R.string.list_empty_title),
+                text = title,
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold,
             )
             Spacer(Modifier.height(6.dp))
             Text(
-                text = stringResource(R.string.list_empty_subtitle),
+                text = subtitle,
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

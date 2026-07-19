@@ -11,8 +11,10 @@ import com.shuaji.cards.R
 import com.shuaji.cards.data.local.AppDatabase
 import com.shuaji.cards.data.local.CardDao
 import com.shuaji.cards.data.local.CardFolderDao
+import com.shuaji.cards.data.local.CardType
 import com.shuaji.cards.data.local.ImageSourceType
 import com.shuaji.cards.data.local.TransactionDao
+import com.shuaji.cards.data.local.isValidCardMonthDay
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
@@ -152,7 +154,7 @@ class BackupRepository(
                 database.withTransaction {
                     BackupBundle(
                         version = BackupBundle.SCHEMA_VERSION,
-                        cards = cardDao.listAll().map { it.toBackupV1() },
+                        cards = cardDao.listAll().map { it.toBackup() },
                         folders = folderDao.listAll().map { it.toBackupV1() },
                         transactions = transactionDao.listAll().map { it.toBackupV1() },
                     )
@@ -278,7 +280,7 @@ class BackupRepository(
         val validated = readBundle(uri)
         val bundle = validated.bundle
         currentCoroutineContext().ensureActive()
-        if (bundle.version != BackupBundle.SCHEMA_VERSION) {
+        if (bundle.version !in BackupBundle.MIN_SUPPORTED_SCHEMA_VERSION..BackupBundle.SCHEMA_VERSION) {
             throw BackupException(
                 context.getString(
                     R.string.backup_error_version_mismatch,
@@ -485,7 +487,10 @@ class BackupRepository(
                         null
                     }
                 }
-            cardRemap[card.id] = cardDao.upsert(card.toEntity().copy(id = 0L, folderId = safeFolderId))
+            cardRemap[card.id] =
+                cardDao.upsert(
+                    card.toEntity(bundle.version).copy(id = 0L, folderId = safeFolderId),
+                )
         }
         bundle.transactions.forEach { transaction ->
             val cardId = checkNotNull(cardRemap[transaction.cardId])
@@ -546,7 +551,10 @@ class BackupRepository(
                         null
                     }
                 }
-            val newId = cardDao.upsert(card.toEntity().copy(id = 0L, folderId = safeFolderId))
+            val newId =
+                cardDao.upsert(
+                    card.toEntity(bundle.version).copy(id = 0L, folderId = safeFolderId),
+                )
             cardRemap[card.id] = newId
         }
 
@@ -603,7 +611,18 @@ private fun BackupBundle.hasValidStructure(): Boolean {
         cards.map { it.id }.containsUniquePositiveIds() &&
         transactions.map { it.id }.containsUniquePositiveIds() &&
         cards.all { card ->
-            card.requiredCount > 0 && (card.folderId == null || card.folderId > 0L)
+            val parsedType = card.cardType?.let(CardType::fromKeyOrNull)
+            val hasValidType =
+                when {
+                    card.cardType != null && parsedType == null -> false
+                    version == BackupBundle.SCHEMA_VERSION -> parsedType != null
+                    else -> true
+                }
+            card.requiredCount > 0 &&
+                (card.folderId == null || card.folderId > 0L) &&
+                hasValidType &&
+                (card.statementDay == null || card.statementDay.isValidCardMonthDay()) &&
+                (card.repaymentDay == null || card.repaymentDay.isValidCardMonthDay())
         } &&
         transactions.all { it.cardId > 0L }
 }

@@ -9,7 +9,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [CardEntity::class, TransactionEntity::class, CardFolderEntity::class],
-    version = 7,
+    version = 8,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -302,6 +302,24 @@ abstract class AppDatabase : RoomDatabase() {
             }
 
         /**
+         * v7 → v8：新增卡片资金属性及信用卡账期字段。
+         *
+         * 历史卡没有足够信息判断借记或信用，必须保留为 UNSPECIFIED；两个日号保持 NULL，
+         * 等用户编辑时主动选择，不能用迁移默认值替用户做业务推断。
+         */
+        private val MIGRATION_7_8 =
+            object : Migration(7, 8) {
+                override fun migrate(db: SupportSQLiteDatabase) {
+                    db.execSQL(
+                        "ALTER TABLE `cards` ADD COLUMN `card_type` TEXT NOT NULL " +
+                            "DEFAULT '$CARD_TYPE_UNSPECIFIED_KEY'",
+                    )
+                    db.execSQL("ALTER TABLE `cards` ADD COLUMN `statement_day` INTEGER")
+                    db.execSQL("ALTER TABLE `cards` ADD COLUMN `repayment_day` INTEGER")
+                }
+            }
+
+        /**
          * 全部迁移，按版本顺序。`get()` 与迁移测试共用同一份，避免「测试漏注册某条迁移」。
          */
         val ALL_MIGRATIONS: Array<Migration> =
@@ -312,6 +330,7 @@ abstract class AppDatabase : RoomDatabase() {
                 MIGRATION_4_5,
                 MIGRATION_5_6,
                 MIGRATION_6_7,
+                MIGRATION_7_8,
             )
 
         fun get(context: Context): AppDatabase =

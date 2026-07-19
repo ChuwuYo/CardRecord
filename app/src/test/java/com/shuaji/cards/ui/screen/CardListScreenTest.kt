@@ -18,4 +18,25 @@ class CardListScreenTest {
     fun topBarHeight_scalesWithBothSubtitleLines() {
         assertEquals(101.dp, resolveListTopBarMinimumHeight(titleLineHeight = 33.dp, subtitleLineHeight = 24.dp))
     }
+
+    @Test
+    fun defaultFilters_keepProductOrder() {
+        assertEquals(
+            listOf(
+                CardFilter.All,
+                CardFilter.Debit,
+                CardFilter.Credit,
+                CardFilter.Unfiled,
+            ),
+            DEFAULT_CARD_FILTERS,
+        )
+    }
+
+    @Test
+    fun folderFilterKey_dependsOnIdentityInsteadOfEditableName() {
+        assertEquals(
+            cardFilterKey(CardFilter.Folder(folderId = 7, folderName = "旧名称")),
+            cardFilterKey(CardFilter.Folder(folderId = 7, folderName = "新名称")),
+        )
+    }
 }

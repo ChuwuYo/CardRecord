@@ -2,6 +2,7 @@ package com.shuaji.cards.data.backup
 
 import com.shuaji.cards.data.local.CardEntity
 import com.shuaji.cards.data.local.CardFolderEntity
+import com.shuaji.cards.data.local.CardType
 import com.shuaji.cards.data.local.TransactionEntity
 
 /** 测试数据工厂。固定时间用于保证测试结果可重复。 */
@@ -27,6 +28,9 @@ object TestData {
         name: String = "招行经典白",
         bank: String = "招商银行",
         cardNumberMasked: String = "**** **** **** 1234",
+        cardType: String = CardType.UNSPECIFIED.key,
+        statementDay: Int? = null,
+        repaymentDay: Int? = null,
         validUntilMillis: Long? = null,
         nextDueDateMillis: Long? = null,
         requiredCount: Int = 5,
@@ -43,6 +47,9 @@ object TestData {
         name = name,
         bank = bank,
         cardNumberMasked = cardNumberMasked,
+        cardType = cardType,
+        statementDay = statementDay,
+        repaymentDay = repaymentDay,
         validUntilMillis = validUntilMillis,
         nextDueDateMillis = nextDueDateMillis,
         requiredCount = requiredCount,
@@ -73,7 +80,16 @@ object TestData {
         transactions: List<TransactionEntity> = emptyList(),
     ) = BackupBundle(
         version = version,
-        cards = cards.map { it.toBackupV1() },
+        cards =
+            cards.map { card ->
+                card.toBackup().let { record ->
+                    if (version == BackupBundle.MIN_SUPPORTED_SCHEMA_VERSION) {
+                        record.copy(cardType = null, statementDay = null, repaymentDay = null)
+                    } else {
+                        record
+                    }
+                }
+            },
         folders = folders.map { it.toBackupV1() },
         transactions = transactions.map { it.toBackupV1() },
     )

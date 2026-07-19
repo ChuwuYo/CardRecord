@@ -86,6 +86,8 @@
     <string name="list_subtitle">Never forget a swipe—auto-track your annual-fee waiver progress</string>
     <string name="list_add_card">Add card</string>
     <string name="list_filter_all">All cards</string>
+    <string name="list_filter_debit">Debit cards</string>
+    <string name="list_filter_credit">Credit cards</string>
     <string name="list_filter_unfiled">Unfiled</string>
     <string name="list_filter_manage">Manage folders…</string>
     <string name="list_filter_switch">Switch</string>
@@ -97,9 +99,11 @@
     <string name="list_overall_progress_empty">No active counting periods</string>
     <string name="list_empty_title">No cards yet</string>
     <string name="list_empty_subtitle">Tap the button at the bottom right to add your first card\nCustomize the name, theme color, required swipes, and due date</string>
+    <string name="list_filter_empty_title">No cards in this filter</string>
+    <string name="list_filter_empty_subtitle">Try another filter, or edit a card’s type or folder</string>
     <string name="list_delete_dialog_title">Delete %1$s?</string>
     <string name="list_delete_dialog_message">This also deletes all spending records for this card. It cannot be undone.</string>
-    <string name="list_filter_anchor_label">Folder filter</string>
+    <string name="list_filter_anchor_label">Card filter</string>
 
     <!-- ────── Card item ────── -->
     <string name="card_count_format">%1$d / %2$d</string>
@@ -132,6 +136,10 @@
     <string name="detail_action_edit">Edit</string>
     <string name="detail_action_record">Record swipe</string>
     <string name="detail_label_bank">Issuer</string>
+    <string name="detail_card_type">Card type</string>
+    <string name="detail_statement_day">Statement day</string>
+    <string name="detail_repayment_day">Payment due day</string>
+    <string name="card_day_of_month">Day %1$d of each month</string>
     <string name="detail_label_card_number">Card number</string>
     <string name="detail_label_note">Note</string>
     <string name="detail_label_swipes">Swipe records</string>
@@ -166,6 +174,14 @@
     <string name="edit_orientation_portrait">Portrait</string>
     <string name="edit_section_folder">Folder</string>
     <string name="edit_folder_unfiled">Unfiled</string>
+    <string name="edit_card_type">Card type</string>
+    <string name="card_type_unspecified">Not selected</string>
+    <string name="card_type_debit">Debit card</string>
+    <string name="card_type_credit">Credit card</string>
+    <string name="edit_statement_day">Statement day</string>
+    <string name="edit_repayment_day">Payment due day</string>
+    <string name="edit_day_of_month_hint">1–31</string>
+    <string name="edit_day_out_of_range">Enter a day from 1 to 31</string>
     <string name="edit_section_theme_color">Theme color</string>
     <string name="edit_field_name">Card name *</string>
     <string name="edit_field_name_hint">e.g., Travel Platinum Card</string>

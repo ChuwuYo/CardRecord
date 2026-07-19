@@ -90,6 +90,7 @@ import com.shuaji.cards.R
 import com.shuaji.cards.data.CardNetworkProvider
 import com.shuaji.cards.data.DateToken
 import com.shuaji.cards.data.local.CardOrientation
+import com.shuaji.cards.data.local.CardType
 import com.shuaji.cards.data.local.ImageSourceType
 import com.shuaji.cards.ui.ViewModelFactories
 import com.shuaji.cards.ui.component.ModernColorPicker
@@ -177,6 +178,14 @@ fun CardEditScreen(
     val numberHint = stringResource(R.string.edit_field_number_hint)
     val requiredLabel = stringResource(R.string.edit_field_required)
     val noteLabel = stringResource(R.string.edit_field_note)
+    val cardTypeSection = stringResource(R.string.edit_card_type)
+    val cardTypeUnspecified = stringResource(R.string.card_type_unspecified)
+    val cardTypeDebit = stringResource(R.string.card_type_debit)
+    val cardTypeCredit = stringResource(R.string.card_type_credit)
+    val statementDayLabel = stringResource(R.string.edit_statement_day)
+    val repaymentDayLabel = stringResource(R.string.edit_repayment_day)
+    val dayOfMonthHint = stringResource(R.string.edit_day_of_month_hint)
+    val dayOutOfRange = stringResource(R.string.edit_day_out_of_range)
     val validUntilLabel = stringResource(R.string.edit_date_valid_until)
     val nextDueLabel = stringResource(R.string.edit_date_next_due)
     val nextDueError = stringResource(R.string.edit_next_due_must_be_future)
@@ -246,6 +255,19 @@ fun CardEditScreen(
                     .padding(horizontal = 20.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
+            Text(
+                cardTypeSection,
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            CardTypeSelector(
+                current = state.cardType,
+                unspecifiedLabel = cardTypeUnspecified,
+                debitLabel = cardTypeDebit,
+                creditLabel = cardTypeCredit,
+                onSelect = { type -> viewModel.update { it.copy(cardType = type) } },
+            )
+
             // ── 卡面来源 ──
             Text(
                 imageSection,
@@ -443,6 +465,29 @@ fun CardEditScreen(
                 singleLine = true,
             )
 
+            if (state.cardType == CardType.CREDIT) {
+                CardMonthDayField(
+                    value = state.statementDay,
+                    label = statementDayLabel,
+                    hint = dayOfMonthHint,
+                    errorText = dayOutOfRange,
+                    isError = state.isStatementDayInvalid,
+                    onValueChange = { value ->
+                        viewModel.update { it.copy(statementDay = value.filter(Char::isDigit)) }
+                    },
+                )
+                CardMonthDayField(
+                    value = state.repaymentDay,
+                    label = repaymentDayLabel,
+                    hint = dayOfMonthHint,
+                    errorText = dayOutOfRange,
+                    isError = state.isRepaymentDayInvalid,
+                    onValueChange = { value ->
+                        viewModel.update { it.copy(repaymentDay = value.filter(Char::isDigit)) }
+                    },
+                )
+            }
+
             OutlinedTextField(
                 value = state.requiredCount,
                 onValueChange = { v ->
@@ -602,6 +647,68 @@ fun CardEditScreen(
 }
 
 private enum class DateField { VALID_UNTIL, NEXT_DUE }
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun CardTypeSelector(
+    current: CardType,
+    unspecifiedLabel: String,
+    debitLabel: String,
+    creditLabel: String,
+    onSelect: (CardType) -> Unit,
+) {
+    val options =
+        listOf(
+            CardType.UNSPECIFIED to unspecifiedLabel,
+            CardType.DEBIT to debitLabel,
+            CardType.CREDIT to creditLabel,
+        )
+    SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+        options.forEachIndexed { index, (type, label) ->
+            SegmentedButton(
+                selected = current == type,
+                onClick = { onSelect(type) },
+                shape = SegmentedButtonDefaults.itemShape(index = index, count = options.size),
+            ) {
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.labelMedium,
+                    maxLines = 1,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun CardMonthDayField(
+    value: String,
+    label: String,
+    hint: String,
+    errorText: String,
+    isError: Boolean,
+    onValueChange: (String) -> Unit,
+) {
+    OutlinedTextField(
+        value = value,
+        onValueChange = onValueChange,
+        label = { Text(label) },
+        placeholder = { Text(hint) },
+        modifier = Modifier.fillMaxWidth(),
+        singleLine = true,
+        isError = isError,
+        supportingText =
+            if (isError) {
+                { Text(errorText) }
+            } else {
+                null
+            },
+        keyboardOptions =
+            androidx.compose.foundation.text.KeyboardOptions(
+                keyboardType = KeyboardType.Number,
+            ),
+    )
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

@@ -9,6 +9,7 @@ import com.shuaji.cards.data.CardRepository
 import com.shuaji.cards.data.local.AppDatabase
 import com.shuaji.cards.data.local.CardEntity
 import com.shuaji.cards.data.local.CardFolderEntity
+import com.shuaji.cards.data.local.CardType
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
@@ -62,19 +63,62 @@ class CardListViewModelTest {
 
     @Test
     fun selectedFolderFilter_fallsBackToAllWhenFolderNoLongerExists() {
-        val selected = FolderFilter.Folder(folderId = 42, folderName = "已删除")
+        val selected = CardFilter.Folder(folderId = 42, folderName = "已删除")
 
-        assertEquals(FolderFilter.All, normalizeFolderFilter(selected, emptyList()))
+        assertEquals(CardFilter.All, normalizeCardFilter(selected, emptyList()))
     }
 
     @Test
     fun selectedFolderFilter_keepsStableIdAndRefreshesNameFromCurrentFolder() {
-        val selected = FolderFilter.Folder(folderId = 42, folderName = "旧名称")
+        val selected = CardFilter.Folder(folderId = 42, folderName = "旧名称")
         val folders = listOf(CardFolderEntity(id = 42, name = "新名称", colorArgb = 0))
 
         assertEquals(
-            FolderFilter.Folder(folderId = 42, folderName = "新名称"),
-            normalizeFolderFilter(selected, folders),
+            CardFilter.Folder(folderId = 42, folderName = "新名称"),
+            normalizeCardFilter(selected, folders),
+        )
+    }
+
+    @Test
+    fun explicitTypeFilters_doNotGuessTypeForCompatibleUnspecifiedCards() {
+        val cards =
+            listOf(
+                cardUi(id = 1, cardType = CardType.UNSPECIFIED),
+                cardUi(id = 2, cardType = CardType.DEBIT),
+                cardUi(id = 3, cardType = CardType.CREDIT),
+            )
+
+        assertEquals(
+            listOf(2L),
+            groupCardsForList(cards, emptyList(), CardFilter.Debit).flatMap { it.cards }.map { it.card.id },
+        )
+        assertEquals(
+            listOf(3L),
+            groupCardsForList(cards, emptyList(), CardFilter.Credit).flatMap { it.cards }.map { it.card.id },
+        )
+        assertEquals(
+            setOf(1L, 2L, 3L),
+            groupCardsForList(cards, emptyList(), CardFilter.All).flatMap { it.cards }.map { it.card.id }.toSet(),
+        )
+    }
+
+    @Test
+    fun folderFilter_keepsCardsOfEveryTypeIncludingUnspecified() {
+        val folder = CardFolderEntity(id = 9, name = "日常", colorArgb = 0)
+        val cards =
+            listOf(
+                cardUi(id = 1, cardType = CardType.UNSPECIFIED, folderId = folder.id),
+                cardUi(id = 2, cardType = CardType.DEBIT, folderId = folder.id),
+                cardUi(id = 3, cardType = CardType.CREDIT, folderId = folder.id),
+            )
+
+        assertEquals(
+            setOf(1L, 2L, 3L),
+            groupCardsForList(
+                cards = cards,
+                folders = listOf(folder),
+                filter = CardFilter.Folder(folder.id, folder.name),
+            ).flatMap { it.cards }.map { it.card.id }.toSet(),
         )
     }
 
@@ -161,4 +205,28 @@ class CardListViewModelTest {
             cycle = AnnualFeeCycle.resolve(null, Clock.systemUTC().instant(), ZoneOffset.UTC),
         )
     }
+
+    private fun cardUi(
+        id: Long,
+        cardType: CardType,
+        folderId: Long? = null,
+    ): CardUi =
+        CardUi(
+            card =
+                CardEntity(
+                    id = id,
+                    name = "卡$id",
+                    bank = "某银行",
+                    cardNumberMasked = "**** $id",
+                    cardType = cardType.key,
+                    requiredCount = 0,
+                    colorArgb = 0,
+                    folderId = folderId,
+                    createdAtMillis = id,
+                ),
+            currentCount = 0,
+            isExpired = false,
+            lastSwipeAtMillis = null,
+            cycle = AnnualFeeCycle.Unscheduled,
+        )
 }

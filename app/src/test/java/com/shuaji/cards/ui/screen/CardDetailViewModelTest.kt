@@ -8,6 +8,7 @@ import com.shuaji.cards.data.AnnualFeeCycle
 import com.shuaji.cards.data.CardRepository
 import com.shuaji.cards.data.local.AppDatabase
 import com.shuaji.cards.data.local.CardEntity
+import com.shuaji.cards.data.local.CardType
 import com.shuaji.cards.data.local.TransactionEntity
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -16,7 +17,9 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest
 import org.junit.After
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
@@ -127,6 +130,62 @@ class CardDetailViewModelTest {
 
         assertTrue(ui.isCurrentPeriod(transaction("2027-07-01T00:00:00Z")))
         assertFalse(ui.isCurrentPeriod(transaction("2026-07-01T00:00:00Z")))
+    }
+
+    @Test
+    fun detailCreditDays_areExposedOnlyForCreditCardsWithValidValues() {
+        fun detail(card: CardEntity) =
+            CardDetailUi(
+                card = card,
+                currentCount = 0,
+                isExpired = false,
+                lastSwipeAtMillis = null,
+                cycle = AnnualFeeCycle.Overdue,
+            )
+
+        val credit =
+            detail(
+                card().copy(
+                    cardType = CardType.CREDIT.key,
+                    statementDay = 8,
+                    repaymentDay = 26,
+                ),
+            )
+        val debitWithStaleValues =
+            detail(
+                card().copy(
+                    cardType = CardType.DEBIT.key,
+                    statementDay = 8,
+                    repaymentDay = 26,
+                ),
+            )
+        val creditWithInvalidValues =
+            detail(
+                card().copy(
+                    cardType = CardType.CREDIT.key,
+                    statementDay = 0,
+                    repaymentDay = 32,
+                ),
+            )
+        val unspecifiedWithStaleValues =
+            detail(
+                card().copy(
+                    statementDay = 8,
+                    repaymentDay = 26,
+                ),
+            )
+
+        assertTrue(credit.hasDetailInfo)
+        assertEquals(CardType.CREDIT, credit.selectedCardType)
+        assertEquals(8, credit.statementDay)
+        assertEquals(26, credit.repaymentDay)
+        assertTrue(debitWithStaleValues.hasDetailInfo)
+        assertEquals(CardType.DEBIT, debitWithStaleValues.selectedCardType)
+        assertNull(debitWithStaleValues.statementDay)
+        assertTrue(creditWithInvalidValues.hasDetailInfo)
+        assertNull(creditWithInvalidValues.repaymentDay)
+        assertFalse(unspecifiedWithStaleValues.hasDetailInfo)
+        assertNull(unspecifiedWithStaleValues.selectedCardType)
     }
 
     private fun card() =

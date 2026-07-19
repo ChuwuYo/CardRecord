@@ -59,7 +59,7 @@ class MigrationTest {
                 .build()
 
         try {
-            // 强制打开 → 触发 5→6→7 迁移 + onValidateSchema（出 bug 会在此抛异常）。
+            // 强制打开 → 触发 5→6→7→8 迁移 + onValidateSchema（出 bug 会在此抛异常）。
             val cards = runBlocking { db.cardDao().listAll() }
             assertEquals("历史卡片应被迁移保留", 1, cards.size)
             assertEquals("迁移不应丢失 folder_id 引用", 1L, cards.single().folderId)
@@ -124,6 +124,24 @@ class MigrationTest {
                 },
             )
             assertEquals("v6 重建 cards 不能级联删除历史流水", 1, runBlocking { db.transactionDao().listAll() }.size)
+            assertForeignKeysClean(db)
+        } finally {
+            db.close()
+        }
+    }
+
+    @Test
+    fun migrateFromV7_preservesExistingCardAsUnspecifiedWithoutCreditDays() {
+        createV7DatabaseWithSampleCard()
+
+        val db = openMigratedDatabase()
+        try {
+            val card = runBlocking { db.cardDao().listAll().single() }
+            assertEquals("历史卡不能被猜成信用卡", CardType.UNSPECIFIED.key, card.cardType)
+            assertNull(card.statementDay)
+            assertNull(card.repaymentDay)
+            assertEquals(1, runBlocking { db.transactionDao().listAll() }.size)
+            assertEquals(8, db.openHelper.readableDatabase.version)
             assertForeignKeysClean(db)
         } finally {
             db.close()
@@ -344,6 +362,54 @@ class MigrationTest {
                 "INSERT INTO cards (id, name, bank, card_number_masked, required_count, color_argb, note, " +
                     "image_source_type, card_orientation, folder_id, created_at_millis) " +
                     "VALUES (1, 'Visa', '某银行', '**** 1234', 6, 255, '', 'USER', 'LANDSCAPE', 999, 0)",
+            )
+            db.execSQL("INSERT INTO transactions (id, card_id, occurred_at_millis) VALUES (1, 1, 123)")
+        }
+    }
+
+    private fun createV7DatabaseWithSampleCard() {
+        createHistoricalDatabase(version = 7) { db ->
+            db.execSQL(
+                """
+                CREATE TABLE `card_folders` (
+                    `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                    `name` TEXT NOT NULL,
+                    `color_argb` INTEGER NOT NULL,
+                    `sort_order` INTEGER NOT NULL,
+                    `created_at_millis` INTEGER NOT NULL
+                )
+                """.trimIndent(),
+            )
+            db.execSQL(
+                """
+                CREATE TABLE `cards` (
+                    `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                    `name` TEXT NOT NULL, `bank` TEXT NOT NULL,
+                    `card_number_masked` TEXT NOT NULL, `valid_until_millis` INTEGER,
+                    `next_due_date_millis` INTEGER, `required_count` INTEGER NOT NULL,
+                    `color_argb` INTEGER NOT NULL, `note` TEXT NOT NULL, `image_uri` TEXT,
+                    `image_source_type` TEXT NOT NULL DEFAULT 'USER', `image_provider_key` TEXT,
+                    `card_orientation` TEXT NOT NULL DEFAULT 'LANDSCAPE', `folder_id` INTEGER,
+                    `created_at_millis` INTEGER NOT NULL,
+                    FOREIGN KEY(`folder_id`) REFERENCES `card_folders`(`id`) ON UPDATE NO ACTION ON DELETE SET NULL
+                )
+                """.trimIndent(),
+            )
+            db.execSQL("CREATE INDEX `index_cards_folder_id` ON `cards` (`folder_id`)")
+            db.execSQL(
+                """
+                CREATE TABLE `transactions` (
+                    `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                    `card_id` INTEGER NOT NULL, `occurred_at_millis` INTEGER NOT NULL,
+                    FOREIGN KEY(`card_id`) REFERENCES `cards`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE
+                )
+                """.trimIndent(),
+            )
+            db.execSQL("CREATE INDEX `index_transactions_card_id` ON `transactions` (`card_id`)")
+            db.execSQL(
+                "INSERT INTO cards (id, name, bank, card_number_masked, required_count, color_argb, note, " +
+                    "image_source_type, card_orientation, created_at_millis) " +
+                    "VALUES (1, '历史卡', '某银行', '**** 1234', 6, 255, '', 'USER', 'LANDSCAPE', 0)",
             )
             db.execSQL("INSERT INTO transactions (id, card_id, occurred_at_millis) VALUES (1, 1, 123)")
         }

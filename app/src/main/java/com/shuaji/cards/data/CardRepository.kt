@@ -10,6 +10,7 @@ import com.shuaji.cards.data.local.CardWithCount
 import com.shuaji.cards.data.local.FolderWithCardCount
 import com.shuaji.cards.data.local.TransactionDao
 import com.shuaji.cards.data.local.TransactionEntity
+import com.shuaji.cards.data.local.withNormalizedCreditDetails
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
@@ -83,13 +84,13 @@ class CardRepository(
         }
 
     suspend fun upsertCard(card: CardEntity): Long =
-        cardDao.upsert(card).also {
+        cardDao.upsert(card.withNormalizedCreditDetails()).also {
             imagePermissions.reconcile()
         }
 
     /** 编辑只允许更新仍存在的卡，返回 false 时调用方不得用 upsert 把已删除卡片复活。 */
     suspend fun updateCard(card: CardEntity): Boolean =
-        (cardDao.update(card) == 1).also {
+        (cardDao.update(card.withNormalizedCreditDetails()) == 1).also {
             imagePermissions.reconcile()
         }
 

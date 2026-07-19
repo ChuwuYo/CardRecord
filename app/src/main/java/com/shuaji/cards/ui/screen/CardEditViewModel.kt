@@ -10,9 +10,12 @@ import com.shuaji.cards.data.DateToken
 import com.shuaji.cards.data.local.CardEntity
 import com.shuaji.cards.data.local.CardFolderEntity
 import com.shuaji.cards.data.local.CardOrientation
+import com.shuaji.cards.data.local.CardType
 import com.shuaji.cards.data.local.ImageSourceType
 import com.shuaji.cards.data.local.cardOrientationEnum
+import com.shuaji.cards.data.local.cardTypeEnum
 import com.shuaji.cards.data.local.imageSourceTypeEnum
+import com.shuaji.cards.data.local.isValidCardMonthDay
 import com.shuaji.cards.ui.theme.DEFAULT_BRAND_PRIMARY_ARGB
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineStart
@@ -77,6 +80,9 @@ data class CardEditUiState(
     val name: String = "",
     val bank: String = "",
     val cardNumberMasked: String = "",
+    val cardType: CardType = CardType.UNSPECIFIED,
+    val statementDay: String = "",
+    val repaymentDay: String = "",
     val requiredCount: String = "6",
     val validUntilMillis: Long? = null,
     val nextDueDateMillis: Long? = null,
@@ -95,6 +101,12 @@ data class CardEditUiState(
     val saveResult: CardEditSaveResult = CardEditSaveResult.Idle,
     val editingId: Long? = null,
 ) {
+    val isStatementDayInvalid: Boolean
+        get() = cardType == CardType.CREDIT && !isOptionalCardMonthDayValid(statementDay)
+
+    val isRepaymentDayInvalid: Boolean
+        get() = cardType == CardType.CREDIT && !isOptionalCardMonthDayValid(repaymentDay)
+
     val canSave: Boolean
         get() =
             !isSaving &&
@@ -102,7 +114,9 @@ data class CardEditUiState(
                 (loadState == CardEditLoadState.NEW || loadState == CardEditLoadState.READY) &&
                 saveResult !is CardEditSaveResult.Saved &&
                 name.isNotBlank() &&
-                requiredCount.toIntOrNull()?.let { it > 0 } == true
+                requiredCount.toIntOrNull()?.let { it > 0 } == true &&
+                !isStatementDayInvalid &&
+                !isRepaymentDayInvalid
 }
 
 class CardEditViewModel(
@@ -181,6 +195,9 @@ class CardEditViewModel(
                             name = c.name,
                             bank = c.bank,
                             cardNumberMasked = c.cardNumberMasked,
+                            cardType = c.cardTypeEnum,
+                            statementDay = c.statementDay?.toString().orEmpty(),
+                            repaymentDay = c.repaymentDay?.toString().orEmpty(),
                             requiredCount = c.requiredCount.toString(),
                             validUntilMillis = c.validUntilMillis,
                             nextDueDateMillis = c.nextDueDateMillis,
@@ -325,6 +342,9 @@ class CardEditViewModel(
                         name = state.name.trim(),
                         bank = state.bank.trim(),
                         cardNumberMasked = state.cardNumberMasked.trim(),
+                        cardType = state.cardType.key,
+                        statementDay = persistedCardMonthDay(state.cardType, state.statementDay),
+                        repaymentDay = persistedCardMonthDay(state.cardType, state.repaymentDay),
                         requiredCount = required,
                         validUntilMillis = state.validUntilMillis,
                         nextDueDateMillis = normalizedDue,
@@ -457,3 +477,12 @@ internal fun persistedImageUri(
     sourceType: ImageSourceType,
     imageUri: String?,
 ): String? = imageUri.takeIf { sourceType == ImageSourceType.USER }
+
+internal fun isOptionalCardMonthDayValid(input: String): Boolean = input.isBlank() || parseCardMonthDay(input) != null
+
+internal fun parseCardMonthDay(input: String): Int? = input.toIntOrNull()?.takeIf(Int::isValidCardMonthDay)
+
+internal fun persistedCardMonthDay(
+    cardType: CardType,
+    input: String,
+): Int? = if (cardType == CardType.CREDIT) parseCardMonthDay(input) else null

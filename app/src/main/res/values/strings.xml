@@ -87,6 +87,8 @@
     <string name="list_subtitle">刷卡不再忘记，自动追踪免年费进度</string>
     <string name="list_add_card">添加卡片</string>
     <string name="list_filter_all">全部卡片</string>
+    <string name="list_filter_debit">借记卡</string>
+    <string name="list_filter_credit">信用卡</string>
     <string name="list_filter_unfiled">未分类</string>
     <string name="list_filter_manage">管理文件夹…</string>
     <string name="list_filter_switch">切换</string>
@@ -98,9 +100,11 @@
     <string name="list_overall_progress_empty">暂无进行中的统计</string>
     <string name="list_empty_title">还没有卡片</string>
     <string name="list_empty_subtitle">点击右下角添加你的第一张卡片\n支持自定义卡名、主题色、所需笔数与到期日</string>
+    <string name="list_filter_empty_title">当前筛选暂无卡片</string>
+    <string name="list_filter_empty_subtitle">可切换其他分类，或编辑卡片补充卡类型和文件夹</string>
     <string name="list_delete_dialog_title">删除 %1$s？</string>
     <string name="list_delete_dialog_message">将同时删除这张卡的全部消费记录，操作不可撤销。</string>
-    <string name="list_filter_anchor_label">文件夹筛选</string>
+    <string name="list_filter_anchor_label">卡片筛选</string>
 
     <!-- ────── 卡片项 ────── -->
     <string name="card_count_format">%1$d / %2$d</string>
@@ -133,6 +137,10 @@
     <string name="detail_action_edit">编辑</string>
     <string name="detail_action_record">记一笔</string>
     <string name="detail_label_bank">发卡行</string>
+    <string name="detail_card_type">卡类型</string>
+    <string name="detail_statement_day">账单日</string>
+    <string name="detail_repayment_day">还款日</string>
+    <string name="card_day_of_month">每月 %1$d 日</string>
     <string name="detail_label_card_number">卡号</string>
     <string name="detail_label_note">备注</string>
     <string name="detail_label_swipes">刷卡记录</string>
@@ -167,6 +175,14 @@
     <string name="edit_orientation_portrait">竖版</string>
     <string name="edit_section_folder">文件夹</string>
     <string name="edit_folder_unfiled">未分类</string>
+    <string name="edit_card_type">卡类型</string>
+    <string name="card_type_unspecified">未选择</string>
+    <string name="card_type_debit">借记卡</string>
+    <string name="card_type_credit">信用卡</string>
+    <string name="edit_statement_day">账单日</string>
+    <string name="edit_repayment_day">还款日</string>
+    <string name="edit_day_of_month_hint">1–31</string>
+    <string name="edit_day_out_of_range">请输入 1 到 31 之间的日期</string>
     <string name="edit_section_theme_color">主题色</string>
     <string name="edit_field_name">卡片名称 *</string>
     <string name="edit_field_name_hint">例如：商旅白金卡</string>
