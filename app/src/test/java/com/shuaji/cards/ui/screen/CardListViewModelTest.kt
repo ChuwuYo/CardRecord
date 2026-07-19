@@ -162,9 +162,13 @@ class CardListViewModelTest {
             val card = createCardWithTwoTransactions()
             val viewModel = CardListViewModel(repository)
             viewModel.requestDelete(card)
+            val deletionCommitted =
+                async(start = CoroutineStart.UNDISPATCHED) {
+                    db.cardDao().observeAll().first { cards -> cards.none { it.id == card.card.id } }
+                }
 
             viewModel.confirmDelete()
-            advanceUntilIdle()
+            deletionCommitted.await()
 
             assertNull(db.cardDao().getById(card.card.id))
             assertEquals(0, db.transactionDao().listAll().size)
