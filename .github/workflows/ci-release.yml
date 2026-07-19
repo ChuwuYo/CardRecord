@@ -1,25 +1,89 @@
-name: Build APK
+name: CI and Release APK
 
-# 只有 main push 或明确选择 main 的手动运行才会接触正式签名 Secrets 并生成 APK。
-# workflow_dispatch 选择其他 ref 时，正式构建 job 会在 runner 启动前直接跳过。
+# 所有 push / PR 只经过同一个验证关；验证通过的 main 才继续签名与滚动发布。
+# workflow_dispatch 选择其他 ref 时也只验证，不会接触正式签名 Secrets。
 on:
-  workflow_dispatch:
   push:
-    branches: [ main ]
+  pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
 
-# 滚动测试包串行发布；每个 job 还会核对 main 当前头，拒绝重跑旧提交。
+# main 沿用旧发布锁，连历史 run 的误重跑也不能并发改 Release；其他 ref 只保留最新验证。
 concurrency:
-  group: build-apk-release
-  cancel-in-progress: false
+  group: ${{ github.ref == 'refs/heads/main' && 'build-apk-release' || format('ci-{0}', github.ref) }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
-  verify-sign:
-    name: Verify and sign
+  verify:
+    name: Verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5.6.0
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699 # v4.0.1
+        with:
+          cmdline-tools-version: '14742923'
+
+      - name: Install SDK packages
+        run: |
+          yes | sdkmanager "platforms;android-36" "build-tools;36.0.0" "platform-tools" > /dev/null
+
+      # 仅提供缓存和构建报告；Gradle 版本由经过校验和固定的 Wrapper 唯一决定。
+      - name: Set up Gradle cache
+        uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5.0.2
+        with:
+          dependency-graph: disabled
+
+      # gradle.properties 中的本机代理在 runner 上不存在，只修改本次运行的工作副本。
+      - name: Disable local Maven proxy
+        run: |
+          sed -i -E '/^systemProp\.(http|https)\.(proxyHost|proxyPort|nonProxyHosts)=/d' gradle.properties
+
+      - name: ktlint
+        run: |
+          ./gradlew ktlintCheck --no-daemon || {
+            echo "::group::ktlint violation reports"
+            find app/build/reports/ktlint -name '*.txt' -exec sh -c 'echo "== $1 =="; cat "$1"' _ {} \;
+            echo "::endgroup::"
+            exit 1
+          }
+
+      - name: Unit tests
+        run: ./gradlew :app:testDebugUnitTest --no-daemon --stacktrace
+
+      - name: Android Lint
+        run: ./gradlew :app:lintDebug :app:lintRelease --no-daemon --stacktrace
+
+      - name: Upload test report
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: unit-test-report
+          path: app/build/reports/tests/testDebugUnitTest
+          if-no-files-found: ignore
+          retention-days: 7
+
+  build-sign:
+    name: Build and sign
+    needs: verify
     if: ${{ github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') }}
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     permissions:
       contents: read
     steps:
@@ -66,10 +130,6 @@ jobs:
         run: |
           sed -i -E '/^systemProp\.(http|https)\.(proxyHost|proxyPort|nonProxyHosts)=/d' gradle.properties
 
-      # 发布不能借用另一个 workflow 的成功状态；本次运行必须独立通过全部门禁。
-      - name: Verify release source
-        run: ./gradlew ktlintCheck :app:testDebugUnitTest :app:lintRelease --no-daemon --stacktrace
-
       - name: Recheck main before restoring signing key
         env:
           GH_TOKEN: ${{ github.token }}
@@ -113,12 +173,14 @@ jobs:
           test "$actual" = "$EXPECTED_CERT_SHA256"
           "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs "$apk"
 
-      - name: Record release version
+      - name: Record release metadata
         shell: bash
         run: |
           set -euo pipefail
           grep -oP 'versionName = "\K[^"]+' app/build.gradle.kts \
             > app/build/outputs/apk/release/version-name.txt
+          printf '%s\n' "$GITHUB_SHA" \
+            > app/build/outputs/apk/release/source-sha.txt
 
       - name: Delete release keystore
         if: ${{ always() }}
@@ -131,11 +193,13 @@ jobs:
           path: |
             app/build/outputs/apk/release/app-release.apk
             app/build/outputs/apk/release/version-name.txt
+            app/build/outputs/apk/release/source-sha.txt
           if-no-files-found: error
+          retention-days: 1
 
   publish:
     name: Publish rolling release
-    needs: verify-sign
+    needs: build-sign
     if: ${{ github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-latest
     permissions:
@@ -155,7 +219,9 @@ jobs:
           set -euo pipefail
           apk='release/app-release.apk'
           version_name="$(cat release/version-name.txt)"
+          source_sha="$(cat release/source-sha.txt)"
           expected_digest="$(sha256sum "$apk" | awk '{print $1}')"
+          test "$source_sha" = "$GITHUB_SHA"
 
           current_main_sha() {
             gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha'

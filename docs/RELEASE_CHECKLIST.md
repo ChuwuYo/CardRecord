@@ -4,7 +4,7 @@
 
 ## 1. 代码与数据
 
-- [ ] `./gradlew ktlintCheck :app:testDebugUnitTest :app:lintRelease` 通过
+- [ ] `./gradlew ktlintCheck :app:testDebugUnitTest :app:lintDebug :app:lintRelease` 通过
 - [ ] 简中/英文资源 key 与格式化参数一致，无用户可见硬编码文案
 - [ ] Room schema、迁移测试与 JSON schema 2（含 schema 1 导入兼容）已按实际改动核对
 - [ ] main 源码没有遗留 TODO/FIXME、Debug 入口、临时日志或生成产物
@@ -21,7 +21,7 @@
 
 ## 3. 构建与发布
 
-- [ ] GitHub 的 CI 与 Build APK 均在目标 `main` 提交上通过
+- [ ] GitHub 的统一 CI 工作流在目标 `main` 提交上依次通过 `verify`、`build-sign` 与 `publish`
 - [ ] 非 `main` 运行没有接触正式签名 Secrets
 - [ ] 构建与发布阶段核对的 `GITHUB_SHA` 都是 `main` 当前头，旧运行重跑已被拒绝
 - [ ] Release APK 的版本号、签名与 SHA-256 已核对

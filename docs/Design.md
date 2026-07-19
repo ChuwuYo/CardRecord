@@ -129,7 +129,7 @@ Room v8 有三张表：
 
 - JVM 测试覆盖周期、日期、迁移、Repository、备份和 ViewModel 状态机；Robolectric + Room in-memory 验证 Android/数据库边界。
 - `ktlint`、单测、Lint、构建、模拟器/真机和 GitHub Actions 是不同证据层级，报告时必须区分。
-- CI 对 push / PR 运行格式、单测与 Debug Lint。正式签名 Secrets 只注入 `main` 的签名 job，密钥材料不进入仓库或构建 artifact；仓库规则与受保护 Environment 属于 GitHub 侧权限边界，不能由应用代码替代。
+- 单一 CI 工作流对 push / PR / 手动运行执行格式、单测与 Debug/Release Lint；签名 job 通过 `needs` 依赖同一提交的验证结果。正式签名 Secrets 只注入验证通过且仍为当前头的 `main` push 或手动运行的签名步骤，发布写权限再隔离到后续 job；密钥材料不进入仓库或构建 artifact。仓库规则与受保护 Environment 属于 GitHub 侧权限边界，不能由应用代码替代。
 - `apk-latest` 的运行在签名前、发布前和切换 tag 前后都会核对 `main` 当前头，旧提交的 Re-run 不得回退滚动包。发布先上传并校验暂存资产，再切换固定资产、元数据与 tag；失败处理会恢复并核验旧状态。新状态与下载摘要全部通过后才进入清理阶段，成功运行还会收口中断遗留的暂存 APK，并断言只剩一个固定资产。
 - 发版清单见 [`RELEASE_CHECKLIST.md`](RELEASE_CHECKLIST.md)，用户可见变化见 [`CHANGELOG.md`](CHANGELOG.md)。
 

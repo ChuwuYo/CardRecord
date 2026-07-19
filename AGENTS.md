@@ -45,7 +45,7 @@
 ## 测试、审查与交付
 
 - 测试使用 JUnit4、Robolectric、Room in-memory 与 `kotlinx-coroutines-test`。静态编译、单测、Lint、构建、模拟器/真机和云端 CI 是不同验证层级，只报告实际完成的层级。
-- `ci.yml` 对 push / PR 执行格式、单测和 Debug Lint；`build-apk.yml` 只允许 `main` 接触正式签名并更新滚动测试包。发布纪律见 `docs/RELEASE_CHECKLIST.md`。
+- `ci-release.yml` 以单一 `verify → build-sign → publish` 依赖链执行验证与发布；所有 push / PR / 手动运行先执行无密钥验证，仅验证通过且仍为当前头的 `main` push 或手动运行继续签名并更新滚动测试包。发布纪律见 `docs/RELEASE_CHECKLIST.md`。
 - 并行代理只能领取互不重叠的文件或只读审查。整合后主代理必须复查完整 diff，并分别进行规范审查与需求审查。
 - 文档必须对应真实代码并明确当前状态；完成项及时收口。优先合并或删除重复、过期文档，不为一次性过程创建长期文档。
 - 临时报告、截图、专用 Debug 入口、APK 与仓库构建缓存只保留到最终交叉审查结束；清理后不要再次生成一批待删除产物。
