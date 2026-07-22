@@ -90,7 +90,7 @@
     <string name="list_filter_credit">Credit cards</string>
     <string name="list_filter_unfiled">Unfiled</string>
     <string name="list_filter_manage">Manage folders…</string>
-    <string name="list_filter_switch">Switch</string>
+    <string name="list_filter_switch">Open filter options</string>
     <string name="list_toggle_to_grid">Switch to grid</string>
     <string name="list_toggle_to_list">Switch to list</string>
     <string name="list_overall_progress">Overall progress</string>
@@ -104,6 +104,9 @@
     <string name="list_delete_dialog_title">Delete %1$s?</string>
     <string name="list_delete_dialog_message">This also deletes all spending records for this card. It cannot be undone.</string>
     <string name="list_filter_anchor_label">Card filter</string>
+    <string name="list_filter_sheet_title">Filter cards</string>
+    <string name="list_filter_current">Current: %1$s</string>
+    <string name="list_filter_scroll_hint">Swipe for more</string>
 
     <!-- ────── Card item ────── -->
     <string name="card_count_format">%1$d / %2$d</string>

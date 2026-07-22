@@ -132,10 +132,11 @@ dependencies {
     // 种子色生成 Material 3 HCT 色板。
     implementation("com.materialkolor:material-kolor:2.1.1")
     debugImplementation("androidx.compose.ui:ui-tooling")
+    debugImplementation("androidx.compose.ui:ui-test-manifest")
     ksp("androidx.room:room-compiler:2.7.2")
 
     // ── 单测 ────────────────────────────────────────────────────────
-    // JUnit 4 + Robolectric（Android Context / ContentResolver / Resources）
+    // JUnit 4 + Robolectric / Compose UI（Android 资源与界面回归）
     // + Room in-memory + kotlinx-coroutines-test（runTest / TestScope）
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.robolectric:robolectric:4.13")
@@ -144,6 +145,7 @@ dependencies {
     testImplementation("androidx.room:room-testing:2.7.2")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.1")
     testImplementation("org.mockito.kotlin:mockito-kotlin:5.4.0")
+    testImplementation("androidx.compose.ui:ui-test-junit4")
 }
 
 // ── ktlint ────────────────────────────────────────────────────────

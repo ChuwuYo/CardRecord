@@ -91,7 +91,7 @@
     <string name="list_filter_credit">信用卡</string>
     <string name="list_filter_unfiled">未分类</string>
     <string name="list_filter_manage">管理文件夹…</string>
-    <string name="list_filter_switch">切换</string>
+    <string name="list_filter_switch">打开筛选选项</string>
     <string name="list_toggle_to_grid">切换为网格</string>
     <string name="list_toggle_to_list">切换为列表</string>
     <string name="list_overall_progress">总进度</string>
@@ -105,6 +105,9 @@
     <string name="list_delete_dialog_title">删除 %1$s？</string>
     <string name="list_delete_dialog_message">将同时删除这张卡的全部消费记录，操作不可撤销。</string>
     <string name="list_filter_anchor_label">卡片筛选</string>
+    <string name="list_filter_sheet_title">筛选卡片</string>
+    <string name="list_filter_current">当前：%1$s</string>
+    <string name="list_filter_scroll_hint">上下滑动查看更多</string>
 
     <!-- ────── 卡片项 ────── -->
     <string name="card_count_format">%1$d / %2$d</string>

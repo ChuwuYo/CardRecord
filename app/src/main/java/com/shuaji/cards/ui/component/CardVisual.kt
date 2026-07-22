@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -512,7 +513,7 @@ private fun CardContent(
 }
 
 @Composable
-private fun BankLabel(
+internal fun BankLabel(
     card: CardEntity,
     modifier: Modifier = Modifier,
 ) {
@@ -520,12 +521,7 @@ private fun BankLabel(
         modifier = modifier,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(
-            imageVector = Icons.Default.CreditCard,
-            contentDescription = null,
-            tint = Color.White.copy(alpha = 0.9f),
-            modifier = Modifier.size(14.dp),
-        )
+        BankIcon()
         Spacer(Modifier.width(6.dp))
         Text(
             text = card.bank.ifBlank { stringResource(R.string.card_default_bank) },
@@ -534,6 +530,31 @@ private fun BankLabel(
             color = Color.White.copy(alpha = 0.85f),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+@Composable
+private fun BankIcon() {
+    Box(
+        modifier = Modifier.size(14.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        // 矢量图标没有文字的 Shadow 能力；叠一层同字形暗色偏移，避免浅色卡面上消失。
+        Icon(
+            imageVector = Icons.Default.CreditCard,
+            contentDescription = null,
+            tint = CardTextShadow.color,
+            modifier =
+                Modifier
+                    .size(14.dp)
+                    .offset(y = 0.75.dp),
+        )
+        Icon(
+            imageVector = Icons.Default.CreditCard,
+            contentDescription = null,
+            tint = Color.White.copy(alpha = 0.9f),
+            modifier = Modifier.size(14.dp),
         )
     }
 }

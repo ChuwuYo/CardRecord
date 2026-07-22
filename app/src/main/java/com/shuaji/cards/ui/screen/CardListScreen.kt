@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -20,27 +21,32 @@ import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ViewList
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.GridView
-import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExposedDropdownMenuBox
-import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.ExtendedFloatingActionButton
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.MenuAnchorType
-import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedCard
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -48,10 +54,11 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -59,11 +66,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -344,126 +355,339 @@ private fun FilterBar(
     onSelectFilter: (CardFilter) -> Unit,
     onManageFolders: () -> Unit,
 ) {
-    var expanded by rememberSaveable { mutableStateOf(false) }
+    var showFilterSheet by rememberSaveable { mutableStateOf(false) }
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val anchorLabel = stringResource(R.string.list_filter_anchor_label)
     val currentLabel = cardFilterLabel(state.filter)
 
-    Box(
+    OutlinedCard(
+        onClick = { showFilterSheet = true },
         modifier =
             Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 20.dp, vertical = 4.dp),
     ) {
-        ExposedDropdownMenuBox(
-            expanded = expanded,
-            onExpandedChange = { expanded = !expanded },
+        Row(
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            // 筛选菜单与触发控件同宽，避免双列和长文件夹名造成跳动。
-            // 用 ExposedDropdownMenuBox + OutlinedTextField.menuAnchor(MenuAnchorType) 即可。
-            OutlinedTextField(
-                value = currentLabel,
-                onValueChange = {},
-                readOnly = true,
-                label = { Text(anchorLabel) },
-                trailingIcon = {
-                    Icon(
-                        imageVector = Icons.Default.ArrowDropDown,
-                        contentDescription = stringResource(R.string.list_filter_switch),
-                    )
-                },
-                colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors(),
-                modifier =
-                    Modifier
-                        .fillMaxWidth()
-                        .menuAnchor(MenuAnchorType.PrimaryNotEditable, enabled = true),
-            )
-            // 菜单只展示约四行；更多默认筛选和用户文件夹由
-            // ExposedDropdownMenu 自带的纵向 scrollState 承载，数据层不截断。
-            ExposedDropdownMenu(
-                expanded = expanded,
-                onDismissRequest = { expanded = false },
-                modifier = Modifier.heightIn(max = FILTER_MENU_MAX_HEIGHT),
-            ) {
-                DEFAULT_CARD_FILTERS.forEach { filter ->
-                    key(cardFilterKey(filter)) {
-                        DropdownMenuItem(
-                            text = { Text(cardFilterLabel(filter)) },
-                            onClick = {
-                                onSelectFilter(filter)
-                                expanded = false
-                            },
-                        )
-                    }
-                }
-                if (state.folders.isNotEmpty()) {
-                    HorizontalDivider()
-                    Text(
-                        text =
-                            pluralStringResource(
-                                R.plurals.list_filter_folder_count,
-                                state.folders.size,
-                                state.folders.size,
-                            ),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
-                    )
-                    state.folders.forEach { folder ->
-                        key(cardFilterKey(CardFilter.Folder(folder.id, folder.name))) {
-                            val isCurrent =
-                                (state.filter as? CardFilter.Folder)?.folderId == folder.id
-                            DropdownMenuItem(
-                                text = {
-                                    Text(
-                                        text = folder.name,
-                                        fontWeight = if (isCurrent) FontWeight.SemiBold else FontWeight.Normal,
-                                    )
-                                },
-                                leadingIcon = {
-                                    Box(
-                                        modifier =
-                                            Modifier
-                                                .size(14.dp)
-                                                .clip(RoundedCornerShape(50))
-                                                .background(Color(folder.colorArgb)),
-                                    )
-                                },
-                                onClick = {
-                                    onSelectFilter(CardFilter.Folder(folder.id, folder.name))
-                                    expanded = false
-                                },
-                            )
-                        }
-                    }
-                    HorizontalDivider()
-                }
-                DropdownMenuItem(
-                    text = {
-                        Text(
-                            text = stringResource(R.string.list_filter_manage),
-                            color = MaterialTheme.colorScheme.primary,
-                            fontWeight = FontWeight.SemiBold,
-                        )
-                    },
-                    leadingIcon = {
-                        Icon(
-                            Icons.Default.MoreVert,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                        )
-                    },
-                    onClick = {
-                        expanded = false
-                        onManageFolders()
-                    },
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = anchorLabel,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text(
+                    text = currentLabel,
+                    style = MaterialTheme.typography.bodyLarge,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
+            Icon(
+                imageVector = Icons.Default.ArrowDropDown,
+                contentDescription = stringResource(R.string.list_filter_switch),
+            )
+        }
+    }
+
+    if (showFilterSheet) {
+        ModalBottomSheet(
+            onDismissRequest = { showFilterSheet = false },
+            sheetState = sheetState,
+        ) {
+            CardFilterSheetContent(
+                state = state,
+                onSelectFilter = { filter ->
+                    onSelectFilter(filter)
+                    showFilterSheet = false
+                },
+                onManageFolders = {
+                    showFilterSheet = false
+                    onManageFolders()
+                },
+            )
         }
     }
 }
 
-// Material 3 菜单项最小高度为 48dp，外加菜单上下内边距，可见区约四行。
-private val FILTER_MENU_MAX_HEIGHT = 208.dp
+@Composable
+internal fun CardFilterSheetContent(
+    state: ListUiState,
+    onSelectFilter: (CardFilter) -> Unit,
+    onManageFolders: () -> Unit,
+) {
+    val filterListState = rememberLazyListState()
+    val canScrollBackward by remember { derivedStateOf { filterListState.canScrollBackward } }
+    val canScrollForward by remember { derivedStateOf { filterListState.canScrollForward } }
+    val selectedFolderIndex =
+        (state.filter as? CardFilter.Folder)?.folderId?.let { selectedId ->
+            state.folders.indexOfFirst { it.id == selectedId }.takeIf { it >= 0 }
+        }
+
+    LaunchedEffect(selectedFolderIndex) {
+        if (selectedFolderIndex != null) {
+            filterListState.scrollToItem(selectedFolderIndex + FILTER_SHEET_HEADER_ITEM_COUNT)
+        }
+    }
+
+    Column(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .heightIn(max = FILTER_SHEET_MAX_HEIGHT)
+                .fillMaxHeight(),
+    ) {
+        Box(
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+        ) {
+            LazyColumn(
+                state = filterListState,
+                contentPadding = PaddingValues(horizontal = 20.dp, vertical = 4.dp),
+                modifier =
+                    Modifier
+                        .fillMaxSize()
+                        .selectableGroup()
+                        .testTag(FILTER_OPTIONS_LIST_TAG),
+            ) {
+                item(key = "filter-shortcuts") {
+                    FilterShortcutSection(
+                        currentFilter = state.filter,
+                        onSelectFilter = onSelectFilter,
+                    )
+                }
+                item(key = "folder-header") {
+                    FolderFilterHeader(folderCount = state.folders.size)
+                }
+                items(state.folders, key = { "folder-${it.id}" }) { folder ->
+                    FolderFilterOption(
+                        folderName = folder.name,
+                        folderColor = Color(folder.colorArgb),
+                        selected = (state.filter as? CardFilter.Folder)?.folderId == folder.id,
+                        onClick = {
+                            onSelectFilter(CardFilter.Folder(folder.id, folder.name))
+                        },
+                    )
+                }
+                item(key = "filter-list-bottom-space") {
+                    Spacer(Modifier.height(8.dp))
+                }
+            }
+
+            if (canScrollBackward) {
+                FilterScrollCue(
+                    fadeAtBottom = false,
+                    modifier = Modifier.align(Alignment.TopCenter),
+                )
+            }
+            if (canScrollForward) {
+                FilterScrollCue(
+                    fadeAtBottom = true,
+                    modifier = Modifier.align(Alignment.BottomCenter),
+                )
+            }
+        }
+
+        if (canScrollBackward || canScrollForward) {
+            Row(
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    imageVector = Icons.Default.SwapVert,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(16.dp),
+                )
+                Spacer(Modifier.width(4.dp))
+                Text(
+                    text = stringResource(R.string.list_filter_scroll_hint),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        HorizontalDivider()
+        OutlinedButton(
+            onClick = onManageFolders,
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp, vertical = 8.dp),
+        ) {
+            Icon(
+                Icons.Default.FolderOpen,
+                contentDescription = null,
+            )
+            Spacer(Modifier.width(8.dp))
+            Text(
+                text = stringResource(R.string.list_filter_manage),
+                fontWeight = FontWeight.SemiBold,
+            )
+        }
+    }
+}
+
+@Composable
+private fun FilterShortcutSection(
+    currentFilter: CardFilter,
+    onSelectFilter: (CardFilter) -> Unit,
+) {
+    Column {
+        Text(
+            text = stringResource(R.string.list_filter_sheet_title),
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.Bold,
+        )
+        Text(
+            text = stringResource(R.string.list_filter_current, cardFilterLabel(currentFilter)),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(Modifier.height(12.dp))
+
+        val shortcutRows = DEFAULT_CARD_FILTERS.chunked(FILTER_SHORTCUT_COLUMN_COUNT)
+        shortcutRows.forEachIndexed { index, filters ->
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                filters.forEach { filter ->
+                    FilterChip(
+                        selected = cardFilterKey(currentFilter) == cardFilterKey(filter),
+                        onClick = { onSelectFilter(filter) },
+                        label = {
+                            Text(
+                                text = cardFilterLabel(filter),
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        },
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+            }
+            if (index < shortcutRows.lastIndex) Spacer(Modifier.height(4.dp))
+        }
+    }
+}
+
+@Composable
+private fun FolderFilterHeader(folderCount: Int) {
+    Column {
+        Spacer(Modifier.height(12.dp))
+        HorizontalDivider()
+        Spacer(Modifier.height(12.dp))
+
+        if (folderCount == 0) {
+            Text(
+                text = stringResource(R.string.folder_empty_title),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(vertical = 12.dp),
+            )
+        } else {
+            Text(
+                text =
+                    pluralStringResource(
+                        R.plurals.list_filter_folder_count,
+                        folderCount,
+                        folderCount,
+                    ),
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Spacer(Modifier.height(4.dp))
+        }
+    }
+}
+
+@Composable
+private fun FolderFilterOption(
+    folderName: String,
+    folderColor: Color,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .heightIn(min = FILTER_FOLDER_ROW_HEIGHT)
+                .selectable(
+                    selected = selected,
+                    role = Role.RadioButton,
+                    onClick = onClick,
+                ).padding(horizontal = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier =
+                Modifier
+                    .size(14.dp)
+                    .clip(CircleShape)
+                    .background(folderColor),
+        )
+        Spacer(Modifier.width(12.dp))
+        Text(
+            text = folderName,
+            style = MaterialTheme.typography.bodyLarge,
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
+        RadioButton(
+            selected = selected,
+            onClick = null,
+            modifier = Modifier.clearAndSetSemantics {},
+        )
+    }
+}
+
+@Composable
+private fun FilterScrollCue(
+    fadeAtBottom: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    val sheetSurface = MaterialTheme.colorScheme.surfaceContainerLow
+    Box(
+        modifier =
+            modifier
+                .fillMaxWidth()
+                .height(FILTER_SCROLL_CUE_HEIGHT)
+                .background(
+                    Brush.verticalGradient(
+                        colors =
+                            if (fadeAtBottom) {
+                                listOf(Color.Transparent, sheetSurface)
+                            } else {
+                                listOf(sheetSurface, Color.Transparent)
+                            },
+                    ),
+                ),
+    )
+}
+
+// 文件夹前固定有快捷筛选和文件夹标题两个 Lazy item；深层选中项按此定位。
+private const val FILTER_SHEET_HEADER_ITEM_COUNT = 2
+private const val FILTER_SHORTCUT_COLUMN_COUNT = 2
+internal const val FILTER_OPTIONS_LIST_TAG = "card-filter-options"
+
+// 高屏也只露出约四个文件夹；紧凑高度则由同一 Lazy 列表自然收缩。
+private val FILTER_SHEET_MAX_HEIGHT = 460.dp
+private val FILTER_FOLDER_ROW_HEIGHT = 52.dp
+private val FILTER_SCROLL_CUE_HEIGHT = 22.dp
 
 @Composable
 private fun cardFilterLabel(filter: CardFilter): String =
