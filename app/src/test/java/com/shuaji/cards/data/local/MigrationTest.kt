@@ -141,7 +141,24 @@ class MigrationTest {
             assertNull(card.statementDay)
             assertNull(card.repaymentDay)
             assertEquals(1, runBlocking { db.transactionDao().listAll() }.size)
-            assertEquals(8, db.openHelper.readableDatabase.version)
+            assertEquals(9, db.openHelper.readableDatabase.version)
+            assertForeignKeysClean(db)
+        } finally {
+            db.close()
+        }
+    }
+
+    @Test
+    fun migrateFromV8_preservesLegacyImageUri_andAddsEmptyOwnedAssetReference() {
+        createV8DatabaseWithLegacyImage()
+
+        val db = openMigratedDatabase()
+        try {
+            val card = runBlocking { db.cardDao().listAll().single() }
+
+            assertEquals("content://gallery/legacy", card.imageUri)
+            assertNull("文件复制由应用层幂等迁移负责，Room 迁移不能伪造资产", card.imageAssetId)
+            assertEquals(9, db.openHelper.readableDatabase.version)
             assertForeignKeysClean(db)
         } finally {
             db.close()
@@ -412,6 +429,57 @@ class MigrationTest {
                     "VALUES (1, '历史卡', '某银行', '**** 1234', 6, 255, '', 'USER', 'LANDSCAPE', 0)",
             )
             db.execSQL("INSERT INTO transactions (id, card_id, occurred_at_millis) VALUES (1, 1, 123)")
+        }
+    }
+
+    private fun createV8DatabaseWithLegacyImage() {
+        createHistoricalDatabase(version = 8) { db ->
+            db.execSQL(
+                """
+                CREATE TABLE `card_folders` (
+                    `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                    `name` TEXT NOT NULL,
+                    `color_argb` INTEGER NOT NULL,
+                    `sort_order` INTEGER NOT NULL,
+                    `created_at_millis` INTEGER NOT NULL
+                )
+                """.trimIndent(),
+            )
+            db.execSQL(
+                """
+                CREATE TABLE `cards` (
+                    `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                    `name` TEXT NOT NULL, `bank` TEXT NOT NULL,
+                    `card_number_masked` TEXT NOT NULL,
+                    `card_type` TEXT NOT NULL DEFAULT 'UNSPECIFIED',
+                    `statement_day` INTEGER, `repayment_day` INTEGER,
+                    `valid_until_millis` INTEGER, `next_due_date_millis` INTEGER,
+                    `required_count` INTEGER NOT NULL, `color_argb` INTEGER NOT NULL,
+                    `note` TEXT NOT NULL, `image_uri` TEXT,
+                    `image_source_type` TEXT NOT NULL DEFAULT 'USER', `image_provider_key` TEXT,
+                    `card_orientation` TEXT NOT NULL DEFAULT 'LANDSCAPE', `folder_id` INTEGER,
+                    `created_at_millis` INTEGER NOT NULL,
+                    FOREIGN KEY(`folder_id`) REFERENCES `card_folders`(`id`) ON UPDATE NO ACTION ON DELETE SET NULL
+                )
+                """.trimIndent(),
+            )
+            db.execSQL("CREATE INDEX `index_cards_folder_id` ON `cards` (`folder_id`)")
+            db.execSQL(
+                """
+                CREATE TABLE `transactions` (
+                    `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                    `card_id` INTEGER NOT NULL, `occurred_at_millis` INTEGER NOT NULL,
+                    FOREIGN KEY(`card_id`) REFERENCES `cards`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE
+                )
+                """.trimIndent(),
+            )
+            db.execSQL("CREATE INDEX `index_transactions_card_id` ON `transactions` (`card_id`)")
+            db.execSQL(
+                "INSERT INTO cards (id, name, bank, card_number_masked, card_type, required_count, " +
+                    "color_argb, note, image_uri, image_source_type, card_orientation, created_at_millis) " +
+                    "VALUES (1, '历史图片卡', '', '', 'UNSPECIFIED', 6, 255, '', " +
+                    "'content://gallery/legacy', 'USER', 'LANDSCAPE', 0)",
+            )
         }
     }
 

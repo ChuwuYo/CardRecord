@@ -24,10 +24,12 @@
     <string name="settings_title">Settings</string>
     <string name="settings_section_data">Data</string>
     <string name="settings_export">Export config</string>
-    <string name="settings_export_subtitle">Pack cards / folders / transactions into a JSON file</string>
+    <string name="settings_export_subtitle">Create a backup directory with JSON; an image folder is added only when needed</string>
     <string name="settings_import">Import config</string>
-    <string name="settings_import_subtitle">Restore from a JSON backup (replace or merge)</string>
-    <string name="settings_privacy_note">Note: the exported file contains all your card info (name / note / image URI, etc.) as plaintext JSON—please don\'t share it with others. Image URIs usually cannot be reused across devices, so you may need to select card images again.</string>
+    <string name="settings_import_subtitle">Select a complete backup directory; JSON and images are detected automatically</string>
+    <string name="settings_import_legacy">Import legacy JSON</string>
+    <string name="settings_import_legacy_subtitle">Only for a single JSON file exported by an older version</string>
+    <string name="settings_privacy_note">A backup contains plaintext card data and custom card images; do not share it. After a successful import, the images have been copied into this app and the whole backup directory may be deleted.</string>
     <string name="settings_import_dialog_title">Choose import mode</string>
     <string name="settings_import_dialog_message">\"Replace\" clears current data and restores the backup; \"Merge\" keeps current data and appends the backup.</string>
     <string name="settings_import_mode_replace">Replace</string>
@@ -37,8 +39,9 @@
     <string name="settings_import_replace_confirm_message_with_count">This backup contains %1$s / %2$s / %3$s. It clears all current data and writes the backup\'s contents; this cannot be undone.</string>
     <string name="settings_import_merge_confirm_message_with_count">This backup contains %1$s / %2$s / %3$s. They will be appended to the existing database, keeping existing data unchanged.</string>
     <string name="settings_backup_time_label">Backup time: %1$s</string>
-    <string name="settings_result_export_success_with_count">Exported %1$s / %2$s / %3$s to the backup file</string>
-    <string name="settings_result_export_empty">Exported an empty backup (the database has no records)</string>
+    <string name="settings_result_export_success_with_count">Exported %1$s / %2$s / %3$s to a new backup directory</string>
+    <string name="settings_result_export_empty">Created an empty backup directory (the database has no records)</string>
+    <string name="settings_result_export_directory">%1$s (folder: %2$s)</string>
     <string name="settings_result_import_replace_with_count">Replace succeeded: %1$s, %2$s, %3$s</string>
     <string name="settings_result_import_merge_with_count">Merge succeeded: %1$s, %2$s, %3$s</string>
     <string name="settings_result_export_failed">Export failed: %1$s</string>
@@ -48,19 +51,21 @@
     <string name="settings_result_extras_separator">"; "</string>
 
     <!-- Import / export low-level errors (interpolated as %1$s into settings_result_*_failed) -->
-    <string name="backup_error_open_target_uri">Cannot open the target URI for writing (it may be in use)</string>
-    <string name="backup_error_open_source_uri">Cannot open the source URI for reading</string>
-    <string name="backup_error_write_failed">Failed to write the backup file: %1$s</string>
-    <string name="backup_error_source_missing">Source file does not exist or has expired: %1$s</string>
-    <string name="backup_error_read_failed">Failed to read the backup file: %1$s</string>
-    <string name="backup_error_empty_file">The backup file is empty</string>
-    <string name="backup_error_malformed_json">The backup file is malformed (not valid JSON)</string>
-    <string name="backup_error_file_too_large">The backup file exceeds the %1$d MiB limit</string>
+    <string name="backup_error_open_target_uri">Cannot create or write a backup in the selected location</string>
+    <string name="backup_error_open_source_uri">Cannot read the JSON in the backup directory</string>
+    <string name="backup_error_write_failed">Failed to write the backup</string>
+    <string name="backup_error_source_missing">The backup directory or file does not exist</string>
+    <string name="backup_error_read_failed">Failed to read the backup</string>
+    <string name="backup_error_empty_file">The backup JSON is empty</string>
+    <string name="backup_error_malformed_json">The backup JSON is malformed</string>
+    <string name="backup_error_file_too_large">The backup data exceeds the %1$d MiB limit</string>
     <string name="backup_error_file_changed">The backup changed while awaiting confirmation; select and review it again</string>
     <string name="backup_error_invalid_structure">The backup contains invalid record identifiers or fields</string>
+    <string name="backup_error_image_restore_failed">A card image in the backup is invalid, or the device does not have enough storage</string>
+    <string name="backup_error_unowned_image">An older card image has not been copied into the app; select that image again before exporting</string>
     <string name="backup_error_operation_busy">Another backup operation is in progress; try again shortly</string>
     <string name="backup_error_version_mismatch">Backup schema version mismatch (file version=%1$d, current=%2$d)</string>
-    <string name="backup_error_db_write_failed">Database write failed: %1$s</string>
+    <string name="backup_error_db_write_failed">Database write failed</string>
 
     <!-- ────── Appearance ────── -->
     <string name="settings_section_appearance">Appearance</string>
@@ -168,8 +173,9 @@
     <string name="edit_image_none">Solid color</string>
     <string name="edit_image_clear">Clear image</string>
     <string name="edit_image_pick_hint">Tap to choose a card image</string>
-    <string name="edit_image_permission_error_title">Can’t use this image</string>
-    <string name="edit_image_permission_error_message">The image provider didn’t grant persistent read access. Please choose another image stored on this device.</string>
+    <string name="edit_image_import_error_title">Can’t use this image</string>
+    <string name="edit_image_import_error_message">The image couldn’t be copied or recognized. Check the image and available device storage, then try again.</string>
+    <string name="edit_image_importing">Copying image…</string>
     <string name="edit_section_choose_network">Choose network</string>
     <string name="edit_network_none">No network badge</string>
     <string name="edit_section_orientation">Card orientation</string>

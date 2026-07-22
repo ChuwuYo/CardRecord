@@ -5,22 +5,10 @@ import androidx.room.Delete
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Transaction
 import androidx.room.Update
 import androidx.room.Upsert
-import com.shuaji.cards.data.AnnualFeeCycle
 import kotlinx.coroutines.flow.Flow
-
-/**
- * 卡片与流水在 Repository 中按当前年费周期派生出的只读模型。
- * 它不是 Room 查询投影；[currentCount] 只统计 [cycle] 接纳的流水，
- * [lastSwipeAtMillis] 则保留全部历史中的最近时间。
- */
-data class CardWithCount(
-    val card: CardEntity,
-    val currentCount: Int,
-    val lastSwipeAtMillis: Long?,
-    val cycle: AnnualFeeCycle,
-)
 
 @Dao
 interface CardDao {
@@ -40,8 +28,37 @@ interface CardDao {
     @Update
     suspend fun update(card: CardEntity): Int
 
+    /**
+     * 编辑页没有改动图片时，在同一数据库事务内合并最新图片引用。
+     * 这会与后台旧 URI 迁移串行，避免“先读后写”把刚迁移的私有资产覆盖回旧值。
+     */
+    @Transaction
+    suspend fun updatePreservingUserImage(card: CardEntity): Int {
+        val stored = getById(card.id) ?: return 0
+        return update(
+            card.copy(
+                imageUri = stored.imageUri,
+                imageAssetId = stored.imageAssetId,
+            ),
+        )
+    }
+
     @Delete
     suspend fun delete(card: CardEntity): Int
+
+    /**
+     * 旧外部 URI 迁移采用条件更新，避免后台复制期间覆盖用户刚完成的编辑。
+     * 只有目标卡仍持有同一旧 URI 且尚无私有资产时才接纳结果。
+     */
+    @Query(
+        "UPDATE cards SET image_asset_id = :imageAssetId, image_uri = NULL " +
+            "WHERE id = :cardId AND image_asset_id IS NULL AND image_uri = :legacyUri",
+    )
+    suspend fun adoptOwnedImage(
+        cardId: Long,
+        legacyUri: String,
+        imageAssetId: String,
+    ): Int
 
     /**
      * 备份导入 REPLACE 用：清空 cards 表。

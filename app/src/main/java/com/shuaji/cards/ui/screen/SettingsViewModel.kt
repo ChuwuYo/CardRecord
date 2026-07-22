@@ -8,6 +8,7 @@ import androidx.lifecycle.viewModelScope
 import com.shuaji.cards.R
 import com.shuaji.cards.data.SettingsDoneEvent
 import com.shuaji.cards.data.backup.BackupCancelResult
+import com.shuaji.cards.data.backup.BackupException
 import com.shuaji.cards.data.backup.BackupFileInfo
 import com.shuaji.cards.data.backup.BackupRepository
 import com.shuaji.cards.data.backup.ExportSummary
@@ -97,7 +98,7 @@ class SettingsViewModel(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            finalize(job, errorMessage(R.string.settings_result_inspect_failed, e.message), isError = true)
+            finalize(job, backupErrorMessage(R.string.settings_result_inspect_failed, e), isError = true)
             null
         } finally {
             releaseOperation(job)
@@ -113,7 +114,7 @@ class SettingsViewModel(
             try {
                 val summary: ExportSummary = backup.export(uri)
                 val app = getApplication<Application>()
-                val message =
+                val resultMessage =
                     if (summary.isEmpty) {
                         app.getString(R.string.settings_result_export_empty)
                     } else {
@@ -124,12 +125,17 @@ class SettingsViewModel(
                             app.quantityString(R.plurals.backup_count_transactions, summary.transactionCount),
                         )
                     }
+                val message =
+                    app.getString(
+                        R.string.settings_result_export_directory,
+                        resultMessage,
+                        summary.directoryName,
+                    )
                 finalize(job, message = message, isError = false)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                // BackupException 与其它异常统一处理；错误文案已国际化（见 BackupRepository / errorMessage）
-                finalize(job, errorMessage(R.string.settings_result_export_failed, e.message), isError = true)
+                finalize(job, backupErrorMessage(R.string.settings_result_export_failed, e), isError = true)
             }
         }
     }
@@ -151,7 +157,7 @@ class SettingsViewModel(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                finalize(job, errorMessage(R.string.settings_result_import_failed, e.message), isError = true)
+                finalize(job, backupErrorMessage(R.string.settings_result_import_failed, e), isError = true)
             }
         }
     }
@@ -174,7 +180,7 @@ class SettingsViewModel(
      * 取消当前正在跑的导入 / 导出。
      *
      * 读取/校验阶段由 [BackupRepository.cancelActive] 关闭流并取消所属 Job；若导入已经进入
-     * 不可取消的提交边界，则保持 Working，等待事务和授权收尾给出确定回执。
+     * 不可取消的提交边界，则保持 Working，等待事务和图片文件收尾给出确定回执。
      */
     fun cancel() {
         val job = operationLock.withLock { operationJob }
@@ -259,13 +265,14 @@ class SettingsViewModel(
         }
     }
 
-    /** 错误文案统一封装：「XXX 失败：<cause>」。cause 为 null（异常无 message）时回退到本地化的「未知原因」。 */
-    private fun errorMessage(
+    /** 只展示仓库已本地化的可控错误；未知异常不得把内部实现信息直接暴露给用户。 */
+    private fun backupErrorMessage(
         @androidx.annotation.StringRes templateRes: Int,
-        cause: String?,
+        error: Exception,
     ): String {
         val app = getApplication<Application>()
-        return app.getString(templateRes, cause ?: app.getString(R.string.common_unknown_reason))
+        val reason = (error as? BackupException)?.message ?: app.getString(R.string.common_unknown_reason)
+        return app.getString(templateRes, reason)
     }
 
     /**
@@ -327,11 +334,11 @@ class SettingsViewModel(
                         ),
                     )
                 }
-                if (result.imageUriUserCount > 0) {
+                if (result.legacyImageUriCount > 0) {
                     add(
                         app.quantityString(
                             R.plurals.settings_result_image_uri_potentially_broken,
-                            result.imageUriUserCount,
+                            result.legacyImageUriCount,
                         ),
                     )
                 }

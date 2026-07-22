@@ -7,6 +7,7 @@ import com.shuaji.cards.core.OneShotEventQueue
 import com.shuaji.cards.data.CardNetworkProvider
 import com.shuaji.cards.data.CardRepository
 import com.shuaji.cards.data.DateToken
+import com.shuaji.cards.data.StagedUserImage
 import com.shuaji.cards.data.local.CardEntity
 import com.shuaji.cards.data.local.CardFolderEntity
 import com.shuaji.cards.data.local.CardOrientation
@@ -28,7 +29,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -52,7 +52,7 @@ sealed interface CardEditSaveResult {
 }
 
 sealed interface CardEditEvent {
-    data object ImagePermissionFailed : CardEditEvent
+    data object ImageImportFailed : CardEditEvent
 
     data object CloseReady : CardEditEvent
 }
@@ -67,6 +67,30 @@ enum class CardEditLoadState {
     READY,
     MISSING,
     FAILED,
+}
+
+/**
+ * 编辑表单对用户图片的唯一状态轴。
+ *
+ * [Unchanged] 不缓存持久化引用，保存时由 DAO 在事务内保留数据库最新值；[Cleared] 与
+ * [Selected] 才表示用户明确改动，因而不会把后台刚迁移的图片覆盖回旧快照。
+ */
+sealed interface UserImageDraft {
+    val previewModel: String?
+
+    data class Unchanged(
+        override val previewModel: String?,
+    ) : UserImageDraft
+
+    data object Cleared : UserImageDraft {
+        override val previewModel: String? = null
+    }
+
+    data class Selected(
+        val staged: StagedUserImage,
+    ) : UserImageDraft {
+        override val previewModel: String = staged.displayUri
+    }
 }
 
 /**
@@ -91,28 +115,33 @@ data class CardEditUiState(
     // 卡面三态
     val imageSourceType: ImageSourceType = ImageSourceType.PROVIDER,
     val imageProviderKey: String? = CardNetworkProvider.VISA.key,
-    val imageUri: String? = null,
-    val acquiredImageUris: Set<String> = emptySet(),
+    val userImage: UserImageDraft = UserImageDraft.Cleared,
     val cardOrientation: CardOrientation = CardOrientation.LANDSCAPE,
     val folderId: Long? = null,
     val loadState: CardEditLoadState = CardEditLoadState.NEW,
+    val isImportingImage: Boolean = false,
     val isSaving: Boolean = false,
     val isClosing: Boolean = false,
     val saveResult: CardEditSaveResult = CardEditSaveResult.Idle,
     val editingId: Long? = null,
 ) {
+    val imageUri: String?
+        get() = userImage.previewModel
+
     val isStatementDayInvalid: Boolean
         get() = cardType == CardType.CREDIT && !isOptionalCardMonthDayValid(statementDay)
 
     val isRepaymentDayInvalid: Boolean
         get() = cardType == CardType.CREDIT && !isOptionalCardMonthDayValid(repaymentDay)
 
+    val isEditLocked: Boolean
+        get() = isSaving || isClosing || saveResult is CardEditSaveResult.Saved
+
     val canSave: Boolean
         get() =
-            !isSaving &&
-                !isClosing &&
+            !isEditLocked &&
+                !isImportingImage &&
                 (loadState == CardEditLoadState.NEW || loadState == CardEditLoadState.READY) &&
-                saveResult !is CardEditSaveResult.Saved &&
                 name.isNotBlank() &&
                 requiredCount.toIntOrNull()?.let { it > 0 } == true &&
                 !isStatementDayInvalid &&
@@ -129,12 +158,15 @@ class CardEditViewModel(
     private val eventQueue = OneShotEventQueue<CardEditEvent>()
     val events: Flow<CardEditEvent> = eventQueue.events
     private var loadJob: Job? = null
-    private var permissionCleanupJob: Job? = null
+    private var imageCleanupJob: Job? = null
     private var imageSelectionJob: Job? = null
     private var imageSelectionGeneration = 0L
     private var initializedCardId: Long? = null
     private var isInitialized = false
     private var formGeneration = 0L
+
+    @Volatile
+    private var isCleared = false
 
     /** 供编辑表单下拉选择使用 */
     val folders: StateFlow<List<CardFolderEntity>> =
@@ -148,43 +180,21 @@ class CardEditViewModel(
      */
     fun initialize(cardId: Long?) {
         if (isInitialized && initializedCardId == cardId) return
-        isInitialized = true
-        initializedCardId = cardId
         if (cardId == null) reset() else load(cardId)
     }
 
-    /**
-     * 重置表单到初始状态。新建卡片时调用。
-     */
-    fun reset() {
-        isInitialized = true
-        initializedCardId = null
-        val staleImageUris = _uiState.value.acquiredImageUris
-        formGeneration++
-        imageSelectionGeneration++
-        imageSelectionJob?.cancel()
-        loadJob?.cancel()
-        _uiState.value = CardEditUiState()
-        enqueuePermissionCleanup(staleImageUris)
-    }
+    private fun reset() = transitionToForm(cardId = null, state = CardEditUiState())
 
-    /**
-     * 加载已有卡片数据。使用 first() 只取一次，避免 Flow 持续订阅。
-     */
+    /** 加载已有卡片数据；只做一次单卡查询，不启动列表所需的全表派生流。 */
     fun load(cardId: Long) {
-        isInitialized = true
-        initializedCardId = cardId
-        val staleImageUris = _uiState.value.acquiredImageUris
-        formGeneration++
-        imageSelectionGeneration++
-        imageSelectionJob?.cancel()
-        loadJob?.cancel()
-        _uiState.value = CardEditUiState(loadState = CardEditLoadState.LOADING)
-        enqueuePermissionCleanup(staleImageUris)
+        transitionToForm(
+            cardId = cardId,
+            state = CardEditUiState(loadState = CardEditLoadState.LOADING),
+        )
         loadJob =
             viewModelScope.launch {
                 try {
-                    val entity = repository.observeCard(cardId).first()
+                    val entity = repository.getStoredCard(cardId)
                     if (entity == null) {
                         _uiState.value = CardEditUiState(loadState = CardEditLoadState.MISSING)
                         return@launch
@@ -205,8 +215,7 @@ class CardEditViewModel(
                             note = c.note,
                             imageSourceType = c.imageSourceTypeEnum,
                             imageProviderKey = c.imageProviderKey,
-                            imageUri = c.imageUri,
-                            acquiredImageUris = emptySet(),
+                            userImage = UserImageDraft.Unchanged(entity.resolvedUserImageUri),
                             cardOrientation = c.cardOrientationEnum,
                             folderId = c.folderId,
                             editingId = c.id,
@@ -221,9 +230,25 @@ class CardEditViewModel(
             }
     }
 
+    /** 所有表单切换共用同一套代际、取消和暂存图片清理规则。 */
+    private fun transitionToForm(
+        cardId: Long?,
+        state: CardEditUiState,
+    ) {
+        isInitialized = true
+        initializedCardId = cardId
+        val staleImage = _uiState.value.userImage.stagedOrNull()
+        formGeneration++
+        imageSelectionGeneration++
+        imageSelectionJob?.cancel()
+        loadJob?.cancel()
+        _uiState.value = state
+        enqueueImageCleanup(staleImage)
+    }
+
     fun update(transform: (CardEditUiState) -> CardEditUiState) {
         _uiState.update { current ->
-            if (current.isSaving || current.isClosing || current.saveResult is CardEditSaveResult.Saved) {
+            if (current.isEditLocked) {
                 current
             } else {
                 transform(current).copy(saveResult = CardEditSaveResult.Idle)
@@ -232,6 +257,7 @@ class CardEditViewModel(
     }
 
     fun selectImageSource(type: ImageSourceType) {
+        if (type != ImageSourceType.USER) invalidatePendingImageSelection()
         update { state ->
             state.copy(
                 imageSourceType = type,
@@ -259,152 +285,200 @@ class CardEditViewModel(
         }
     }
 
+    fun clearUserImage() {
+        invalidatePendingImageSelection()
+        while (true) {
+            val current = _uiState.value
+            if (current.isEditLocked) return
+            if (
+                _uiState.compareAndSet(
+                    current,
+                    current.copy(userImage = UserImageDraft.Cleared, saveResult = CardEditSaveResult.Idle),
+                )
+            ) {
+                enqueueImageCleanup(current.userImage.stagedOrNull())
+                return
+            }
+        }
+    }
+
+    /** 用户后续动作优先于仍在复制的旧选择；存储层会负责回收已完成但未被表单接纳的租约。 */
+    private fun invalidatePendingImageSelection() {
+        imageSelectionGeneration++
+        imageSelectionJob?.cancel()
+        _uiState.update { current ->
+            if (current.isImportingImage) current.copy(isImportingImage = false) else current
+        }
+    }
+
     fun selectUserImage(uri: String) {
+        if (!beginImageImport()) return
         val requestGeneration = formGeneration
         val requestSelectionGeneration = ++imageSelectionGeneration
         val previousSelection = imageSelectionJob
         previousSelection?.cancel()
         imageSelectionJob =
             viewModelScope.launch {
-                var acquired = false
+                var staged: StagedUserImage? = null
                 var accepted = false
                 try {
                     previousSelection?.join()
-                    permissionCleanupJob?.join()
-                    val current = _uiState.value
-                    if (uri in current.acquiredImageUris) {
-                        acceptUserImage(uri, requestGeneration, requestSelectionGeneration)
-                        return@launch
-                    }
-                    // 把 suspend 返回值赋给本地变量也纳入不可取消区；否则权限已经取得后，
-                    // 恰好在恢复调用方时取消，finally 仍会误以为 acquired=false。
-                    withContext(NonCancellable) {
-                        acquired = repository.acquireUserImagePermission(uri)
-                    }
+                    imageCleanupJob?.join()
+                    // 存储边界负责“文件已落盘但租约尚未返回”这一取消竞态；表单层保持可取消。
+                    staged = repository.stageUserImage(uri)
                     currentCoroutineContext().ensureActive()
-                    if (!acquired) {
-                        eventQueue.emit(CardEditEvent.ImagePermissionFailed)
-                        return@launch
-                    }
-                    accepted = acceptUserImage(uri, requestGeneration, requestSelectionGeneration)
+                    accepted = acceptUserImage(checkNotNull(staged), requestGeneration, requestSelectionGeneration)
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (error: Exception) {
+                    Log.w("CardEditViewModel", "导入卡面图片失败（${error::class.java.simpleName}）")
+                    eventQueue.emit(CardEditEvent.ImageImportFailed)
                 } finally {
-                    if (acquired && !accepted) {
+                    if (staged != null && !accepted) {
                         withContext(NonCancellable) {
-                            repository.releasePendingUserImagePermissions(setOf(uri))
+                            repository.endPendingUserImageLeases(setOf(checkNotNull(staged)))
+                            repository.reclaimUnusedUserImages()
                         }
                     }
+                    finishImageImport(requestGeneration, requestSelectionGeneration)
                 }
             }
     }
 
     fun save() {
         val state = beginSaving() ?: return
-        viewModelScope.launch {
-            try {
-                val normalizedDue =
-                    state.nextDueDateMillis?.let { token ->
-                        val date = normalizeAnnualDueDate(DateToken.toLocalDate(token))
-                        val today = clock.instant().atZone(zoneIdProvider()).toLocalDate()
-                        val validation = validateNextDue(date, today)
-                        if (validation != null) {
-                            _uiState.update {
-                                it.copy(
-                                    nextDueDateMillis = DateToken.fromAnnualDate(date),
-                                    isSaving = false,
-                                    saveResult = CardEditSaveResult.ValidationError(validation),
-                                )
+        val savingLeases = state.userImage.stagedOrNull().asLeaseSet()
+        val job =
+            viewModelScope.launch {
+                try {
+                    val normalizedDue =
+                        state.nextDueDateMillis?.let { token ->
+                            val date = normalizeAnnualDueDate(DateToken.toLocalDate(token))
+                            val today = clock.instant().atZone(zoneIdProvider()).toLocalDate()
+                            val validation = validateNextDue(date, today)
+                            if (validation != null) {
+                                _uiState.update {
+                                    it.copy(
+                                        nextDueDateMillis = DateToken.fromAnnualDate(date),
+                                        isSaving = false,
+                                        saveResult = CardEditSaveResult.ValidationError(validation),
+                                    )
+                                }
+                                return@launch
                             }
-                            return@launch
+                            DateToken.fromAnnualDate(date)
                         }
-                        DateToken.fromAnnualDate(date)
+                    val required = state.requiredCount.toInt()
+                    val existingId = state.editingId
+                    val preserved =
+                        if (existingId != null) {
+                            repository.getStoredCard(existingId)
+                        } else {
+                            null
+                        }
+                    if (existingId != null && preserved == null) {
+                        _uiState.update {
+                            it.copy(
+                                loadState = CardEditLoadState.MISSING,
+                                isSaving = false,
+                                saveResult = CardEditSaveResult.Idle,
+                            )
+                        }
+                        return@launch
                     }
-                val required = state.requiredCount.toInt()
-                val existingId = state.editingId
-                val preserved =
-                    if (existingId != null) {
-                        repository.observeCard(existingId).first()
-                    } else {
-                        null
+                    val latest = preserved?.card
+                    val selectedImage = (state.userImage as? UserImageDraft.Selected)?.staged
+                    val preserveStoredUserImage =
+                        state.userImage is UserImageDraft.Unchanged &&
+                            latest != null
+                    val entity =
+                        CardEntity(
+                            id = existingId ?: 0L,
+                            name = state.name.trim(),
+                            bank = state.bank.trim(),
+                            cardNumberMasked = state.cardNumberMasked.trim(),
+                            cardType = state.cardType.key,
+                            statementDay = persistedCardMonthDay(state.cardType, state.statementDay),
+                            repaymentDay = persistedCardMonthDay(state.cardType, state.repaymentDay),
+                            requiredCount = required,
+                            validUntilMillis = state.validUntilMillis,
+                            nextDueDateMillis = normalizedDue,
+                            colorArgb = state.colorArgb,
+                            note = state.note,
+                            imageUri = null,
+                            imageAssetId = selectedImage?.assetId?.value,
+                            imageSourceType = state.imageSourceType.key,
+                            imageProviderKey = state.imageProviderKey,
+                            cardOrientation = state.cardOrientation.key,
+                            folderId = state.folderId,
+                            createdAtMillis = latest?.createdAtMillis ?: clock.millis(),
+                        )
+                    val id =
+                        if (existingId == null) {
+                            repository.upsertCard(entity)
+                        } else {
+                            val updated =
+                                if (preserveStoredUserImage) {
+                                    repository.updateCardPreservingUserImage(entity)
+                                } else {
+                                    repository.updateCard(entity)
+                                }
+                            if (!updated) {
+                                _uiState.update {
+                                    it.copy(
+                                        loadState = CardEditLoadState.MISSING,
+                                        isSaving = false,
+                                        saveResult = CardEditSaveResult.Idle,
+                                    )
+                                }
+                                return@launch
+                            }
+                            existingId
+                        }
+                    // 数据已提交后结束暂存租约；数据库引用已成为文件保留的唯一真源。
+                    withContext(NonCancellable) {
+                        repository.endPendingUserImageLeases(savingLeases)
                     }
-                if (existingId != null && preserved == null) {
+                    val saved = repository.getStoredCard(id)
+                    val savedEntity = saved?.card ?: entity
                     _uiState.update {
                         it.copy(
-                            loadState = CardEditLoadState.MISSING,
+                            userImage =
+                                UserImageDraft.Unchanged(
+                                    saved?.resolvedUserImageUri ?: state.userImage.previewModel,
+                                ),
+                            imageProviderKey = savedEntity.imageProviderKey,
                             isSaving = false,
-                            saveResult = CardEditSaveResult.Idle,
+                            saveResult = CardEditSaveResult.Saved(id),
+                            editingId = id,
                         )
                     }
-                    return@launch
-                }
-                val entity =
-                    CardEntity(
-                        id = existingId ?: 0L,
-                        name = state.name.trim(),
-                        bank = state.bank.trim(),
-                        cardNumberMasked = state.cardNumberMasked.trim(),
-                        cardType = state.cardType.key,
-                        statementDay = persistedCardMonthDay(state.cardType, state.statementDay),
-                        repaymentDay = persistedCardMonthDay(state.cardType, state.repaymentDay),
-                        requiredCount = required,
-                        validUntilMillis = state.validUntilMillis,
-                        nextDueDateMillis = normalizedDue,
-                        colorArgb = state.colorArgb,
-                        note = state.note,
-                        imageUri = persistedImageUri(state.imageSourceType, state.imageUri),
-                        imageSourceType = state.imageSourceType.key,
-                        imageProviderKey = state.imageProviderKey,
-                        cardOrientation = state.cardOrientation.key,
-                        folderId = state.folderId,
-                        createdAtMillis = preserved?.card?.createdAtMillis ?: clock.millis(),
-                    )
-                val id =
-                    if (existingId == null) {
-                        repository.upsertCard(entity)
-                    } else {
-                        if (!repository.updateCard(entity)) {
-                            _uiState.update {
-                                it.copy(
-                                    loadState = CardEditLoadState.MISSING,
-                                    isSaving = false,
-                                    saveResult = CardEditSaveResult.Idle,
-                                )
-                            }
-                            return@launch
-                        }
-                        existingId
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (error: Exception) {
+                    Log.e("CardEditViewModel", "保存卡片失败（${error::class.java.simpleName}）")
+                    _uiState.update { it.copy(isSaving = false, saveResult = CardEditSaveResult.Failed) }
+                } finally {
+                    _uiState.update {
+                        if (it.saveResult is CardEditSaveResult.Saved) it else it.copy(isSaving = false)
                     }
-                // 数据已提交后结束临时 URI 租约；取消不能把已完成写入留成永久 pending。
-                withContext(NonCancellable) {
-                    repository.releasePendingUserImagePermissions(state.acquiredImageUris)
-                }
-                _uiState.update {
-                    it.copy(
-                        imageUri = entity.imageUri,
-                        imageProviderKey = entity.imageProviderKey,
-                        isSaving = false,
-                        saveResult = CardEditSaveResult.Saved(id),
-                        editingId = id,
-                    )
-                }
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (error: Exception) {
-                Log.e("CardEditViewModel", "保存卡片失败（${error::class.java.simpleName}）")
-                _uiState.update { it.copy(isSaving = false, saveResult = CardEditSaveResult.Failed) }
-            } finally {
-                _uiState.update {
-                    if (it.saveResult is CardEditSaveResult.Saved) it else it.copy(isSaving = false)
                 }
             }
+        // ViewModel 永久清除时，租约必须覆盖数据库操作的最终完成；不能在写入途中提前释放。
+        job.invokeOnCompletion {
+            if (isCleared) repository.endPendingUserImageLeases(savingLeases)
         }
     }
 
-    /** 保存和关闭竞争同一份原子状态；权限收尾归 ViewModel 所有，配置变更不会冻结页面。 */
+    /** 保存和关闭竞争同一份原子状态；暂存文件收尾归 ViewModel 所有，配置变更不会冻结页面。 */
     fun closeWithoutSaving() {
+        invalidatePendingImageSelection()
         val state = beginClosing() ?: return
+        val leases = state.userImage.stagedOrNull().asLeaseSet()
+        repository.endPendingUserImageLeases(leases)
         viewModelScope.launch(start = CoroutineStart.UNDISPATCHED) {
             withContext(NonCancellable) {
-                repository.releasePendingUserImagePermissions(state.acquiredImageUris)
+                repository.reclaimUnusedUserImages()
                 eventQueue.emit(CardEditEvent.CloseReady)
             }
         }
@@ -413,26 +487,29 @@ class CardEditViewModel(
     private fun beginClosing(): CardEditUiState? {
         while (true) {
             val current = _uiState.value
-            if (current.isSaving || current.isClosing || current.saveResult is CardEditSaveResult.Saved) return null
+            if (current.isEditLocked) return null
             if (_uiState.compareAndSet(current, current.copy(isClosing = true))) return current
         }
     }
 
-    /** 串行结束旧表单的临时 URI 租约，避免重载表单与下一次选图互相抢权限。 */
-    private fun enqueuePermissionCleanup(uris: Set<String>) {
-        if (uris.isEmpty()) return
-        val previousCleanup = permissionCleanupJob
-        permissionCleanupJob =
+    /** 串行结束旧表单的图片租约，避免重载表单与下一次选图互相回收文件。 */
+    private fun enqueueImageCleanup(image: StagedUserImage?) {
+        val leases = image.asLeaseSet()
+        if (leases.isEmpty()) return
+        // 即使随后 ViewModelScope 被永久取消，租约也已同步结束；文件留给本次或下次维护回收。
+        repository.endPendingUserImageLeases(leases)
+        val previousCleanup = imageCleanupJob
+        imageCleanupJob =
             viewModelScope.launch(start = CoroutineStart.UNDISPATCHED) {
                 withContext(NonCancellable) {
                     previousCleanup?.join()
-                    repository.releasePendingUserImagePermissions(uris)
+                    repository.reclaimUnusedUserImages()
                 }
             }
     }
 
     private fun acceptUserImage(
-        uri: String,
+        staged: StagedUserImage,
         requestGeneration: Long,
         requestSelectionGeneration: Long,
     ): Boolean {
@@ -441,19 +518,20 @@ class CardEditViewModel(
             if (
                 requestGeneration != formGeneration ||
                 requestSelectionGeneration != imageSelectionGeneration ||
-                current.isSaving ||
-                current.isClosing ||
-                current.saveResult is CardEditSaveResult.Saved
+                current.isEditLocked
             ) {
                 return false
             }
             val updated =
                 current.copy(
-                    imageUri = uri,
+                    userImage = UserImageDraft.Selected(staged),
                     imageSourceType = ImageSourceType.USER,
-                    acquiredImageUris = current.acquiredImageUris + uri,
+                    isImportingImage = false,
                 )
-            if (_uiState.compareAndSet(current, updated)) return true
+            if (_uiState.compareAndSet(current, updated)) {
+                enqueueImageCleanup(current.userImage.stagedOrNull())
+                return true
+            }
         }
     }
 
@@ -464,6 +542,34 @@ class CardEditViewModel(
             if (_uiState.compareAndSet(current, current.copy(isSaving = true))) return current
         }
     }
+
+    private fun beginImageImport(): Boolean {
+        while (true) {
+            val current = _uiState.value
+            if (current.isEditLocked) return false
+            val importing = current.copy(isImportingImage = true, saveResult = CardEditSaveResult.Idle)
+            if (_uiState.compareAndSet(current, importing)) return true
+        }
+    }
+
+    private fun finishImageImport(
+        requestGeneration: Long,
+        requestSelectionGeneration: Long,
+    ) {
+        if (requestGeneration != formGeneration || requestSelectionGeneration != imageSelectionGeneration) return
+        _uiState.update { current ->
+            if (current.isImportingImage) current.copy(isImportingImage = false) else current
+        }
+    }
+
+    override fun onCleared() {
+        isCleared = true
+        val state = _uiState.value
+        if (!state.isSaving) {
+            repository.endPendingUserImageLeases(state.userImage.stagedOrNull().asLeaseSet())
+        }
+        super.onCleared()
+    }
 }
 
 internal fun normalizeAnnualDueDate(date: LocalDate): LocalDate = DateToken.normalizeAnnualDate(date)
@@ -473,11 +579,6 @@ internal fun validateNextDue(
     today: LocalDate,
 ): CardEditValidation? = if (date.isAfter(today)) null else CardEditValidation.NEXT_DUE_MUST_BE_FUTURE
 
-internal fun persistedImageUri(
-    sourceType: ImageSourceType,
-    imageUri: String?,
-): String? = imageUri.takeIf { sourceType == ImageSourceType.USER }
-
 internal fun isOptionalCardMonthDayValid(input: String): Boolean = input.isBlank() || parseCardMonthDay(input) != null
 
 internal fun parseCardMonthDay(input: String): Int? = input.toIntOrNull()?.takeIf(Int::isValidCardMonthDay)
@@ -486,3 +587,7 @@ internal fun persistedCardMonthDay(
     cardType: CardType,
     input: String,
 ): Int? = if (cardType == CardType.CREDIT) parseCardMonthDay(input) else null
+
+private fun UserImageDraft.stagedOrNull(): StagedUserImage? = (this as? UserImageDraft.Selected)?.staged
+
+private fun StagedUserImage?.asLeaseSet(): Set<StagedUserImage> = this?.let(::setOf).orEmpty()

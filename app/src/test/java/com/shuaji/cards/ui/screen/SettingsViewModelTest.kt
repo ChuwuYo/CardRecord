@@ -102,7 +102,12 @@ class SettingsViewModelTest {
     fun export_success_emits_event_with_export_message() =
         runTest(mainDispatcherRule.testDispatcher.scheduler) {
             whenever(backup.export(any())).doReturn(
-                ExportSummary(cardCount = 5, folderCount = 2, transactionCount = 12),
+                ExportSummary(
+                    cardCount = 5,
+                    folderCount = 2,
+                    transactionCount = 12,
+                    directoryName = "CardRecord_Backup_20260722_120000",
+                ),
             )
 
             val collected =
@@ -117,13 +122,14 @@ class SettingsViewModelTest {
             assertTrue("消息应含「5 张卡」，实际：$message", message.contains("5 张卡"))
             assertTrue("消息应含「2 个文件夹」，实际：$message", message.contains("2 个文件夹"))
             assertTrue("消息应含「12 笔流水」，实际：$message", message.contains("12 笔流水"))
+            assertTrue("消息应含实际目录名，实际：$message", message.contains("CardRecord_Backup_20260722_120000"))
             assertFalse("成功事件 isError=false", collected[0].isError)
         }
 
     @Test
     fun export_empty_db_uses_empty_message() =
         runTest(mainDispatcherRule.testDispatcher.scheduler) {
-            whenever(backup.export(any())).doReturn(ExportSummary(0, 0, 0))
+            whenever(backup.export(any())).doReturn(ExportSummary(0, 0, 0, "test-backup"))
 
             val collected =
                 runAndCollect {
@@ -133,8 +139,8 @@ class SettingsViewModelTest {
 
             assertEquals(1, collected.size)
             assertTrue(
-                "空库应使用「已导出空备份」文案，实际：${collected[0].message}",
-                collected[0].message.contains("已导出空备份"),
+                "空库应使用「已创建空备份目录」文案，实际：${collected[0].message}",
+                collected[0].message.contains("已创建空备份目录"),
             )
         }
 
@@ -158,14 +164,27 @@ class SettingsViewModelTest {
         }
 
     @Test
-    fun import_with_imageUriUserCount_includes_image_warning() =
+    fun unexpectedFailure_doesNotExposeInternalExceptionMessage() =
+        runTest(mainDispatcherRule.testDispatcher.scheduler) {
+            whenever(backup.export(any())).doThrow(IllegalStateException("internal-secret-detail"))
+
+            val collected = runAndCollect { newVm().export(android.net.Uri.EMPTY) }
+
+            assertEquals(1, collected.size)
+            assertTrue(collected.single().isError)
+            assertFalse(collected.single().message.contains("internal-secret-detail"))
+            assertTrue(collected.single().message.contains("未知原因"))
+        }
+
+    @Test
+    fun import_with_legacyImageUriCount_includes_image_warning() =
         runTest(mainDispatcherRule.testDispatcher.scheduler) {
             whenever(backup.import(any(), any(), any())).doReturn(
                 ImportResult(
                     cardsAdded = 3,
                     foldersAdded = 1,
                     transactionsAdded = 0,
-                    imageUriUserCount = 2,
+                    legacyImageUriCount = 2,
                 ),
             )
 
@@ -179,7 +198,7 @@ class SettingsViewModelTest {
             val msg = collected[0].message
             assertTrue("消息应含「3 张卡」，实际：$msg", msg.contains("3 张卡"))
             assertTrue(
-                "imageUriUserCount=2 应触发自定义卡面可能需重新选择的提示，实际：$msg",
+                "legacyImageUriCount=2 应触发自定义卡面可能需重新选择的提示，实际：$msg",
                 msg.contains("2 张") && msg.contains("重新选择"),
             )
         }
@@ -195,7 +214,7 @@ class SettingsViewModelTest {
             // 用 doAnswer 在 export 真正执行期间断言已进入 Working——仅看最终态无法证明中间态。
             whenever(backup.export(any())).doAnswer {
                 assertEquals("export 执行期间应为 Working", SettingsUiState.Working, vm.state.value)
-                ExportSummary(cardCount = 1, folderCount = 0, transactionCount = 0)
+                ExportSummary(cardCount = 1, folderCount = 0, transactionCount = 0, directoryName = "test-backup")
             }
             assertEquals("初始应为 Idle", SettingsUiState.Idle, vm.state.value)
 
@@ -214,7 +233,7 @@ class SettingsViewModelTest {
     fun acknowledge_is_idempotent_and_does_not_re_emit() =
         runTest(mainDispatcherRule.testDispatcher.scheduler) {
             whenever(backup.export(any())).doReturn(
-                ExportSummary(cardCount = 1, folderCount = 0, transactionCount = 0),
+                ExportSummary(cardCount = 1, folderCount = 0, transactionCount = 0, directoryName = "test-backup"),
             )
 
             val vm = newVm()
@@ -323,7 +342,7 @@ class SettingsViewModelTest {
             whenever(backup.export(uri)).doSuspendableAnswer {
                 entered.complete(Unit)
                 release.await()
-                ExportSummary(1, 0, 0)
+                ExportSummary(1, 0, 0, "test-backup")
             }
             val vm = newVm()
 
@@ -370,7 +389,7 @@ class SettingsViewModelTest {
                 } catch (_: kotlinx.coroutines.CancellationException) {
                     // 模拟 Provider 吞掉取消并返回普通结果。
                 }
-                ExportSummary(1, 0, 0)
+                ExportSummary(1, 0, 0, "test-backup")
             }
             val vm = newVm()
 
@@ -420,7 +439,7 @@ class SettingsViewModelTest {
             whenever(backup.export(uri)).doSuspendableAnswer {
                 entered.complete(Unit)
                 release.await()
-                ExportSummary(1, 0, 0)
+                ExportSummary(1, 0, 0, "test-backup")
             }
             whenever(backup.cancelActive()).doReturn(BackupCancelResult.NO_ACTIVE_OPERATION)
             val vm = newVm()
@@ -439,7 +458,7 @@ class SettingsViewModelTest {
         }
 
     // ════════════════════════════════════════════════════════════
-    // REPLACE 模式 + imageUriUserCount 显式提示
+    // REPLACE 模式 + legacyImageUriCount 显式提示
     // ════════════════════════════════════════════════════════════
 
     @Test
@@ -450,7 +469,7 @@ class SettingsViewModelTest {
                     cardsAdded = 5,
                     foldersAdded = 2,
                     transactionsAdded = 10,
-                    imageUriUserCount = 3,
+                    legacyImageUriCount = 3,
                 ),
             )
 
@@ -467,7 +486,7 @@ class SettingsViewModelTest {
             assertTrue("消息应含「2 个文件夹」，实际：$msg", msg.contains("2 个文件夹"))
             assertTrue("消息应含「10 笔流水」，实际：$msg", msg.contains("10 笔流水"))
             assertTrue(
-                "imageUriUserCount=3 应触发自定义卡面可能需重新选择的提示，实际：$msg",
+                "legacyImageUriCount=3 应触发自定义卡面可能需重新选择的提示，实际：$msg",
                 msg.contains("3 张") && msg.contains("重新选择"),
             )
         }
@@ -480,7 +499,7 @@ class SettingsViewModelTest {
     fun merge_import_with_all_extras_triggers_all_submessages() =
         runTest(mainDispatcherRule.testDispatcher.scheduler) {
             // 触发所有 5 个 extras：transactionsSkipped / cardsSkippedInvalidFolder /
-            // duplicateFolderNames / duplicateCardNames / imageUriUserCount
+            // duplicateFolderNames / duplicateCardNames / legacyImageUriCount
             whenever(backup.import(any(), any(), any())).doReturn(
                 ImportResult(
                     cardsAdded = 8,
@@ -490,7 +509,7 @@ class SettingsViewModelTest {
                     cardsSkippedInvalidFolder = 1,
                     duplicateFolderNames = 1,
                     duplicateCardNames = 2,
-                    imageUriUserCount = 4,
+                    legacyImageUriCount = 4,
                 ),
             )
 
@@ -523,7 +542,7 @@ class SettingsViewModelTest {
                 msg.contains("2 张卡") && msg.contains("重名"),
             )
             assertTrue(
-                "imageUriUserCount=4 应触发自定义卡面可能需重新选择的提示，实际：$msg",
+                "legacyImageUriCount=4 应触发自定义卡面可能需重新选择的提示，实际：$msg",
                 msg.contains("4 张") && msg.contains("重新选择"),
             )
         }
@@ -536,7 +555,7 @@ class SettingsViewModelTest {
     fun finalize_writes_done_state_and_emits_exactly_once() =
         runTest(mainDispatcherRule.testDispatcher.scheduler) {
             whenever(backup.export(any())).doReturn(
-                ExportSummary(cardCount = 1, folderCount = 0, transactionCount = 0),
+                ExportSummary(cardCount = 1, folderCount = 0, transactionCount = 0, directoryName = "test-backup"),
             )
 
             val vm = newVm()

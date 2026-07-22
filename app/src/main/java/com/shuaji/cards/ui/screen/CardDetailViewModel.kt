@@ -5,9 +5,9 @@ import androidx.lifecycle.viewModelScope
 import com.shuaji.cards.core.OneShotEventQueue
 import com.shuaji.cards.data.AnnualFeeCycle
 import com.shuaji.cards.data.CardRepository
+import com.shuaji.cards.data.CardWithCount
 import com.shuaji.cards.data.SwipeRecordResult
 import com.shuaji.cards.data.local.CardType
-import com.shuaji.cards.data.local.CardWithCount
 import com.shuaji.cards.data.local.TransactionEntity
 import com.shuaji.cards.data.local.cardTypeEnum
 import com.shuaji.cards.data.local.isExpiredAt
@@ -42,6 +42,7 @@ data class CardDetailUi(
     val lastSwipeAtMillis: Long?,
     val cycle: AnnualFeeCycle,
     val swipes: List<TransactionEntity> = emptyList(),
+    val userImageModel: String? = null,
 ) {
     val requiredCount: Int get() = card.requiredCount
     val selectedCardType: CardType?
@@ -119,8 +120,9 @@ class CardDetailViewModel(
                         swipeFeedbackQueue.emit(SwipeFeedback.CountingNotStarted(result.startDate))
                     SwipeRecordResult.CardMissing -> swipeFeedbackQueue.emit(SwipeFeedback.CardMissing)
                 }
-            } catch (exception: Exception) {
-                if (exception is CancellationException) throw exception
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
                 eventQueue.emit(CardDetailEvent.WriteFailed)
             }
         }
@@ -155,8 +157,9 @@ class CardDetailViewModel(
                             CardDetailEvent.DeleteFailed
                         }
                     eventQueue.emit(event)
-                } catch (exception: Exception) {
-                    if (exception is CancellationException) throw exception
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
                     eventQueue.emit(CardDetailEvent.DeleteFailed)
                 }
             }
@@ -166,8 +169,9 @@ class CardDetailViewModel(
         viewModelScope.launch {
             try {
                 if (!block()) eventQueue.emit(CardDetailEvent.WriteFailed)
-            } catch (exception: Exception) {
-                if (exception is CancellationException) throw exception
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
                 eventQueue.emit(CardDetailEvent.WriteFailed)
             }
         }
@@ -181,6 +185,7 @@ private fun CardWithCount.toDetailUi(
 ): CardDetailUi =
     CardDetailUi(
         card = card,
+        userImageModel = resolvedUserImageUri,
         currentCount = currentCount,
         isExpired = card.isExpiredAt(now, zoneId),
         lastSwipeAtMillis = lastSwipeAtMillis,

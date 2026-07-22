@@ -5,6 +5,7 @@ import androidx.lifecycle.viewmodel.CreationExtras
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.shuaji.cards.ShuajiApplication
+import com.shuaji.cards.requireShuajiApplication
 import com.shuaji.cards.ui.screen.CardEditViewModel
 import com.shuaji.cards.ui.screen.CardFolderViewModel
 import com.shuaji.cards.ui.screen.CardListViewModel
@@ -43,6 +44,6 @@ object ViewModelFactories {
         val application =
             this[ViewModelProvider.AndroidViewModelFactory.APPLICATION_KEY]
                 ?: error("Application missing from CreationExtras")
-        return application as ShuajiApplication
+        return application.requireShuajiApplication()
     }
 }

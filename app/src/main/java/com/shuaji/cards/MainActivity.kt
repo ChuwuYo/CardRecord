@@ -22,7 +22,7 @@ import com.shuaji.cards.ui.theme.resolveDarkTheme
 class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val settingsRepo = (application as ShuajiApplication).container.settings
+        val settingsRepo = requireShuajiApplication().container.settings
         // 先建立 edge-to-edge 布局；Compose 首帧随后只更新图标明暗，避免 Insets 跳动。
         enableEdgeToEdge()
         setContent {

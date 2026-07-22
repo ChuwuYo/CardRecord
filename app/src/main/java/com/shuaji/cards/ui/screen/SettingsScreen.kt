@@ -90,7 +90,7 @@ import java.util.Locale
  *     - 导入配置 ListItem
  *   - 隐私说明 section
  *
- * SAF 文件选择器（`ActivityResultContracts.CreateDocument` / `OpenDocument`）由
+ * SAF 目录 / 文件选择器（`ActivityResultContracts.OpenDocumentTree` / `OpenDocument`）由
  * [rememberLauncherForActivityResult] 持有——不需要任何存储权限。
  *
  * 状态机：
@@ -101,11 +101,10 @@ import java.util.Locale
  *
  * SnackbarHost 由 `ShuajiApp` 顶层持有，本页只发布操作结果。
  *
- * 导入文件先由 [SettingsViewModel.inspectBackup] 走与正式导入完全相同的受限流式解码；
+ * 导入目录或旧版 JSON 先由 [SettingsViewModel.inspectBackup] 走与正式导入相同的受限解码；
  * 只有结构校验成功后才显示模式确认对话框及记录数量。
  *
- * 备份是一次性读取，不申请持久化 URI 权限。进程若在确认期间结束，用户重新选择文件即可；
- * 这样不会占用授权槽位，也不会误撤销自定义卡面等其他功能持有的权限。
+ * 备份是一次性读取，不申请持久化 URI 权限。进程若在确认期间结束，用户重新选择目录或文件即可。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -125,21 +124,22 @@ fun SettingsScreen(onBack: () -> Unit) {
     // 语言选择对话框显示状态
     var showLanguageDialog by rememberSaveable { mutableStateOf(false) }
 
-    // 导出：弹 SAF 文件创建器（application/json）
+    fun inspectSelection(uri: android.net.Uri?) {
+        if (uri == null) return
+        viewModel.dismissPendingImport()
+        coroutineScope.launch { viewModel.inspectBackup(uri) }
+    }
+
+    // 导出：选择父目录后，由仓库新建备份目录；仅有图片引用时才创建 card_images。
     val exportLauncher =
-        rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
+        rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
             if (uri != null) viewModel.export(uri)
         }
-    // 导入：弹 SAF 文件打开器
-    val importLauncher =
-        rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-            if (uri != null) {
-                viewModel.dismissPendingImport()
-                coroutineScope.launch {
-                    viewModel.inspectBackup(uri)
-                }
-            }
-        }
+    // 当前格式直接选择备份目录；旧格式继续允许选择单个 JSON。
+    val importDirectoryLauncher =
+        rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree(), ::inspectSelection)
+    val legacyJsonLauncher =
+        rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument(), ::inspectSelection)
 
     // Done 状态变化 → acknowledge；完成消息由进程级一次性事件队列独立交付。
     LaunchedEffect(state) {
@@ -208,8 +208,7 @@ fun SettingsScreen(onBack: () -> Unit) {
                         },
                         modifier =
                             Modifier.clickable(enabled = enabled) {
-                                val ts = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
-                                exportLauncher.launch("cardrecord_backup_$ts.json")
+                                exportLauncher.launch(null)
                             },
                     )
                 }
@@ -226,7 +225,24 @@ fun SettingsScreen(onBack: () -> Unit) {
                         },
                         modifier =
                             Modifier.clickable(enabled = enabled) {
-                                importLauncher.launch(arrayOf("application/json", "text/json", "*/*"))
+                                importDirectoryLauncher.launch(null)
+                            },
+                    )
+                }
+                item {
+                    ListItem(
+                        headlineContent = { Text(stringResource(R.string.settings_import_legacy)) },
+                        supportingContent = { Text(stringResource(R.string.settings_import_legacy_subtitle)) },
+                        leadingContent = {
+                            Icon(
+                                Icons.Default.FileDownload,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        },
+                        modifier =
+                            Modifier.clickable(enabled = enabled) {
+                                legacyJsonLauncher.launch(arrayOf("application/json", "text/json", "*/*"))
                             },
                     )
                 }
@@ -496,7 +512,7 @@ fun SettingsScreen(onBack: () -> Unit) {
  * 这里把两种放一起给用户选，REPLACE 还弹一次二次确认（破坏性操作）。
  *
  * REPLACE/MERGE 确认对话框都把 [BackupFileInfo]（行数 + 备份时间 +
- * imageUriUserCount）拼进确认文案——「此备份包含 N 张卡 / M 个文件夹 / K 笔流水」+
+ * legacyImageUriCount）拼进确认文案——「此备份包含 N 张卡 / M 个文件夹 / K 笔流水」+
  * 「其中 N 张卡的卡面需要重新上传」（跨设备恢复时）+ 「备份时间：xxx」，
  * 用户能看清要操作的数据规模 + 风险再点确认。
  *
@@ -605,11 +621,11 @@ private fun confirmMessage(
             stringResource(R.string.settings_backup_time_label, fmt.format(Date(it)))
         } ?: ""
     val imageWarningLine =
-        info.takeIf { it.imageUriUserCount > 0 }?.let {
+        info.takeIf { it.legacyImageUriCount > 0 }?.let {
             pluralStringResource(
                 R.plurals.settings_dialog_image_warning,
-                it.imageUriUserCount,
-                it.imageUriUserCount,
+                it.legacyImageUriCount,
+                it.legacyImageUriCount,
             )
         } ?: ""
     return listOf(template, timeLine, imageWarningLine)

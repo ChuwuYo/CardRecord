@@ -9,7 +9,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [CardEntity::class, TransactionEntity::class, CardFolderEntity::class],
-    version = 8,
+    version = 9,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -320,6 +320,19 @@ abstract class AppDatabase : RoomDatabase() {
             }
 
         /**
+         * v8 → v9：增加应用私有卡面资源 ID。
+         *
+         * 文件复制不能放进 SQLite 迁移事务；历史 `image_uri` 原样保留，由启动后的图片存储模块
+         * 幂等复制成功后再通过条件更新清除。
+         */
+        private val MIGRATION_8_9 =
+            object : Migration(8, 9) {
+                override fun migrate(db: SupportSQLiteDatabase) {
+                    db.execSQL("ALTER TABLE `cards` ADD COLUMN `image_asset_id` TEXT")
+                }
+            }
+
+        /**
          * 全部迁移，按版本顺序。`get()` 与迁移测试共用同一份，避免「测试漏注册某条迁移」。
          */
         val ALL_MIGRATIONS: Array<Migration> =
@@ -331,6 +344,7 @@ abstract class AppDatabase : RoomDatabase() {
                 MIGRATION_5_6,
                 MIGRATION_6_7,
                 MIGRATION_7_8,
+                MIGRATION_8_9,
             )
 
         fun get(context: Context): AppDatabase =

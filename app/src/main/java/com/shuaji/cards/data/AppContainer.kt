@@ -5,9 +5,9 @@ import com.shuaji.cards.core.OneShotEventQueue
 import com.shuaji.cards.data.backup.BackupRepository
 import com.shuaji.cards.data.local.AppDatabase
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.launch
+import java.io.File
 import java.time.Clock
 import java.time.ZoneId
 
@@ -36,11 +36,8 @@ interface AppContainer {
      */
     suspend fun emitSettings(event: SettingsDoneEvent)
 
-    /**
-     * 启动应用级协调器：仅在进程前台消费边界时钟，失败时按规则重试。
-     * [ShuajiApplication] 只负责启动一次，不再额外执行一次性归一化。
-     */
-    fun startAnnualFeeCycleCoordinator(scope: CoroutineScope): Job
+    /** 启动图片迁移/回收与前台年度周期协调器；[ShuajiApplication] 只负责调用一次。 */
+    fun startBackgroundWork(scope: CoroutineScope)
 }
 
 class DefaultAppContainer(
@@ -51,10 +48,11 @@ class DefaultAppContainer(
     private val clock = Clock.systemUTC()
     private val zoneIdProvider: () -> ZoneId = { ZoneId.systemDefault() }
     private val boundaryTicks = localMidnightTicks(clock, zoneIdProvider)
-    private val imagePermissions =
-        ContentResolverUserImagePermissionStore(
+    private val userImages =
+        ContentResolverUserCardImageStore(
             contentResolver = context.contentResolver,
             cardDao = database.cardDao(),
+            rootDirectory = File(context.filesDir, "user_card_images"),
         )
     override val repository: CardRepository =
         CardRepository(
@@ -65,7 +63,7 @@ class DefaultAppContainer(
             clock = clock,
             zoneIdProvider = zoneIdProvider,
             boundaryTicks = boundaryTicks,
-            imagePermissions = imagePermissions,
+            userImages = userImages,
         )
     override val settings: SettingsRepository = SettingsRepository(context.appDataStore, startupThemeModeCache)
     override val backup: BackupRepository =
@@ -76,7 +74,7 @@ class DefaultAppContainer(
             folderDao = database.cardFolderDao(),
             transactionDao = database.transactionDao(),
             normalizeInTransaction = repository::normalizeOverdueCyclesInTransaction,
-            reconcileImagePermissions = imagePermissions::reconcile,
+            userImages = userImages,
         )
 
     private val annualFeeCycleEventQueue = AnnualFeeCycleEventQueue()
@@ -94,9 +92,9 @@ class DefaultAppContainer(
             onEvent = annualFeeCycleEventQueue::emit,
         )
 
-    override fun startAnnualFeeCycleCoordinator(scope: CoroutineScope): Job {
-        scope.launch { imagePermissions.reconcile() }
-        return annualFeeCycleCoordinator.start(scope)
+    override fun startBackgroundWork(scope: CoroutineScope) {
+        scope.launch { repository.maintainUserImagesOnStartupBestEffort() }
+        annualFeeCycleCoordinator.start(scope)
     }
 
     /** 把设置页结果事件发布到顶层 SnackbarHost。 */

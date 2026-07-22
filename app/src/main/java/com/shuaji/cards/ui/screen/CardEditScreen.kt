@@ -107,7 +107,7 @@ fun CardEditScreen(
     val folders by viewModel.folders.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
-    var showImagePermissionError by remember { mutableStateOf(false) }
+    var showImageImportError by remember { mutableStateOf(false) }
     val networkPickerPresentation =
         resolveCardNetworkPickerPresentation(state.imageSourceType, state.imageProviderKey)
 
@@ -126,7 +126,7 @@ fun CardEditScreen(
     LaunchedEffect(viewModel) {
         viewModel.events.collect { event ->
             when (event) {
-                CardEditEvent.ImagePermissionFailed -> showImagePermissionError = true
+                CardEditEvent.ImageImportFailed -> showImageImportError = true
                 CardEditEvent.CloseReady -> onBack()
             }
         }
@@ -137,10 +137,10 @@ fun CardEditScreen(
     var showColorPicker by remember { mutableStateOf(false) }
     val colorSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
-    // OpenDocument URI 交给统一授权所有者；保存、取消与进程重启都走同一套回收规则。
+    // Photo Picker 只提供一次性输入 URI；选中后立即复制进应用私有目录。
     val imagePicker =
         rememberLauncherForActivityResult(
-            contract = ActivityResultContracts.OpenDocument(),
+            contract = ActivityResultContracts.PickVisualMedia(),
         ) { uri: Uri? ->
             if (uri != null) {
                 viewModel.selectUserImage(uri.toString())
@@ -302,14 +302,32 @@ fun CardEditScreen(
                         Modifier
                             .fillMaxWidth()
                             .aspectRatio(cardAspect)
-                            .clickable(enabled = !state.isSaving && !state.isClosing) {
-                                imagePicker.launch(arrayOf("image/*"))
+                            .clickable(
+                                enabled = !state.isSaving && !state.isClosing && !state.isImportingImage,
+                            ) {
+                                imagePicker.launch(
+                                    androidx.activity.result.PickVisualMediaRequest(
+                                        ActivityResultContracts.PickVisualMedia.ImageOnly,
+                                    ),
+                                )
                             },
                     shape = MaterialTheme.shapes.medium,
                     color = MaterialTheme.colorScheme.surfaceVariant,
                 ) {
                     Box(contentAlignment = Alignment.Center) {
-                        if (state.imageUri != null) {
+                        if (state.isImportingImage) {
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                CircularProgressIndicator(modifier = Modifier.size(32.dp))
+                                Text(
+                                    text = stringResource(R.string.edit_image_importing),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        } else if (state.imageUri != null) {
                             coil3.compose.AsyncImage(
                                 model = state.imageUri,
                                 contentDescription = imageCd,
@@ -321,7 +339,7 @@ fun CardEditScreen(
                             )
                             IconButton(
                                 onClick = {
-                                    viewModel.update { it.copy(imageUri = null) }
+                                    viewModel.clearUserImage()
                                 },
                                 modifier =
                                     Modifier
@@ -596,13 +614,13 @@ fun CardEditScreen(
         }
     }
 
-    if (showImagePermissionError) {
+    if (showImageImportError) {
         AlertDialog(
-            onDismissRequest = { showImagePermissionError = false },
-            title = { Text(stringResource(R.string.edit_image_permission_error_title)) },
-            text = { Text(stringResource(R.string.edit_image_permission_error_message)) },
+            onDismissRequest = { showImageImportError = false },
+            title = { Text(stringResource(R.string.edit_image_import_error_title)) },
+            text = { Text(stringResource(R.string.edit_image_import_error_message)) },
             confirmButton = {
-                TextButton(onClick = { showImagePermissionError = false }) {
+                TextButton(onClick = { showImageImportError = false }) {
                     Text(stringResource(R.string.common_confirm))
                 }
             },

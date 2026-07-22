@@ -30,9 +30,9 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.shuaji.cards.R
-import com.shuaji.cards.ShuajiApplication
 import com.shuaji.cards.data.AnnualFeeCycleEvent
 import com.shuaji.cards.data.SettingsDoneEvent
+import com.shuaji.cards.requireShuajiApplication
 import com.shuaji.cards.ui.screen.CardDetailScreen
 import com.shuaji.cards.ui.screen.CardEditScreen
 import com.shuaji.cards.ui.screen.CardFolderScreen
@@ -65,7 +65,7 @@ object Routes {
 @Composable
 fun ShuajiApp() {
     val context = LocalContext.current
-    val app = context.applicationContext as ShuajiApplication
+    val app = context.requireShuajiApplication()
     val cycleEvents = app.container.annualFeeCycleEvents
     val settingsEvents = app.container.settingsEvents
     val snackbarHostState = remember { SnackbarHostState() }

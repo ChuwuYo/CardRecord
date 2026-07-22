@@ -145,6 +145,7 @@ private fun CardListItemContent(
                     )
                 CardVisual(
                     card = card.card,
+                    userImageModel = card.userImageModel,
                     modifier = Modifier.fillMaxWidth(cardWidthFraction),
                     showNumber = variant is CardListItemVariant.Full,
                     contentLayout =

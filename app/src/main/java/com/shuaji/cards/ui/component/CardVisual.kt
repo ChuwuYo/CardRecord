@@ -85,6 +85,7 @@ private val CardTextShadow =
 @Composable
 fun CardVisual(
     card: CardEntity,
+    userImageModel: String?,
     modifier: Modifier = Modifier,
     showNumber: Boolean = true,
     contentLayout: CardVisualContentLayout = CardVisualContentLayout.STANDARD,
@@ -104,6 +105,7 @@ fun CardVisual(
             CardOrientation.LANDSCAPE ->
                 LandscapeCardBody(
                     card = card,
+                    userImageModel = userImageModel,
                     network = network,
                     sourceType = sourceType,
                     showNumber = showNumber,
@@ -112,6 +114,7 @@ fun CardVisual(
             CardOrientation.PORTRAIT ->
                 PortraitCardBody(
                     card = card,
+                    userImageModel = userImageModel,
                     network = network,
                     sourceType = sourceType,
                     showNumber = showNumber,
@@ -132,6 +135,7 @@ enum class CardVisualContentLayout {
 @Composable
 private fun LandscapeCardBody(
     card: CardEntity,
+    userImageModel: String?,
     network: CardNetworkProvider?,
     sourceType: ImageSourceType,
     showNumber: Boolean,
@@ -207,7 +211,7 @@ private fun LandscapeCardBody(
         ) {
             CardImageLayer(
                 modifier = Modifier.fillMaxSize(),
-                card = card,
+                userImageModel = userImageModel,
                 sourceType = sourceType,
             )
             if (shouldShowProviderDecoration(sourceType, network != null)) {
@@ -244,6 +248,7 @@ private fun LandscapeCardBody(
 @Composable
 private fun PortraitCardBody(
     card: CardEntity,
+    userImageModel: String?,
     network: CardNetworkProvider?,
     sourceType: ImageSourceType,
     showNumber: Boolean,
@@ -291,7 +296,7 @@ private fun PortraitCardBody(
         ) {
             CardImageLayer(
                 modifier = Modifier.fillMaxSize(),
-                card = card,
+                userImageModel = userImageModel,
                 sourceType = sourceType,
             )
             if (shouldShowProviderDecoration(sourceType, network != null)) {
@@ -345,14 +350,14 @@ internal fun resolveCardSurfaceColors(colorArgb: Int): List<Color> {
 @Composable
 private fun CardImageLayer(
     modifier: Modifier,
-    card: CardEntity,
+    userImageModel: String?,
     sourceType: ImageSourceType,
 ) {
     when (sourceType) {
         ImageSourceType.USER -> {
-            if (!card.imageUri.isNullOrBlank()) {
+            if (!userImageModel.isNullOrBlank()) {
                 AsyncImage(
-                    model = card.imageUri,
+                    model = userImageModel,
                     contentDescription = stringResource(R.string.card_image_content_description),
                     modifier = modifier.clip(MaterialTheme.shapes.medium),
                     // 与编辑预览一致：用户选择的整张图片都保留，留白由卡片底色承接。

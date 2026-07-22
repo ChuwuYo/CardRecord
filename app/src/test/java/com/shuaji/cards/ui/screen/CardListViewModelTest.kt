@@ -6,6 +6,7 @@ import androidx.test.core.app.ApplicationProvider
 import com.shuaji.cards.MainDispatcherRule
 import com.shuaji.cards.data.AnnualFeeCycle
 import com.shuaji.cards.data.CardRepository
+import com.shuaji.cards.data.FailClosedTestUserCardImageStore
 import com.shuaji.cards.data.local.AppDatabase
 import com.shuaji.cards.data.local.CardEntity
 import com.shuaji.cards.data.local.CardFolderEntity
@@ -53,6 +54,7 @@ class CardListViewModelTest {
                 clock = Clock.systemUTC(),
                 zoneIdProvider = { ZoneOffset.UTC },
                 boundaryTicks = emptyFlow(),
+                userImages = FailClosedTestUserCardImageStore,
             )
     }
 

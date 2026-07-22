@@ -59,11 +59,11 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.shuaji.cards.R
-import com.shuaji.cards.ShuajiApplication
 import com.shuaji.cards.data.AnnualFeeCycle
 import com.shuaji.cards.data.DateToken
 import com.shuaji.cards.data.local.CardType
 import com.shuaji.cards.data.local.TransactionEntity
+import com.shuaji.cards.requireShuajiApplication
 import com.shuaji.cards.ui.component.CardVisual
 import com.shuaji.cards.ui.component.CycleProgressContent
 import com.shuaji.cards.ui.component.CycleProgressVariant
@@ -80,7 +80,7 @@ fun CardDetailScreen(
     onEdit: () -> Unit,
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
-    val app = context.applicationContext as ShuajiApplication
+    val app = context.requireShuajiApplication()
     val viewModel: CardDetailViewModel =
         viewModel(
             factory = cardDetailViewModelFactory(app.container.repository, cardId),
@@ -209,7 +209,7 @@ fun CardDetailScreen(
                     contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 96.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
-                    item { CardVisual(card = current.card) }
+                    item { CardVisual(card = current.card, userImageModel = current.userImageModel) }
                     if (current.isExpired) {
                         item { ExpiredBanner() }
                     }

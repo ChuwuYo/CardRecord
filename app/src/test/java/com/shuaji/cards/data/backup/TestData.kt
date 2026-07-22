@@ -78,9 +78,8 @@ object TestData {
         cards: List<CardEntity> = emptyList(),
         folders: List<CardFolderEntity> = emptyList(),
         transactions: List<TransactionEntity> = emptyList(),
-    ) = BackupBundle(
-        version = version,
-        cards =
+    ): BackupBundle {
+        val backupCards =
             cards.map { card ->
                 card.toBackup().let { record ->
                     if (version == BackupBundle.MIN_SUPPORTED_SCHEMA_VERSION) {
@@ -89,8 +88,12 @@ object TestData {
                         record
                     }
                 }
-            },
-        folders = folders.map { it.toBackupV1() },
-        transactions = transactions.map { it.toBackupV1() },
-    )
+            }
+        return BackupBundle(
+            version = version,
+            cards = backupCards,
+            folders = folders.map { it.toBackupV1() },
+            transactions = transactions.map { it.toBackupV1() },
+        )
+    }
 }

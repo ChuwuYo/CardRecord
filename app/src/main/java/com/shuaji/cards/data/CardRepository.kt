@@ -1,19 +1,22 @@
 package com.shuaji.cards.data
 
+import android.util.Log
 import androidx.room.withTransaction
 import com.shuaji.cards.data.local.AppDatabase
 import com.shuaji.cards.data.local.CardDao
 import com.shuaji.cards.data.local.CardEntity
 import com.shuaji.cards.data.local.CardFolderDao
 import com.shuaji.cards.data.local.CardFolderEntity
-import com.shuaji.cards.data.local.CardWithCount
 import com.shuaji.cards.data.local.FolderWithCardCount
 import com.shuaji.cards.data.local.TransactionDao
 import com.shuaji.cards.data.local.TransactionEntity
 import com.shuaji.cards.data.local.withNormalizedCreditDetails
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.withContext
 import java.time.Clock
 import java.time.Instant
 import java.time.LocalDate
@@ -45,10 +48,10 @@ class CardRepository(
     private val clock: Clock,
     private val zoneIdProvider: () -> ZoneId,
     boundaryTicks: Flow<Unit>,
-    private val imagePermissions: UserImagePermissionStore = NoOpUserImagePermissionStore,
+    private val userImages: UserCardImageStore,
 ) {
     /**
-     * 每个活跃 Repository 订阅固定观察 cards 与 transactions 两条查询。
+     * 每个活跃收集者订阅固定的 cards 与 transactions 两条查询。
      * 这里保持冷流即可；当前本地数据量不需要做应用级共享。
      */
     private val derivedSnapshots: Flow<DerivedSnapshot> =
@@ -65,8 +68,14 @@ class CardRepository(
 
     fun observeCards(): Flow<List<CardWithCount>> = derivedSnapshots.map { it.cards }
 
-    /** 编辑页兼容入口；同样从统一派生快照读取。 */
-    fun observeCard(id: Long): Flow<CardWithCount?> = derivedSnapshots.map { it.card(id) }
+    /** 一次性读取单张持久化卡片；编辑路径不需要全表流水或周期计数。 */
+    suspend fun getStoredCard(id: Long): StoredCardSnapshot? =
+        cardDao.getById(id)?.let { card ->
+            StoredCardSnapshot(
+                card = card,
+                resolvedUserImageUri = resolveUserImage(card.imageAssetId, card.imageUri),
+            )
+        }
 
     /** 详情卡片、有效计数与完整历史来自同一次派生快照。 */
     fun observeCardDetails(id: Long): Flow<CardDetailsSnapshot?> =
@@ -83,29 +92,77 @@ class CardRepository(
             )
         }
 
-    suspend fun upsertCard(card: CardEntity): Long =
-        cardDao.upsert(card.withNormalizedCreditDetails()).also {
-            imagePermissions.reconcile()
-        }
+    suspend fun upsertCard(card: CardEntity): Long {
+        val id = cardDao.upsert(card.withNormalizedCreditDetails())
+        if (card.id != 0L) collectUserImageGarbageAfterWrite()
+        return id
+    }
 
     /** 编辑只允许更新仍存在的卡，返回 false 时调用方不得用 upsert 把已删除卡片复活。 */
-    suspend fun updateCard(card: CardEntity): Boolean =
-        (cardDao.update(card.withNormalizedCreditDetails()) == 1).also {
-            imagePermissions.reconcile()
-        }
+    suspend fun updateCard(card: CardEntity): Boolean {
+        val updated = cardDao.update(card.withNormalizedCreditDetails()) == 1
+        if (updated) collectUserImageGarbageAfterWrite()
+        return updated
+    }
+
+    /** 图片未被用户改动时，让 DAO 在同一事务内保留数据库中的最新图片引用。 */
+    suspend fun updateCardPreservingUserImage(card: CardEntity): Boolean =
+        cardDao.updatePreservingUserImage(card.withNormalizedCreditDetails()) == 1
 
     /** 只在确实删除一行时返回 true，防止调用方把陈旧状态误报为成功。 */
-    suspend fun deleteCard(card: CardEntity): Boolean =
-        (cardDao.delete(card) == 1).also {
-            imagePermissions.reconcile()
+    suspend fun deleteCard(card: CardEntity): Boolean {
+        val deleted = cardDao.delete(card) == 1
+        if (deleted) collectUserImageGarbageAfterWrite()
+        return deleted
+    }
+
+    suspend fun stageUserImage(uri: String): StagedUserImage = userImages.stageFromUri(uri)
+
+    /** 数据库提交或表单放弃后同步结束租约；此操作不做磁盘扫描。 */
+    fun endPendingUserImageLeases(images: Set<StagedUserImage>) {
+        userImages.releaseLeases(images)
+    }
+
+    /** 放弃图片后异步回收孤儿；维护失败不能改写已经确定的表单或数据库结果。 */
+    suspend fun reclaimUnusedUserImages() = collectUserImageGarbageBestEffort()
+
+    private fun resolveUserImage(
+        assetId: String?,
+        legacyUri: String?,
+    ): String? =
+        ImageAssetId
+            .parse(assetId)
+            ?.let(userImages::resolve)
+            ?.takeIf(String::isNotBlank)
+            ?: legacyUri?.takeIf(String::isNotBlank)
+
+    /** 数据库写入已经提交后，文件回收失败只能延后重试，不能把已成功的业务写入误报为失败。 */
+    private suspend fun collectUserImageGarbageAfterWrite() {
+        withContext(NonCancellable) {
+            collectUserImageGarbageBestEffort()
         }
+    }
 
-    suspend fun acquireUserImagePermission(uri: String): Boolean = imagePermissions.acquire(uri)
+    /** 启动时迁移旧 URI；迁移普通失败不阻止随后清理私有目录。 */
+    internal suspend fun maintainUserImagesOnStartupBestEffort() {
+        try {
+            userImages.migrateLegacyImages()
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            Log.w(TAG, "迁移历史卡面图片失败（${error::class.java.simpleName}）")
+        }
+        collectUserImageGarbageBestEffort()
+    }
 
-    /** 表单保存或放弃后结束临时租约；是否真正释放由全库引用集合决定。 */
-    suspend fun releasePendingUserImagePermissions(uris: Set<String>) {
-        if (uris.isEmpty()) return
-        imagePermissions.releasePending(uris)
+    private suspend fun collectUserImageGarbageBestEffort() {
+        try {
+            userImages.collectGarbage()
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            Log.w(TAG, "回收卡面图片失败（${error::class.java.simpleName}）")
+        }
     }
 
     /** 在同一 Room 写事务中校验卡片、归一化周期并记录流水。 */
@@ -248,6 +305,7 @@ class CardRepository(
                 currentCount = rows.count { cycle.includes(it.occurredAtMillis) },
                 lastSwipeAtMillis = rows.maxOfOrNull { it.occurredAtMillis },
                 cycle = cycle,
+                resolvedUserImageUri = resolveUserImage(card.imageAssetId, card.imageUri),
             )
         }
     }
@@ -255,7 +313,9 @@ class CardRepository(
     private data class DerivedSnapshot(
         val cards: List<CardWithCount>,
         val transactions: List<TransactionEntity>,
-    ) {
-        fun card(id: Long): CardWithCount? = cards.firstOrNull { it.card.id == id }
+    )
+
+    private companion object {
+        const val TAG = "CardRepository"
     }
 }

@@ -24,10 +24,12 @@
     <string name="settings_title">设置</string>
     <string name="settings_section_data">数据</string>
     <string name="settings_export">导出配置</string>
-    <string name="settings_export_subtitle">把卡片 / 文件夹 / 流水打包成 JSON 文件</string>
+    <string name="settings_export_subtitle">在所选位置新建备份目录；始终包含 JSON，有图片时再创建图片文件夹</string>
     <string name="settings_import">导入配置</string>
-    <string name="settings_import_subtitle">从 JSON 备份文件恢复（覆盖或追加）</string>
-    <string name="settings_privacy_note">提示：导出文件包含你的所有卡片信息（卡名 / 备注 / 卡面 URI 等），属于明文 JSON，请勿分享给他人。跨设备恢复时，图片 URI 通常不可直接使用，可能需要重新选择卡面。</string>
+    <string name="settings_import_subtitle">选择完整备份目录，自动识别 JSON 和图片（覆盖或追加）</string>
+    <string name="settings_import_legacy">导入旧版 JSON</string>
+    <string name="settings_import_legacy_subtitle">仅用于以前导出的单个 JSON 文件</string>
+    <string name="settings_privacy_note">备份目录包含明文卡片信息和自定义卡面，请勿分享。成功导入后，图片已经复制到本应用，可删除整个备份目录。</string>
     <string name="settings_import_dialog_title">选择导入方式</string>
     <string name="settings_import_dialog_message">"覆盖"会清空当前数据并恢复备份内容；"追加"会保留当前数据并合并备份内容。</string>
     <string name="settings_import_mode_replace">覆盖</string>
@@ -37,8 +39,9 @@
     <string name="settings_import_replace_confirm_message_with_count">此备份包含 %1$s / %2$s / %3$s。此操作会清空当前所有数据并写入备份内容，操作不可撤销。</string>
     <string name="settings_import_merge_confirm_message_with_count">此备份包含 %1$s / %2$s / %3$s。追加到现有数据库，保留现有数据不变。</string>
     <string name="settings_backup_time_label">备份时间：%1$s</string>
-    <string name="settings_result_export_success_with_count">已导出 %1$s / %2$s / %3$s 到备份文件</string>
-    <string name="settings_result_export_empty">已导出空备份（数据库无任何记录）</string>
+    <string name="settings_result_export_success_with_count">已导出 %1$s / %2$s / %3$s 到新备份目录</string>
+    <string name="settings_result_export_empty">已创建空备份目录（数据库无任何记录）</string>
+    <string name="settings_result_export_directory">%1$s（目录：%2$s）</string>
     <string name="settings_result_import_replace_with_count">覆盖成功：%1$s，%2$s，%3$s</string>
     <string name="settings_result_import_merge_with_count">追加成功：%1$s，%2$s，%3$s</string>
     <string name="settings_result_export_failed">导出失败：%1$s</string>
@@ -48,19 +51,21 @@
     <string name="settings_result_extras_separator">；</string>
 
     <!-- 导入 / 导出底层错误（作为 %1$s 拼入 settings_result_*_failed） -->
-    <string name="backup_error_open_target_uri">无法打开目标 URI 用于写入（可能被占用）</string>
-    <string name="backup_error_open_source_uri">无法打开源 URI 用于读取</string>
-    <string name="backup_error_write_failed">写入备份文件失败：%1$s</string>
-    <string name="backup_error_source_missing">源文件不存在或已失效：%1$s</string>
-    <string name="backup_error_read_failed">读取备份文件失败：%1$s</string>
-    <string name="backup_error_empty_file">备份文件为空</string>
-    <string name="backup_error_malformed_json">备份文件格式不正确（不是合法的 JSON）</string>
-    <string name="backup_error_file_too_large">备份文件超过 %1$d MiB 上限</string>
+    <string name="backup_error_open_target_uri">无法在所选位置创建或写入备份</string>
+    <string name="backup_error_open_source_uri">无法读取备份目录中的 JSON</string>
+    <string name="backup_error_write_failed">写入备份失败</string>
+    <string name="backup_error_source_missing">备份目录或文件不存在</string>
+    <string name="backup_error_read_failed">读取备份失败</string>
+    <string name="backup_error_empty_file">备份 JSON 为空</string>
+    <string name="backup_error_malformed_json">备份 JSON 格式不正确</string>
+    <string name="backup_error_file_too_large">备份数据超过 %1$d MiB 上限</string>
     <string name="backup_error_file_changed">确认期间备份文件内容已变化，请重新选择并检查</string>
     <string name="backup_error_invalid_structure">备份文件的数据标识或字段结构无效</string>
+    <string name="backup_error_image_restore_failed">备份中的卡面图片无效，或设备空间不足</string>
+    <string name="backup_error_unowned_image">有旧卡面图片尚未复制到应用，请重新选择该图片后再导出</string>
     <string name="backup_error_operation_busy">另一个备份操作正在进行，请稍后再试</string>
     <string name="backup_error_version_mismatch">备份 schema 版本不匹配（文件 version=%1$d，当前=%2$d）</string>
-    <string name="backup_error_db_write_failed">数据库写入失败：%1$s</string>
+    <string name="backup_error_db_write_failed">数据库写入失败</string>
 
     <!-- ────── 主题设置 ────── -->
     <string name="settings_section_appearance">外观</string>
@@ -169,8 +174,9 @@
     <string name="edit_image_none">纯色卡</string>
     <string name="edit_image_clear">清除图片</string>
     <string name="edit_image_pick_hint">点击选择卡面图片</string>
-    <string name="edit_image_permission_error_title">无法使用这张图片</string>
-    <string name="edit_image_permission_error_message">图片来源未授予长期读取权限。请选择设备中的其他图片。</string>
+    <string name="edit_image_import_error_title">无法使用这张图片</string>
+    <string name="edit_image_import_error_message">无法复制或识别这张图片。请确认图片有效且设备空间充足后重试。</string>
+    <string name="edit_image_importing">正在复制图片…</string>
     <string name="edit_section_choose_network">选择卡组织</string>
     <string name="edit_network_none">不显示卡组织</string>
     <string name="edit_section_orientation">卡面朝向</string>

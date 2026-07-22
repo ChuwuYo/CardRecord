@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <full-backup-content>
-    <!-- 用户数据只允许通过 App 内显式 JSON 导入/导出，禁止系统自动复制。 -->
+    <!-- 用户数据只允许通过 App 内显式备份导入/导出，禁止系统自动复制。 -->
     <exclude domain="root" path="." />
     <exclude domain="file" path="." />
     <exclude domain="database" path="." />

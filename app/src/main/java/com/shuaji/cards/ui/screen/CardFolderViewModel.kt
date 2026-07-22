@@ -71,8 +71,9 @@ class CardFolderViewModel(
         viewModelScope.launch {
             try {
                 if (!block()) eventQueue.emit(CardFolderEvent.WriteFailed)
-            } catch (exception: Exception) {
-                if (exception is CancellationException) throw exception
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
                 eventQueue.emit(CardFolderEvent.WriteFailed)
             }
         }

@@ -7,8 +7,12 @@ import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.shuaji.cards.data.CardNetworkProvider
 import com.shuaji.cards.data.CardRepository
+import com.shuaji.cards.data.ContentResolverUserCardImageStore
 import com.shuaji.cards.data.DateToken
-import com.shuaji.cards.data.backup.TestData.backupBundle
+import com.shuaji.cards.data.FailClosedTestUserCardImageStore
+import com.shuaji.cards.data.ImageAssetId
+import com.shuaji.cards.data.StagedUserImage
+import com.shuaji.cards.data.UserCardImageStore
 import com.shuaji.cards.data.backup.TestData.card
 import com.shuaji.cards.data.backup.TestData.folder
 import com.shuaji.cards.data.backup.TestData.transaction
@@ -37,6 +41,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import org.junit.After
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -49,14 +54,17 @@ import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import java.io.ByteArrayInputStream
 import java.io.File
 import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
+import java.security.MessageDigest
 import java.time.Clock
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
+import java.util.Base64
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
@@ -104,6 +112,7 @@ class BackupRepositoryTest {
                 clock = Clock.fixed(Instant.parse("2027-07-15T00:00:00Z"), ZoneOffset.UTC),
                 zoneIdProvider = { ZoneOffset.UTC },
                 boundaryTicks = flowOf(Unit),
+                userImages = FailClosedTestUserCardImageStore,
             )
         repo =
             BackupRepository(
@@ -113,6 +122,8 @@ class BackupRepositoryTest {
                 folderDao = db.cardFolderDao(),
                 transactionDao = db.transactionDao(),
                 normalizeInTransaction = cardRepository::normalizeOverdueCyclesInTransaction,
+                userImages = FailClosedTestUserCardImageStore,
+                directoryAccess = LocalBackupDirectoryAccess,
             )
     }
 
@@ -143,6 +154,38 @@ class BackupRepositoryTest {
             encodeDefaults = true
         }
 
+    private fun directoryManifest(directory: File): Pair<BackupBundle, JsonObject> {
+        val text = directory.resolve(BACKUP_MANIFEST_FILE_NAME).readText(Charsets.UTF_8)
+        return json().decodeFromString<BackupBundle>(text) to json().parseToJsonElement(text).jsonObject
+    }
+
+    private fun writeBackupDirectory(
+        directory: File,
+        bundle: BackupBundle,
+        images: Map<String, ByteArray> = emptyMap(),
+    ) {
+        check(directory.isDirectory || directory.mkdirs())
+        if (images.isNotEmpty()) {
+            val imageDirectory = directory.resolve(BACKUP_IMAGES_DIRECTORY_NAME)
+            check(imageDirectory.isDirectory || imageDirectory.mkdir())
+            images.forEach { (name, bytes) ->
+                imageDirectory.resolve(name).writeBytes(bytes)
+            }
+        }
+        directory.resolve(BACKUP_MANIFEST_FILE_NAME).writeText(json().encodeToString(bundle), Charsets.UTF_8)
+    }
+
+    private suspend fun exportBackup(
+        parentName: String,
+        repository: BackupRepository = repo,
+    ): Pair<File, ExportSummary> {
+        val parent = tempFolder.newFolder(parentName)
+        val summary = repository.export(Uri.fromFile(parent))
+        val directory = parent.resolve(summary.directoryName)
+        check(directory.isDirectory)
+        return directory to summary
+    }
+
     private fun repositoryWithLimit(maxBackupBytes: Long): BackupRepository =
         BackupRepository(
             context = context,
@@ -151,7 +194,37 @@ class BackupRepositoryTest {
             folderDao = db.cardFolderDao(),
             transactionDao = db.transactionDao(),
             normalizeInTransaction = cardRepository::normalizeOverdueCyclesInTransaction,
+            userImages = FailClosedTestUserCardImageStore,
             maxBackupBytes = maxBackupBytes,
+            directoryAccess = LocalBackupDirectoryAccess,
+        )
+
+    private fun repositoryWithImages(userImages: UserCardImageStore): BackupRepository =
+        BackupRepository(
+            context = context,
+            database = db,
+            cardDao = db.cardDao(),
+            folderDao = db.cardFolderDao(),
+            transactionDao = db.transactionDao(),
+            normalizeInTransaction = cardRepository::normalizeOverdueCyclesInTransaction,
+            userImages = userImages,
+            directoryAccess = LocalBackupDirectoryAccess,
+        )
+
+    private fun repositoryWithImageLimit(
+        userImages: UserCardImageStore,
+        maxImageBytes: Long,
+    ): BackupRepository =
+        BackupRepository(
+            context = context,
+            database = db,
+            cardDao = db.cardDao(),
+            folderDao = db.cardFolderDao(),
+            transactionDao = db.transactionDao(),
+            normalizeInTransaction = cardRepository::normalizeOverdueCyclesInTransaction,
+            userImages = userImages,
+            maxImageBytes = maxImageBytes,
+            directoryAccess = LocalBackupDirectoryAccess,
         )
 
     private fun seed(
@@ -213,7 +286,7 @@ class BackupRepositoryTest {
     // ════════════════════════════════════════════════════════════
 
     @Test
-    fun export_writes_complete_bundle_to_uri() =
+    fun export_withoutImages_writesJsonAndOmitsImageDirectory() =
         runTest {
             val f1 = folder(id = 0L, name = "商旅")
             val f1Id = db.cardFolderDao().insert(f1)
@@ -230,8 +303,7 @@ class BackupRepositoryTest {
             val sourceTransaction = transaction(cardId = c1Id)
             val transactionId = db.transactionDao().insert(sourceTransaction)
 
-            val out = tempJsonFile()
-            val summary = repo.export(Uri.fromFile(out))
+            val (backupDirectory, summary) = exportBackup("complete-export-parent")
 
             assertEquals(1, summary.cardCount)
             assertEquals(1, summary.folderCount)
@@ -239,8 +311,8 @@ class BackupRepositoryTest {
             assertEquals(3, summary.total)
             assertFalse(summary.isEmpty)
 
-            val bundle = json().decodeFromString<BackupBundle>(out.readText(Charsets.UTF_8))
-            val exportedJson = json().parseToJsonElement(out.readText(Charsets.UTF_8)).jsonObject
+            assertFalse(backupDirectory.resolve(BACKUP_IMAGES_DIRECTORY_NAME).exists())
+            val (bundle, exportedJson) = directoryManifest(backupDirectory)
             assertEquals(1, bundle.folders.size)
             assertEquals(1, bundle.cards.size)
             assertEquals(1, bundle.transactions.size)
@@ -277,49 +349,397 @@ class BackupRepositoryTest {
             assertEquals(sourceTransaction.copy(id = transactionId), bundle.transactions.single().toEntity())
             assertFalse(
                 "BackupBundle 不应再含 exportedAtMillis 字段",
-                out.readText(Charsets.UTF_8).contains("exportedAtMillis"),
+                exportedJson.containsKey("exportedAtMillis"),
             )
         }
 
     @Test
     fun export_empty_database_returns_empty_summary() =
         runTest {
-            val out = tempJsonFile()
-            val summary = repo.export(Uri.fromFile(out))
+            val (backupDirectory, summary) = exportBackup("empty-export-parent")
             assertEquals(0, summary.cardCount)
             assertEquals(0, summary.folderCount)
             assertEquals(0, summary.transactionCount)
             assertEquals(0, summary.total)
             assertTrue(summary.isEmpty)
 
-            val bundle = json().decodeFromString<BackupBundle>(out.readText(Charsets.UTF_8))
+            val bundle = directoryManifest(backupDirectory).first
             assertTrue(bundle.cards.isEmpty())
             assertTrue(bundle.folders.isEmpty())
             assertTrue(bundle.transactions.isEmpty())
         }
 
     @Test
-    fun export_truncatesLongerExistingFile() =
+    fun directoryWithoutImageFolder_importsCardsWithoutImagesNormally() =
         runTest {
-            val out = tempJsonFile("overwrite.json")
-            out.writeText("x".repeat(16_384), Charsets.UTF_8)
+            db.cardDao().upsert(card(name = "无图片卡", imageSourceType = ImageSourceType.NONE.key))
+            val (backupDirectory, _) = exportBackup("no-images-parent")
+            assertFalse(backupDirectory.resolve(BACKUP_IMAGES_DIRECTORY_NAME).exists())
+            db.cardDao().deleteAll()
 
-            repo.export(Uri.fromFile(out))
+            val result = importInspected(backupDirectory, ImportMode.REPLACE)
 
-            val decoded = json().decodeFromString<BackupBundle>(out.readText(Charsets.UTF_8))
-            assertTrue(decoded.cards.isEmpty())
-            assertTrue(out.readText(Charsets.UTF_8).trimEnd().endsWith("}"))
+            assertEquals(1, result.cardsAdded)
+            assertEquals(
+                "无图片卡",
+                db
+                    .cardDao()
+                    .listAll()
+                    .single()
+                    .name,
+            )
+            assertNull(
+                db
+                    .cardDao()
+                    .listAll()
+                    .single()
+                    .imageAssetId,
+            )
         }
 
     @Test
-    fun export_preflightsImportLimitBeforeTruncatingTarget() =
+    fun export_rejectsUnownedLegacyImageEvenWhenAnotherStyleIsActive_beforeCreatingDirectory() =
+        runTest {
+            db.cardDao().upsert(
+                card(
+                    name = "旧外部图片",
+                    imageUri = "content://gallery/unavailable",
+                    imageSourceType = ImageSourceType.PROVIDER.key,
+                ),
+            )
+            val parent = tempFolder.newFolder("unowned-image-parent")
+
+            val error =
+                assertThrows(BackupException::class.java) {
+                    runBlocking { repo.export(Uri.fromFile(parent)) }
+                }
+
+            assertTrue(error.message.orEmpty().contains("重新选择"))
+            assertTrue(parent.listFiles().orEmpty().isEmpty())
+        }
+
+    @Test
+    fun export_writeFailure_deletesIncompleteDirectory() =
+        runTest {
+            var deleted = false
+            val failingDirectory =
+                object : BackupDirectory {
+                    override val displayName: String = "partial"
+                    override val lastModifiedMillis: Long? = null
+
+                    override fun openManifestInput(cancellationSignal: android.os.CancellationSignal): InputStream? = null
+
+                    override fun openManifestOutput(cancellationSignal: android.os.CancellationSignal): OutputStream =
+                        throw IOException("disk full")
+
+                    override fun indexImageInputs(
+                        assetFileNames: Set<String>,
+                        cancellationSignal: android.os.CancellationSignal,
+                    ) = Unit
+
+                    override fun openImageInput(
+                        assetFileName: String,
+                        cancellationSignal: android.os.CancellationSignal,
+                    ): InputStream? = null
+
+                    override fun openImageOutput(
+                        assetFileName: String,
+                        cancellationSignal: android.os.CancellationSignal,
+                    ): OutputStream? = null
+
+                    override fun delete(): Boolean {
+                        deleted = true
+                        return true
+                    }
+                }
+            val failingRepository =
+                BackupRepository(
+                    context = context,
+                    database = db,
+                    cardDao = db.cardDao(),
+                    folderDao = db.cardFolderDao(),
+                    transactionDao = db.transactionDao(),
+                    normalizeInTransaction = cardRepository::normalizeOverdueCyclesInTransaction,
+                    userImages = FailClosedTestUserCardImageStore,
+                    directoryAccess =
+                        object : BackupDirectoryAccess {
+                            override fun isDirectory(uri: Uri): Boolean = true
+
+                            override fun createBackup(
+                                parentUri: Uri,
+                                suggestedName: String,
+                                cancellationSignal: android.os.CancellationSignal,
+                            ): BackupDirectory = failingDirectory
+
+                            override fun openBackup(
+                                directoryUri: Uri,
+                                cancellationSignal: android.os.CancellationSignal,
+                            ): BackupDirectory = error("not used")
+                        },
+                )
+
+            assertThrows(BackupException::class.java) {
+                runBlocking { failingRepository.export(Uri.EMPTY) }
+            }
+            assertTrue(deleted)
+        }
+
+    @Test
+    fun ownedImage_exportAndReplaceImport_restoresBytesWithoutOriginalGalleryUri() =
+        runTest {
+            var galleryBytes: ByteArray? = ONE_PIXEL_PNG
+            val sourceImages =
+                ContentResolverUserCardImageStore(
+                    contentResolver = context.contentResolver,
+                    cardDao = db.cardDao(),
+                    rootDirectory = tempFolder.newFolder("source-images"),
+                    openSource = { _, _ -> ByteArrayInputStream(requireNotNull(galleryBytes)) },
+                    validateSource = { file -> file.readBytes().contentEquals(ONE_PIXEL_PNG) },
+                )
+            val staged = sourceImages.stageFromUri("content://gallery/original")
+            db.cardDao().upsert(
+                card(name = "可恢复图片卡")
+                    .copy(
+                        imageSourceType = ImageSourceType.USER.key,
+                        imageUri = null,
+                        imageAssetId = staged.assetId.value,
+                    ),
+            )
+            sourceImages.releaseLeases(setOf(staged))
+            sourceImages.collectGarbage()
+            galleryBytes = null
+            val (backupDirectory, _) =
+                exportBackup("owned-image-parent", repositoryWithImages(sourceImages))
+            assertTrue(backupDirectory.resolve(BACKUP_IMAGES_DIRECTORY_NAME).isDirectory)
+            assertArrayEquals(
+                ONE_PIXEL_PNG,
+                backupDirectory
+                    .resolve(BACKUP_IMAGES_DIRECTORY_NAME)
+                    .resolve("${staged.assetId.value}$BACKUP_IMAGE_FILE_SUFFIX")
+                    .readBytes(),
+            )
+
+            val restoredImages =
+                ContentResolverUserCardImageStore(
+                    contentResolver = context.contentResolver,
+                    cardDao = db.cardDao(),
+                    rootDirectory = tempFolder.newFolder("restored-images"),
+                    openSource = { _, _ -> null },
+                    validateSource = { file -> file.readBytes().contentEquals(ONE_PIXEL_PNG) },
+                )
+            val restoredRepository = repositoryWithImages(restoredImages)
+            importInspected(backupDirectory, ImportMode.REPLACE, restoredRepository)
+            assertTrue(backupDirectory.deleteRecursively())
+
+            val restoredCard = db.cardDao().listAll().single()
+            val restoredId = requireNotNull(ImageAssetId.parse(restoredCard.imageAssetId))
+            assertNull(restoredCard.imageUri)
+            assertArrayEquals(ONE_PIXEL_PNG, restoredImages.openAsset(restoredId).use { it.readBytes() })
+        }
+
+    @Test
+    fun exportImageSizeLimit_acceptsExactSize_andRejectsOneExtraBeforeCreatingDirectory() =
+        runTest {
+            val assetId = ImageAssetId.fromDigest(MessageDigest.getInstance("SHA-256").digest(ONE_PIXEL_PNG))
+            val images =
+                object : UserCardImageStore by FailClosedTestUserCardImageStore {
+                    override suspend fun migrateLegacyImages() = Unit
+
+                    override fun openAsset(assetId: ImageAssetId): InputStream = ByteArrayInputStream(ONE_PIXEL_PNG)
+
+                    override fun assetSize(assetId: ImageAssetId): Long = ONE_PIXEL_PNG.size.toLong()
+                }
+            db.cardDao().upsert(card(name = "图片边界卡").copy(imageAssetId = assetId.value))
+
+            val (exactDirectory, _) =
+                exportBackup(
+                    "exact-image-limit-parent",
+                    repositoryWithImageLimit(images, ONE_PIXEL_PNG.size.toLong()),
+                )
+            assertArrayEquals(
+                ONE_PIXEL_PNG,
+                exactDirectory
+                    .resolve(BACKUP_IMAGES_DIRECTORY_NAME)
+                    .resolve("${assetId.value}$BACKUP_IMAGE_FILE_SUFFIX")
+                    .readBytes(),
+            )
+
+            val overLimitParent = tempFolder.newFolder("over-image-limit-parent")
+            assertThrows(BackupException::class.java) {
+                runBlocking {
+                    repositoryWithImageLimit(images, ONE_PIXEL_PNG.size.toLong() - 1L)
+                        .export(Uri.fromFile(overLimitParent))
+                }
+            }
+            assertTrue(overLimitParent.listFiles().orEmpty().isEmpty())
+        }
+
+    @Test
+    fun directory_missingReferencedImage_isRejectedBeforeDatabaseWrite() =
+        runTest {
+            val existing = db.cardDao().upsert(card(name = "现有卡"))
+            val missingId = "a".repeat(64)
+            val directory = tempFolder.newFolder("missing-image-backup")
+            writeBackupDirectory(
+                directory,
+                TestData.backupBundle(
+                    version = BackupBundle.SCHEMA_VERSION,
+                    cards = listOf(card(id = 10L, name = "缺图卡").copy(imageAssetId = missingId)),
+                ),
+            )
+
+            assertThrows(BackupException::class.java) {
+                runBlocking { repo.inspect(Uri.fromFile(directory)) }
+            }
+            assertEquals("现有卡", db.cardDao().getById(existing)?.name)
+        }
+
+    @Test
+    fun directory_withoutCardImagesFolder_isValidWhenJsonDeclaresNoImages() =
+        runTest {
+            val directory = tempFolder.newFolder("missing-image-directory")
+            directory
+                .resolve(BACKUP_MANIFEST_FILE_NAME)
+                .writeText(json().encodeToString(TestData.backupBundle(version = BackupBundle.SCHEMA_VERSION)))
+
+            val info = repo.inspect(Uri.fromFile(directory))
+
+            assertEquals(0, info.cardCount)
+        }
+
+    @Test
+    fun schemaThree_rejectsDeviceSpecificLegacyImageUri() =
+        runTest {
+            val file = tempJsonFile("schema-three-legacy-uri.json")
+            file.writeText(
+                json().encodeToString(
+                    TestData.backupBundle(
+                        version = 3,
+                        cards =
+                            listOf(
+                                card(
+                                    id = 10L,
+                                    name = "不可移植图片",
+                                    imageUri = "content://other-device/image",
+                                    imageSourceType = ImageSourceType.USER.key,
+                                ),
+                            ),
+                    ),
+                ),
+                Charsets.UTF_8,
+            )
+
+            assertThrows(BackupException::class.java) {
+                runBlocking { repo.inspect(Uri.fromFile(file)) }
+            }
+        }
+
+    @Test
+    fun directory_ignoresUnrelatedFilesOutsideOptionalImageFolder() =
+        runTest {
+            val directory = tempFolder.newFolder("extra-file-backup")
+            writeBackupDirectory(directory, TestData.backupBundle(version = BackupBundle.SCHEMA_VERSION))
+            val unrelated = directory.resolve("unrelated.txt")
+            unrelated.writeText("keep me", Charsets.UTF_8)
+
+            val info = repo.inspect(Uri.fromFile(directory))
+
+            assertEquals(0, info.cardCount)
+            assertEquals("keep me", unrelated.readText(Charsets.UTF_8))
+        }
+
+    @Test
+    fun directory_rejectsImageWhoseBytesDoNotMatchAssetId() =
+        runTest {
+            val declaredId = "b".repeat(64)
+            val directory = tempFolder.newFolder("hash-mismatch-backup")
+            writeBackupDirectory(
+                directory,
+                TestData.backupBundle(
+                    version = BackupBundle.SCHEMA_VERSION,
+                    cards = listOf(card(id = 10L, name = "篡改图片").copy(imageAssetId = declaredId)),
+                ),
+                images = mapOf("$declaredId$BACKUP_IMAGE_FILE_SUFFIX" to ONE_PIXEL_PNG),
+            )
+            val images =
+                ContentResolverUserCardImageStore(
+                    contentResolver = context.contentResolver,
+                    cardDao = db.cardDao(),
+                    rootDirectory = tempFolder.newFolder("hash-mismatch-images"),
+                    openSource = { _, _ -> null },
+                    validateSource = { true },
+                )
+
+            assertThrows(BackupException::class.java) {
+                runBlocking { repositoryWithImages(images).inspect(Uri.fromFile(directory)) }
+            }
+            assertTrue(
+                tempFolder.root
+                    .resolve("hash-mismatch-images/assets")
+                    .listFiles()
+                    .orEmpty()
+                    .isEmpty(),
+            )
+        }
+
+    @Test
+    fun inspect_rejectsHashValidFileThatIsNotAnImage() =
+        runTest {
+            val bytes = "not-an-image".encodeToByteArray()
+            val assetId = ImageAssetId.fromDigest(MessageDigest.getInstance("SHA-256").digest(bytes))
+            val directory = tempFolder.newFolder("non-image-backup")
+            writeBackupDirectory(
+                directory,
+                TestData.backupBundle(
+                    version = BackupBundle.SCHEMA_VERSION,
+                    cards = listOf(card(id = 10L, name = "伪图片").copy(imageAssetId = assetId.value)),
+                ),
+                images = mapOf("${assetId.value}$BACKUP_IMAGE_FILE_SUFFIX" to bytes),
+            )
+            val images =
+                ContentResolverUserCardImageStore(
+                    contentResolver = context.contentResolver,
+                    cardDao = db.cardDao(),
+                    rootDirectory = tempFolder.newFolder("non-image-validation"),
+                    openSource = { _, _ -> null },
+                    validateSource = { false },
+                )
+
+            assertThrows(BackupException::class.java) {
+                runBlocking { repositoryWithImages(images).inspect(Uri.fromFile(directory)) }
+            }
+            assertTrue(
+                tempFolder.root
+                    .resolve("non-image-validation")
+                    .walkTopDown()
+                    .filter(File::isFile)
+                    .none(),
+            )
+        }
+
+    @Test
+    fun export_createsNewDirectory_withoutOverwritingExistingContent() =
+        runTest {
+            val parent = tempFolder.newFolder("non-destructive-export-parent")
+            val existing = parent.resolve("keep.txt").apply { writeText("keep", Charsets.UTF_8) }
+
+            val summary = repo.export(Uri.fromFile(parent))
+            val backupDirectory = parent.resolve(summary.directoryName)
+
+            val decoded = directoryManifest(backupDirectory).first
+            assertTrue(decoded.cards.isEmpty())
+            assertEquals("keep", existing.readText(Charsets.UTF_8))
+            assertEquals(2, parent.listFiles().orEmpty().size)
+        }
+
+    @Test
+    fun export_preflightsManifestLimit_beforeCreatingTargetDirectory() =
         runTest {
             db.cardDao().upsert(card(name = "中文与 emoji 💳"))
-            val reference = tempJsonFile("oversize-reference.json")
-            repo.export(Uri.fromFile(reference))
-            val out = tempJsonFile("preserve-on-oversize.json")
-            out.writeText("原文件不能被破坏", Charsets.UTF_8)
-            var outputOpened = false
+            val (reference, _) = exportBackup("oversize-reference-parent")
+            val referenceLength = reference.resolve(BACKUP_MANIFEST_FILE_NAME).length()
+            val targetParent = tempFolder.newFolder("preserve-on-oversize-parent")
+            targetParent.resolve("keep.txt").writeText("原文件不能被破坏", Charsets.UTF_8)
             val limitedRepo =
                 BackupRepository(
                     context = context,
@@ -328,37 +748,32 @@ class BackupRepositoryTest {
                     folderDao = db.cardFolderDao(),
                     transactionDao = db.transactionDao(),
                     normalizeInTransaction = cardRepository::normalizeOverdueCyclesInTransaction,
-                    maxBackupBytes = reference.length() - 1L,
-                    openOutputStream = { _, _, _ ->
-                        outputOpened = true
-                        error("超限预检不得打开目标")
-                    },
+                    userImages = FailClosedTestUserCardImageStore,
+                    maxBackupBytes = referenceLength - 1L,
+                    directoryAccess = LocalBackupDirectoryAccess,
                 )
 
             val exception =
                 assertThrows(BackupException::class.java) {
-                    runBlocking { limitedRepo.export(Uri.fromFile(out)) }
+                    runBlocking { limitedRepo.export(Uri.fromFile(targetParent)) }
                 }
 
             assertTrue(exception.message.orEmpty().contains("上限"))
-            assertFalse(outputOpened)
-            assertEquals("原文件不能被破坏", out.readText(Charsets.UTF_8))
+            assertEquals(listOf("keep.txt"), targetParent.listFiles().orEmpty().map(File::getName))
         }
 
     @Test
-    fun export_atExactImportLimit_roundTripsThroughInspect() =
+    fun export_atExactManifestLimit_roundTripsThroughDirectoryInspect() =
         runTest {
             db.cardDao().upsert(card(name = "边界卡 💳"))
-            val reference = tempJsonFile("reference-size.json")
-            repo.export(Uri.fromFile(reference))
-            val exactLimit = reference.length()
+            val (reference, _) = exportBackup("reference-size-parent")
+            val exactLimit = reference.resolve(BACKUP_MANIFEST_FILE_NAME).length()
             val exactRepo = repositoryWithLimit(maxBackupBytes = exactLimit)
-            val out = tempJsonFile("exact-limit.json")
 
-            val summary = exactRepo.export(Uri.fromFile(out))
-            val inspected = exactRepo.inspect(Uri.fromFile(out))
+            val (backupDirectory, summary) = exportBackup("exact-limit-parent", exactRepo)
+            val inspected = exactRepo.inspect(Uri.fromFile(backupDirectory))
 
-            assertEquals(exactLimit, out.length())
+            assertEquals(exactLimit, backupDirectory.resolve(BACKUP_MANIFEST_FILE_NAME).length())
             assertEquals(summary.cardCount, inspected.cardCount)
             assertEquals(summary.folderCount, inspected.folderCount)
             assertEquals(summary.transactionCount, inspected.transactionCount)
@@ -368,7 +783,8 @@ class BackupRepositoryTest {
     fun inspect_decodesValidatedBundle_andReportsTrustedCounts() =
         runTest {
             val bundle =
-                backupBundle(
+                TestData.backupBundle(
+                    version = 2,
                     folders = listOf(folder(id = 10L, name = "旅行")),
                     cards =
                         listOf(
@@ -390,7 +806,7 @@ class BackupRepositoryTest {
             assertEquals(1, info.folderCount)
             assertEquals(1, info.cardCount)
             assertEquals(1, info.transactionCount)
-            assertEquals(1, info.imageUriUserCount)
+            assertEquals(1, info.legacyImageUriCount)
             assertEquals(64, info.contentSha256.length)
         }
 
@@ -400,12 +816,12 @@ class BackupRepositoryTest {
             val originalId = db.cardDao().upsert(card(name = "现库卡"))
             val file = tempJsonFile("changed-after-preview.json")
             file.writeText(
-                json().encodeToString(backupBundle(cards = listOf(card(id = 10L, name = "预览卡")))),
+                json().encodeToString(TestData.backupBundle(cards = listOf(card(id = 10L, name = "预览卡")))),
                 Charsets.UTF_8,
             )
             val preview = repo.inspect(Uri.fromFile(file))
             file.writeText(
-                json().encodeToString(backupBundle(cards = listOf(card(id = 20L, name = "替换卡")))),
+                json().encodeToString(TestData.backupBundle(cards = listOf(card(id = 20L, name = "替换卡")))),
                 Charsets.UTF_8,
             )
 
@@ -425,11 +841,67 @@ class BackupRepositoryTest {
         }
 
     @Test
+    fun import_rejectsChangedManifest_beforeStagingImages() =
+        runTest {
+            val assetId = "431ced6916a2a21a156e38701afe55bbd7f88969fbbfc56d7fe099d47f265460"
+            val directory = tempFolder.newFolder("changed-image-manifest")
+            val original =
+                TestData.backupBundle(
+                    version = BackupBundle.SCHEMA_VERSION,
+                    cards = listOf(card(id = 10L, name = "预览卡").copy(imageAssetId = assetId)),
+                )
+            writeBackupDirectory(
+                directory,
+                original,
+                images = mapOf("$assetId$BACKUP_IMAGE_FILE_SUFFIX" to ONE_PIXEL_PNG),
+            )
+            var stageCalls = 0
+            val images =
+                object : UserCardImageStore by FailClosedTestUserCardImageStore {
+                    override suspend fun validateBackupImage(
+                        expectedAssetId: ImageAssetId,
+                        input: InputStream,
+                        maxBytes: Long,
+                    ) {
+                        input.readBytes()
+                    }
+
+                    override suspend fun stageFromBackup(
+                        expectedAssetId: ImageAssetId,
+                        input: InputStream,
+                        maxBytes: Long,
+                    ): StagedUserImage {
+                        stageCalls++
+                        error("摘要不一致时不应暂存图片")
+                    }
+                }
+            val repository = repositoryWithImages(images)
+            val preview = repository.inspect(Uri.fromFile(directory))
+            writeBackupDirectory(
+                directory,
+                original.copy(cards = original.cards.map { it.copy(name = "确认后变化") }),
+                images = mapOf("$assetId$BACKUP_IMAGE_FILE_SUFFIX" to ONE_PIXEL_PNG),
+            )
+
+            assertThrows(BackupException::class.java) {
+                runBlocking {
+                    repository.import(
+                        Uri.fromFile(directory),
+                        ImportMode.REPLACE,
+                        preview.contentSha256,
+                    )
+                }
+            }
+
+            assertEquals(0, stageCalls)
+        }
+
+    @Test
     fun import_acceptsUnchangedFileBoundToInspectionDigest() =
         runTest {
             val file = tempJsonFile("unchanged-after-preview.json")
             file.writeText(
-                json().encodeToString(backupBundle(cards = listOf(card(id = 10L, name = "同一文件")))),
+                json().encodeToString(TestData.backupBundle(cards = listOf(card(id = 10L, name = "同一文件")))),
                 Charsets.UTF_8,
             )
             val preview = repo.inspect(Uri.fromFile(file))
@@ -466,7 +938,7 @@ class BackupRepositoryTest {
 
             // 2) 备份只有新数据
             val newBundle =
-                backupBundle(
+                TestData.backupBundle(
                     version = 1,
                     folders = listOf(folder(id = 100L, name = "新分组")),
                     cards = listOf(card(id = 200L, name = "新卡")),
@@ -496,7 +968,7 @@ class BackupRepositoryTest {
         runTest {
             // 备份里 card 引用 folderId=9999，但 bundle.folders 里没有 id=9999 的 folder
             val broken =
-                backupBundle(
+                TestData.backupBundle(
                     version = 1,
                     folders = listOf(folder(id = 10L, name = "A")),
                     cards =
@@ -533,7 +1005,7 @@ class BackupRepositoryTest {
         runTest {
             val originalId = db.cardDao().upsert(card(name = "原卡"))
             val bundle =
-                backupBundle(
+                TestData.backupBundle(
                     cards =
                         listOf(
                             card(id = 20L, name = "重复一"),
@@ -556,7 +1028,7 @@ class BackupRepositoryTest {
             val file = tempJsonFile("invalid-required-count.json")
             file.writeText(
                 json().encodeToString(
-                    backupBundle(cards = listOf(card(id = 20L, name = "无效目标", requiredCount = 0))),
+                    TestData.backupBundle(cards = listOf(card(id = 20L, name = "无效目标", requiredCount = 0))),
                 ),
                 Charsets.UTF_8,
             )
@@ -571,7 +1043,7 @@ class BackupRepositoryTest {
     fun replace_remapsMaximumIdsAndLeavesAutoincrementUsable() =
         runTest {
             val bundle =
-                backupBundle(
+                TestData.backupBundle(
                     folders = listOf(folder(id = Long.MAX_VALUE, name = "极值分组")),
                     cards = listOf(card(id = Long.MAX_VALUE, name = "极值卡", folderId = Long.MAX_VALUE)),
                     transactions =
@@ -614,7 +1086,7 @@ class BackupRepositoryTest {
             assertEquals(5, db.transactionDao().listAll().size)
 
             // 2) REPLACE 一个空 bundle → 期望所有表被清空
-            val empty = backupBundle(version = 1)
+            val empty = TestData.backupBundle(version = 1)
             val file = tempJsonFile()
             file.writeText(json().encodeToString(empty), Charsets.UTF_8)
             importInspected(file, ImportMode.REPLACE)
@@ -642,8 +1114,7 @@ class BackupRepositoryTest {
             val cardId = db.cardDao().upsert(originalCard)
             db.transactionDao().insert(transaction(cardId = cardId))
 
-            val out = tempJsonFile()
-            repo.export(Uri.fromFile(out))
+            val (out, _) = exportBackup("replace-roundtrip-parent")
 
             // 2) 现库塞点新数据
             db.cardDao().upsert(card(id = 0L, name = "杂质"))
@@ -666,8 +1137,17 @@ class BackupRepositoryTest {
         }
 
     @Test
-    fun schemaTwo_replaceRoundtripPreservesEveryEntityField() =
+    fun schemaThreeDirectory_replaceRoundtripPreservesEveryEntityField() =
         runTest {
+            val images =
+                ContentResolverUserCardImageStore(
+                    contentResolver = context.contentResolver,
+                    cardDao = db.cardDao(),
+                    rootDirectory = tempFolder.newFolder("all-fields-images"),
+                    openSource = { _, _ -> ByteArrayInputStream(ONE_PIXEL_PNG) },
+                    validateSource = { file -> file.readBytes().contentEquals(ONE_PIXEL_PNG) },
+                )
+            val stagedImage = images.stageFromUri("content://gallery/all-fields")
             val folderId =
                 db.cardFolderDao().insert(
                     folder(
@@ -691,14 +1171,16 @@ class BackupRepositoryTest {
                         requiredCount = 9,
                         colorArgb = 0xFF445566.toInt(),
                         note = "完整备注",
-                        imageUri = "content://card/image",
+                        imageUri = null,
                         imageSourceType = "USER",
                         imageProviderKey = "provider",
                         cardOrientation = "PORTRAIT",
                         folderId = folderId,
                         createdAtMillis = 333L,
-                    ),
+                    ).copy(imageAssetId = stagedImage.assetId.value),
                 )
+            images.releaseLeases(setOf(stagedImage))
+            images.collectGarbage()
             val plainNetworkCard =
                 card(
                     id = 0L,
@@ -717,18 +1199,18 @@ class BackupRepositoryTest {
             db.cardDao().upsert(userNetworkCard)
             db.transactionDao().insert(transaction(cardId = cardId, occurredAtMillis = 444L))
             val before = snapshotDatabase()
-            val file = tempJsonFile()
-            repo.export(Uri.fromFile(file))
+            val imageRepository = repositoryWithImages(images)
+            val (file, _) = exportBackup("all-fields-parent", imageRepository)
 
             seed(cards = listOf(card(name = "杂质")))
-            importInspected(file, ImportMode.REPLACE)
+            importInspected(file, ImportMode.REPLACE, imageRepository)
 
-            assertEquals(BackupBundle.SCHEMA_VERSION, json().decodeFromString<BackupBundle>(file.readText()).version)
-            assertEquals(2, BackupBundle.SCHEMA_VERSION)
-            assertEquals(8, db.openHelper.readableDatabase.version)
+            assertEquals(BackupBundle.SCHEMA_VERSION, directoryManifest(file).first.version)
+            assertEquals(3, BackupBundle.SCHEMA_VERSION)
+            assertEquals(9, db.openHelper.readableDatabase.version)
             assertLogicalSnapshotEquals(before, snapshotDatabase())
 
-            importInspected(file, ImportMode.MERGE)
+            importInspected(file, ImportMode.MERGE, imageRepository)
 
             val mergedCards = db.cardDao().listAll()
             assertEquals(
@@ -778,7 +1260,8 @@ class BackupRepositoryTest {
     fun schemaTwo_nonCreditCardsDiscardCreditOnlyDays() =
         runTest {
             val validDebit =
-                backupBundle(
+                TestData.backupBundle(
+                    version = 2,
                     cards = listOf(card(id = 20L, name = "借记卡", cardType = CardType.DEBIT.key)),
                 )
             val inconsistentDebit =
@@ -801,7 +1284,8 @@ class BackupRepositoryTest {
         runTest {
             val originalId = db.cardDao().upsert(card(name = "原卡"))
             val valid =
-                backupBundle(
+                TestData.backupBundle(
+                    version = 2,
                     cards =
                         listOf(
                             card(
@@ -860,8 +1344,8 @@ class BackupRepositoryTest {
             val file = tempJsonFile()
             file.writeText(
                 json().encodeToString(
-                    backupBundle(
-                        version = BackupBundle.SCHEMA_VERSION,
+                    TestData.backupBundle(
+                        version = 2,
                         cards = listOf(originalCard),
                         transactions = originalTransactions,
                     ),
@@ -898,8 +1382,8 @@ class BackupRepositoryTest {
             val file = tempJsonFile()
             file.writeText(
                 json().encodeToString(
-                    backupBundle(
-                        version = BackupBundle.SCHEMA_VERSION,
+                    TestData.backupBundle(
+                        version = 2,
                         cards = listOf(card(id = 20L, name = "备份卡")),
                     ),
                 ),
@@ -913,6 +1397,7 @@ class BackupRepositoryTest {
                     folderDao = db.cardFolderDao(),
                     transactionDao = db.transactionDao(),
                     normalizeInTransaction = { error("归一化失败") },
+                    userImages = FailClosedTestUserCardImageStore,
                 )
 
             assertThrows(BackupException::class.java) {
@@ -923,11 +1408,11 @@ class BackupRepositoryTest {
         }
 
     @Test
-    fun reconcileImagePermissionFailure_doesNotReverseCommittedImportResult() =
+    fun imageGarbageCollectionFailure_doesNotReverseCommittedImportResult() =
         runTest {
-            val file = tempJsonFile("reconcile-failure.json")
+            val file = tempJsonFile("image-cleanup-failure.json")
             file.writeText(
-                json().encodeToString(backupBundle(cards = listOf(card(id = 20L, name = "已导入")))),
+                json().encodeToString(TestData.backupBundle(cards = listOf(card(id = 20L, name = "已导入")))),
                 Charsets.UTF_8,
             )
             val repository =
@@ -938,7 +1423,7 @@ class BackupRepositoryTest {
                     folderDao = db.cardFolderDao(),
                     transactionDao = db.transactionDao(),
                     normalizeInTransaction = cardRepository::normalizeOverdueCyclesInTransaction,
-                    reconcileImagePermissions = { error("模拟权限清理失败") },
+                    userImages = GarbageCollectingUserImageStore { error("模拟图片清理失败") },
                 )
 
             val result = importInspected(file, ImportMode.REPLACE, repository)
@@ -963,7 +1448,7 @@ class BackupRepositoryTest {
         runTest {
             // 1) 现库空 → merge 2 个 folder
             val bundle =
-                backupBundle(
+                TestData.backupBundle(
                     version = 1,
                     folders =
                         listOf(
@@ -989,7 +1474,7 @@ class BackupRepositoryTest {
     fun merge_appends_cards_and_remaps_folderId() =
         runTest {
             val bundle =
-                backupBundle(
+                TestData.backupBundle(
                     version = 1,
                     folders = listOf(folder(id = 10L, name = "A")),
                     cards =
@@ -1037,7 +1522,7 @@ class BackupRepositoryTest {
         runTest {
             // 备份里：1 folder + 1 card + 2 transactions
             val bundle =
-                backupBundle(
+                TestData.backupBundle(
                     version = 1,
                     folders = listOf(folder(id = 10L, name = "A")),
                     cards = listOf(card(id = 20L, name = "C", folderId = 10L)),
@@ -1102,8 +1587,8 @@ class BackupRepositoryTest {
             val file = tempJsonFile()
             file.writeText(
                 json().encodeToString(
-                    backupBundle(
-                        version = BackupBundle.SCHEMA_VERSION,
+                    TestData.backupBundle(
+                        version = 2,
                         folders = listOf(originalFolder),
                         cards = listOf(originalCard),
                         transactions = originalTransactions,
@@ -1139,7 +1624,7 @@ class BackupRepositoryTest {
         runTest {
             // 备份里：1 张 card（id=20）+ 1 笔孤立 transaction（cardId=9999，指向不存在的卡）
             val bundle =
-                backupBundle(
+                TestData.backupBundle(
                     version = 1,
                     folders = emptyList(),
                     cards = listOf(card(id = 20L, name = "C")),
@@ -1173,7 +1658,7 @@ class BackupRepositoryTest {
 
             // 2) 备份里也有 "A" + "C"（重名）+ "B" + "D"（新）→ 期望各 1 个重名
             val bundle =
-                backupBundle(
+                TestData.backupBundle(
                     version = 1,
                     folders =
                         listOf(
@@ -1323,6 +1808,7 @@ class BackupRepositoryTest {
                 folderDao = db.cardFolderDao(),
                 transactionDao = db.transactionDao(),
                 normalizeInTransaction = cardRepository::normalizeOverdueCyclesInTransaction,
+                userImages = FailClosedTestUserCardImageStore,
                 openInputStream = { _, _ -> blockingInput },
             )
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -1360,6 +1846,7 @@ class BackupRepositoryTest {
                 folderDao = db.cardFolderDao(),
                 transactionDao = db.transactionDao(),
                 normalizeInTransaction = cardRepository::normalizeOverdueCyclesInTransaction,
+                userImages = FailClosedTestUserCardImageStore,
                 openInputStream = { _, signal ->
                     signal.setOnCancelListener { providerCancelled.countDown() }
                     openStarted.countDown()
@@ -1396,12 +1883,27 @@ class BackupRepositoryTest {
                 folderDao = db.cardFolderDao(),
                 transactionDao = db.transactionDao(),
                 normalizeInTransaction = cardRepository::normalizeOverdueCyclesInTransaction,
-                openOutputStream = { _, _, signal ->
-                    signal.setOnCancelListener { providerCancelled.countDown() }
-                    openStarted.countDown()
-                    providerCancelled.await()
-                    throw OperationCanceledException("provider open cancelled")
-                },
+                userImages = FailClosedTestUserCardImageStore,
+                directoryAccess =
+                    object : BackupDirectoryAccess {
+                        override fun isDirectory(uri: Uri): Boolean = true
+
+                        override fun createBackup(
+                            parentUri: Uri,
+                            suggestedName: String,
+                            cancellationSignal: android.os.CancellationSignal,
+                        ): BackupDirectory {
+                            cancellationSignal.setOnCancelListener { providerCancelled.countDown() }
+                            openStarted.countDown()
+                            providerCancelled.await()
+                            throw OperationCanceledException("provider open cancelled")
+                        }
+
+                        override fun openBackup(
+                            directoryUri: Uri,
+                            cancellationSignal: android.os.CancellationSignal,
+                        ): BackupDirectory = error("not used")
+                    },
             )
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
@@ -1432,7 +1934,8 @@ class BackupRepositoryTest {
                     folderDao = db.cardFolderDao(),
                     transactionDao = db.transactionDao(),
                     normalizeInTransaction = cardRepository::normalizeOverdueCyclesInTransaction,
-                    openOutputStream = { _, _, _ -> blockingOutput },
+                    userImages = FailClosedTestUserCardImageStore,
+                    directoryAccess = FixedExportDirectoryAccess(blockingOutput),
                 )
             val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
@@ -1464,6 +1967,7 @@ class BackupRepositoryTest {
                 folderDao = db.cardFolderDao(),
                 transactionDao = db.transactionDao(),
                 normalizeInTransaction = cardRepository::normalizeOverdueCyclesInTransaction,
+                userImages = FailClosedTestUserCardImageStore,
                 openInputStream = { _, _ -> blockingInput },
             )
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -1489,11 +1993,11 @@ class BackupRepositoryTest {
         val existingId = runBlocking { db.cardDao().upsert(card(name = "提交前")) }
         val file = tempJsonFile("commit-boundary.json")
         file.writeText(
-            json().encodeToString(backupBundle(cards = listOf(card(id = 10L, name = "已提交")))),
+            json().encodeToString(TestData.backupBundle(cards = listOf(card(id = 10L, name = "已提交")))),
             Charsets.UTF_8,
         )
-        val reconcileStarted = CountDownLatch(1)
-        val finishReconcile = CountDownLatch(1)
+        val cleanupStarted = CountDownLatch(1)
+        val finishCleanup = CountDownLatch(1)
         val committingRepository =
             BackupRepository(
                 context = context,
@@ -1502,16 +2006,17 @@ class BackupRepositoryTest {
                 folderDao = db.cardFolderDao(),
                 transactionDao = db.transactionDao(),
                 normalizeInTransaction = cardRepository::normalizeOverdueCyclesInTransaction,
-                reconcileImagePermissions = {
-                    reconcileStarted.countDown()
-                    finishReconcile.await()
-                },
+                userImages =
+                    GarbageCollectingUserImageStore {
+                        cleanupStarted.countDown()
+                        finishCleanup.await()
+                    },
             )
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
         try {
             val active = scope.async { importInspected(file, ImportMode.REPLACE, committingRepository) }
-            assertTrue("应已完成数据库提交并进入权限收尾", reconcileStarted.await(5, TimeUnit.SECONDS))
+            assertTrue("应已完成数据库提交并进入图片收尾", cleanupStarted.await(5, TimeUnit.SECONDS))
             assertNull(runBlocking { db.cardDao().getById(existingId) })
             assertEquals(
                 "已提交",
@@ -1525,12 +2030,12 @@ class BackupRepositoryTest {
             )
 
             assertEquals(BackupCancelResult.COMMIT_IN_PROGRESS, committingRepository.cancelActive())
-            finishReconcile.countDown()
+            finishCleanup.countDown()
 
             assertEquals(1, runBlocking { active.await() }.cardsAdded)
             assertEquals(BackupCancelResult.NO_ACTIVE_OPERATION, committingRepository.cancelActive())
         } finally {
-            finishReconcile.countDown()
+            finishCleanup.countDown()
             scope.cancel()
         }
     }
@@ -1544,7 +2049,7 @@ class BackupRepositoryTest {
             }
         val file = tempJsonFile("cancel-during-normalize.json")
         file.writeText(
-            json().encodeToString(backupBundle(cards = listOf(card(id = 10L, name = "不应提交")))),
+            json().encodeToString(TestData.backupBundle(cards = listOf(card(id = 10L, name = "不应提交")))),
             Charsets.UTF_8,
         )
         val normalizeStarted = CompletableDeferred<Unit>()
@@ -1556,6 +2061,7 @@ class BackupRepositoryTest {
                 cardDao = db.cardDao(),
                 folderDao = db.cardFolderDao(),
                 transactionDao = db.transactionDao(),
+                userImages = FailClosedTestUserCardImageStore,
                 normalizeInTransaction = {
                     normalizeStarted.complete(Unit)
                     keepNormalizing.await()
@@ -1701,12 +2207,34 @@ class BackupRepositoryTest {
             assertTrue(mergedTransactions.all { transaction -> mergedCards.any { it.id == transaction.cardId } })
         }
 
+    @Test
+    fun frozenSchemaTwoWithoutImageAssetId_importsInReplaceAndMergeModes() =
+        runTest {
+            val file = tempJsonFile("schema-two-frozen.json")
+            file.writeText(FROZEN_SCHEMA_TWO_JSON, Charsets.UTF_8)
+
+            importInspected(file, ImportMode.REPLACE)
+
+            val replaced = db.cardDao().listAll().single()
+            assertEquals(CardType.CREDIT.key, replaced.cardType)
+            assertEquals(8, replaced.statementDay)
+            assertEquals(26, replaced.repaymentDay)
+            assertNull(replaced.imageAssetId)
+
+            importInspected(file, ImportMode.MERGE)
+
+            val merged = db.cardDao().listAll()
+            assertEquals(2, merged.size)
+            assertTrue(merged.all { it.imageAssetId == null })
+            assertTrue(merged.all { it.cardType == CardType.CREDIT.key })
+        }
+
     // ════════════════════════════════════════════════════════════
-    // 跨设备 imageUri 提示
+    // 旧外部 imageUri 的跨设备提示
     // ════════════════════════════════════════════════════════════
 
     @Test
-    fun replace_counts_user_image_cards() =
+    fun replace_counts_cardsWithLegacyImageUris() =
         runTest {
             // 备份里 2 张 USER 卡 + 1 张 PROVIDER 卡 + 1 张 NONE 卡
             // 显式使用稳定 key 覆盖 USER / PROVIDER / NONE 三类。
@@ -1714,7 +2242,7 @@ class BackupRepositoryTest {
             val providerCard = card(id = 11L, name = "P").copy(imageSourceType = "PROVIDER")
             val noneCard = card(id = 12L, name = "N").copy(imageSourceType = "NONE")
             val bundle =
-                backupBundle(
+                TestData.backupBundle(
                     version = 1,
                     cards = listOf(userCard, providerCard, noneCard),
                 )
@@ -1722,18 +2250,18 @@ class BackupRepositoryTest {
             file.writeText(json().encodeToString(bundle), Charsets.UTF_8)
 
             val result = importInspected(file, ImportMode.REPLACE)
-            assertEquals(1, result.imageUriUserCount) // 只有 USER 卡需要重新上传
+            assertEquals(1, result.legacyImageUriCount)
         }
 
     @Test
-    fun merge_counts_user_image_cards() =
+    fun merge_counts_cardsWithLegacyImageUris() =
         runTest {
             // 现库空 + 备份 3 张卡（USER / PROVIDER / NONE 各 1）→ expect 1
             val userCard = card(id = 10L, name = "U", imageUri = "content://image/u").copy(imageSourceType = "USER")
             val providerCard = card(id = 11L, name = "P").copy(imageSourceType = "PROVIDER")
             val noneCard = card(id = 12L, name = "N").copy(imageSourceType = "NONE")
             val bundle =
-                backupBundle(
+                TestData.backupBundle(
                     version = 1,
                     cards = listOf(userCard, providerCard, noneCard),
                 )
@@ -1741,7 +2269,7 @@ class BackupRepositoryTest {
             file.writeText(json().encodeToString(bundle), Charsets.UTF_8)
 
             val result = importInspected(file, ImportMode.MERGE)
-            assertEquals(1, result.imageUriUserCount)
+            assertEquals(1, result.legacyImageUriCount)
         }
 
     @Test
@@ -1749,7 +2277,7 @@ class BackupRepositoryTest {
         runTest {
             val existingFolderId = db.cardFolderDao().insert(folder(id = 41L, name = "现库无关文件夹"))
             val bundle =
-                backupBundle(
+                TestData.backupBundle(
                     cards = listOf(card(id = 10L, name = "备份卡", folderId = existingFolderId)),
                 )
             val file = tempJsonFile("missing-backup-folder.json")
@@ -1768,11 +2296,11 @@ class BackupRepositoryTest {
         }
 
     @Test
-    fun imageUriUserCount_zero_when_no_USER_cards() =
+    fun legacyImageUriCount_zero_whenNoLegacyUriExists() =
         runTest {
             // 现库空 + 备份 0 张 USER 卡 → expect 0
             val bundle =
-                backupBundle(
+                TestData.backupBundle(
                     version = 1,
                     cards =
                         listOf(
@@ -1784,14 +2312,14 @@ class BackupRepositoryTest {
             file.writeText(json().encodeToString(bundle), Charsets.UTF_8)
 
             val result = importInspected(file, ImportMode.REPLACE)
-            assertEquals(0, result.imageUriUserCount)
+            assertEquals(0, result.legacyImageUriCount)
         }
 
     @Test
-    fun imageUriUserCount_doesNotWarnForUserSourceWithoutImageUri() =
+    fun legacyImageUriCount_doesNotWarnForUserSourceWithoutImageUri() =
         runTest {
             val bundle =
-                backupBundle(
+                TestData.backupBundle(
                     cards = listOf(card(id = 10L, name = "旧默认卡", imageSourceType = ImageSourceType.USER.key)),
                 )
             val file = tempJsonFile("user-without-uri.json")
@@ -1799,7 +2327,7 @@ class BackupRepositoryTest {
 
             val result = importInspected(file, ImportMode.REPLACE)
 
-            assertEquals(0, result.imageUriUserCount)
+            assertEquals(0, result.legacyImageUriCount)
         }
 
     @Test
@@ -1809,7 +2337,7 @@ class BackupRepositoryTest {
             seed(cards = listOf(card(id = 0L, name = "现库卡")))
 
             val bundle =
-                backupBundle(
+                TestData.backupBundle(
                     version = 1,
                     cards = listOf(card(id = 100L, name = "备份卡")),
                 )
@@ -1817,9 +2345,8 @@ class BackupRepositoryTest {
             file.writeText(json().encodeToString(bundle), Charsets.UTF_8)
             importInspected(file, ImportMode.MERGE)
 
-            val out = tempJsonFile(name = "output_for_omits_idremap.json")
-            repo.export(Uri.fromFile(out))
-            val text = out.readText(Charsets.UTF_8)
+            val (out, _) = exportBackup("output-for-omits-idremap-parent")
+            val text = out.resolve(BACKUP_MANIFEST_FILE_NAME).readText(Charsets.UTF_8)
             assertFalse("bundle JSON 不应含 idRemap 字段", text.contains("idRemap"))
         }
 
@@ -1846,7 +2373,7 @@ class BackupRepositoryTest {
             //    —— 第二笔 transaction 的 cardId 引用了备份里不存在的 card
             //    ⇒ REPLACE 找不到文件内 cardId 映射时主动拒绝 ⇒ withTransaction 应该 ROLLBACK
             val broken =
-                backupBundle(
+                TestData.backupBundle(
                     version = 1,
                     folders = listOf(folder(id = 10L, name = "备份分组")),
                     cards = listOf(card(id = 20L, name = "备份卡", folderId = 10L)),
@@ -1921,6 +2448,56 @@ class BackupRepositoryTest {
         }
     }
 
+    private class FixedExportDirectoryAccess(
+        private val output: OutputStream,
+    ) : BackupDirectoryAccess {
+        override fun isDirectory(uri: Uri): Boolean = true
+
+        override fun createBackup(
+            parentUri: Uri,
+            suggestedName: String,
+            cancellationSignal: android.os.CancellationSignal,
+        ): BackupDirectory =
+            object : BackupDirectory {
+                override val displayName: String = suggestedName
+                override val lastModifiedMillis: Long? = null
+
+                override fun openManifestInput(cancellationSignal: android.os.CancellationSignal): InputStream? = null
+
+                override fun openManifestOutput(cancellationSignal: android.os.CancellationSignal): OutputStream = output
+
+                override fun indexImageInputs(
+                    assetFileNames: Set<String>,
+                    cancellationSignal: android.os.CancellationSignal,
+                ) = Unit
+
+                override fun openImageInput(
+                    assetFileName: String,
+                    cancellationSignal: android.os.CancellationSignal,
+                ): InputStream? = null
+
+                override fun openImageOutput(
+                    assetFileName: String,
+                    cancellationSignal: android.os.CancellationSignal,
+                ): OutputStream? = null
+
+                override fun delete(): Boolean = true
+            }
+
+        override fun openBackup(
+            directoryUri: Uri,
+            cancellationSignal: android.os.CancellationSignal,
+        ): BackupDirectory = error("not used")
+    }
+
+    private class GarbageCollectingUserImageStore(
+        private val collectGarbageAction: suspend () -> Unit,
+    ) : UserCardImageStore by FailClosedTestUserCardImageStore {
+        override suspend fun migrateLegacyImages() = Unit
+
+        override suspend fun collectGarbage() = collectGarbageAction()
+    }
+
     private companion object {
         const val CANCELLATION_RACE_ITERATIONS = 25
         val PUBLISHED_TOP_LEVEL_FIELDS = setOf("version", "cards", "folders", "transactions")
@@ -1936,6 +2513,7 @@ class BackupRepositoryTest {
                 "colorArgb",
                 "note",
                 "imageUri",
+                "imageAssetId",
                 "imageSourceType",
                 "imageProviderKey",
                 "cardOrientation",
@@ -1946,7 +2524,7 @@ class BackupRepositoryTest {
                 "repaymentDay",
             )
         val SCHEMA_ONE_CARD_FIELDS =
-            PUBLISHED_CARD_FIELDS - setOf("cardType", "statementDay", "repaymentDay")
+            PUBLISHED_CARD_FIELDS - setOf("cardType", "statementDay", "repaymentDay", "imageAssetId")
         val PUBLISHED_FOLDER_FIELDS = setOf("id", "name", "colorArgb", "sortOrder", "createdAtMillis")
         val PUBLISHED_TRANSACTION_FIELDS = setOf("id", "cardId", "occurredAtMillis")
 
@@ -1985,5 +2563,39 @@ class BackupRepositoryTest {
               }]
             }
             """.trimIndent()
+
+        val FROZEN_SCHEMA_TWO_JSON =
+            """
+            {
+              "version": 2,
+              "cards": [{
+                "id": 20,
+                "name": "旧版信用卡",
+                "bank": "历史银行",
+                "cardNumberMasked": "**** 5678",
+                "validUntilMillis": null,
+                "nextDueDateMillis": null,
+                "requiredCount": 6,
+                "colorArgb": -16776961,
+                "note": "schema 2",
+                "imageUri": null,
+                "imageSourceType": "NONE",
+                "imageProviderKey": "visa",
+                "cardOrientation": "LANDSCAPE",
+                "folderId": null,
+                "createdAtMillis": 333,
+                "cardType": "CREDIT",
+                "statementDay": 8,
+                "repaymentDay": 26
+              }],
+              "folders": [],
+              "transactions": []
+            }
+            """.trimIndent()
+
+        val ONE_PIXEL_PNG: ByteArray =
+            Base64.getDecoder().decode(
+                "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+            )
     }
 }

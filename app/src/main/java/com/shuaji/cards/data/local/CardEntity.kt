@@ -29,7 +29,9 @@ internal const val CARD_ORIENTATION_LANDSCAPE_KEY = "LANDSCAPE"
  * 卡面表现与卡组织是两个独立维度：
  * - [imageSourceType] = "NONE"     → 纯色样式
  * - [imageSourceType] = "PROVIDER" → 卡组织水印预设样式
- * - [imageSourceType] = "USER"     → 用户自定义图片样式（imageUri 存相册 URI）
+ * - [imageSourceType] = "USER"     → 用户自定义图片样式
+ * - [imageAssetId] 是应用私有目录中不可变图片的稳定内容 ID
+ * - [imageUri] 只保留升级前的外部 URI，供幂等迁移；新写入不得再依赖它
  * - [imageProviderKey] 独立、可空，在以上任意样式中保存卡组织枚举 key；空值表示未选择卡组织
  *   USER 样式仍保存该值供切换样式恢复，但卡面不叠加徽标或装饰
  *
@@ -76,6 +78,8 @@ data class CardEntity(
     val note: String = "",
     @ColumnInfo(name = "image_uri")
     val imageUri: String? = null,
+    @ColumnInfo(name = "image_asset_id")
+    val imageAssetId: String? = null,
     @ColumnInfo(name = "image_source_type", defaultValue = IMAGE_SOURCE_USER_KEY)
     val imageSourceType: String = IMAGE_SOURCE_USER_KEY,
     @ColumnInfo(name = "image_provider_key")

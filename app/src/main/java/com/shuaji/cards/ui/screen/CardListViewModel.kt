@@ -5,11 +5,11 @@ import androidx.lifecycle.viewModelScope
 import com.shuaji.cards.core.OneShotEventQueue
 import com.shuaji.cards.data.AnnualFeeCycle
 import com.shuaji.cards.data.CardRepository
+import com.shuaji.cards.data.CardWithCount
 import com.shuaji.cards.data.SwipeRecordResult
 import com.shuaji.cards.data.local.CardEntity
 import com.shuaji.cards.data.local.CardFolderEntity
 import com.shuaji.cards.data.local.CardType
-import com.shuaji.cards.data.local.CardWithCount
 import com.shuaji.cards.data.local.cardTypeEnum
 import com.shuaji.cards.data.local.isExpiredAt
 import kotlinx.coroutines.CancellationException
@@ -62,6 +62,7 @@ data class CardUi(
     val isExpired: Boolean,
     val lastSwipeAtMillis: Long?,
     val cycle: AnnualFeeCycle,
+    val userImageModel: String? = null,
 )
 
 data class OverallProgress(
@@ -191,8 +192,9 @@ class CardListViewModel(
                     if (!repository.deleteCard(card.card)) {
                         eventQueue.emit(CardListEvent.DeleteFailed)
                     }
-                } catch (exception: Exception) {
-                    if (exception is CancellationException) throw exception
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
                     eventQueue.emit(CardListEvent.DeleteFailed)
                 }
             }
@@ -213,8 +215,9 @@ class CardListViewModel(
                         swipeFeedbackQueue.emit(SwipeFeedback.CountingNotStarted(result.startDate))
                     SwipeRecordResult.CardMissing -> swipeFeedbackQueue.emit(SwipeFeedback.CardMissing)
                 }
-            } catch (exception: Exception) {
-                if (exception is CancellationException) throw exception
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
                 eventQueue.emit(CardListEvent.WriteFailed)
             }
         }
@@ -253,6 +256,7 @@ private fun CardWithCount.toCardUi(
 ): CardUi =
     CardUi(
         card = card,
+        userImageModel = resolvedUserImageUri,
         currentCount = currentCount,
         isExpired = card.isExpiredAt(now, zoneId),
         lastSwipeAtMillis = lastSwipeAtMillis,

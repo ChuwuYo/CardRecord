@@ -49,6 +49,7 @@ class CardForegroundContrastRenderingTest {
                             imageSourceType = ImageSourceType.NONE.key,
                             createdAtMillis = 0L,
                         ),
+                    userImageModel = null,
                 )
             }
 

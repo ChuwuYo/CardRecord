@@ -48,6 +48,7 @@ class CardRepositoryTest {
                 clock = clock,
                 zoneIdProvider = { ZoneOffset.UTC },
                 boundaryTicks = flowOf(Unit),
+                userImages = FailClosedTestUserCardImageStore,
             )
     }
 
@@ -104,7 +105,7 @@ class CardRepositoryTest {
                 ),
             )
 
-            val updated = requireNotNull(repo.observeCard(id).first())
+            val updated = requireNotNull(repo.observeCardDetails(id).first()).card
             assertEquals("修改后", updated.card.name)
             assertEquals(0xFF2E7D32.toInt(), updated.card.colorArgb)
             assertEquals("编辑卡片不能删除已有流水", 2, updated.currentCount)
@@ -494,6 +495,7 @@ class CardRepositoryTest {
             clock = clock,
             zoneIdProvider = { ZoneOffset.UTC },
             boundaryTicks = flowOf(Unit),
+            userImages = FailClosedTestUserCardImageStore,
         )
 
     private class SteppingClock(
