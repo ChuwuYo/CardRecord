@@ -6,7 +6,7 @@
 
 - [ ] `./gradlew ktlintCheck :app:testDebugUnitTest :app:lintDebug :app:lintRelease` 通过
 - [ ] 简中/英文资源 key 与格式化参数一致，无用户可见硬编码文案
-- [ ] Room schema、迁移测试与备份 schema 3 已核对；零图片/有图片目录布局、图片恢复及 schema 1/2 旧 JSON 导入均通过
+- [ ] Room schema、迁移测试与备份 schema 3 已核对；零图片/有图片目录布局、图片恢复、旧版本与单 JSON 拒绝路径均通过
 - [ ] main 源码没有遗留 TODO/FIXME、Debug 入口、临时日志或生成产物
 - [ ] `docs/CHANGELOG.md` 的 Unreleased 已准确描述用户可感知变化
 
@@ -30,4 +30,4 @@
 
 ## 4. 签名恢复预案
 
-GitHub Secrets 不是密钥备份。若原签名无法恢复，新包不能覆盖旧安装；发布说明必须明确提示用户先在旧版导出备份，再卸载、安装新包并导入，避免本地数据随卸载丢失。
+GitHub Secrets 不是密钥备份。若原签名无法恢复，新包不能覆盖旧安装，卸载又会删除本地数据。只有已经用当前版本验证可读取的完整备份目录才能作为恢复依据；否则必须先提供并验证数据迁移方案，禁止直接建议用户卸载。

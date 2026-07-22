@@ -11,8 +11,6 @@ import java.io.OutputStream
 
 /** JVM 测试专用的 file:// 适配器；生产 APK 只保留 SAF content URI 实现。 */
 internal object LocalBackupDirectoryAccess : BackupDirectoryAccess {
-    override fun isDirectory(uri: Uri): Boolean = uri.scheme == "file" && uri.toFile().isDirectory
-
     override fun createBackup(
         parentUri: Uri,
         suggestedName: String,

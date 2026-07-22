@@ -6,48 +6,35 @@ import com.shuaji.cards.data.local.CardType
 import com.shuaji.cards.data.local.TransactionEntity
 import com.shuaji.cards.data.local.cardTypeEnum
 import com.shuaji.cards.data.local.withNormalizedCreditDetails
-import kotlinx.serialization.Required
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 /**
- * 备份文件当前 schema。
+ * 当前备份清单协议。
  *
  * 顶层必须显式包含 `version`、`cards`、`folders`、`transactions`。表内字段由独立 DTO
- * 固定，不直接序列化 Room Entity，避免数据库模型的默认值或重构悄悄改变已经发布的文件协议。
- * schema 2 在卡片记录中新增卡类型、账单日和还款日；schema 3 新增应用私有图片资源 ID。
+ * 固定，不直接序列化 Room Entity，避免数据库模型的默认值或重构悄悄改变文件协议。
  * 正式导出目录始终包含 `cardrecord_backup.json`；仅当卡片实际引用图片资源时创建
  * `card_images/`，JSON 通过资源 ID 对应图片文件。
- * 导入仍兼容冻结的 schema 1/2 单 JSON 文件。
- * 旧 `imageUri` 仅用于同设备幂等迁移，跨设备提示仍由 [ImportResult.legacyImageUriCount] 承担。
+ * 当前版本只接受 schema 3 目录，避免未发布协议的兼容分支成为长期维护负担。
  */
 @Serializable
 data class BackupBundle(
-    @Required
     @SerialName("version")
-    val version: Int = SCHEMA_VERSION,
-    @Required
+    val version: Int,
     @SerialName("cards")
-    val cards: List<BackupCard> = emptyList(),
-    @Required
+    val cards: List<BackupCard>,
     @SerialName("folders")
-    val folders: List<BackupFolderV1> = emptyList(),
-    @Required
+    val folders: List<BackupFolder>,
     @SerialName("transactions")
-    val transactions: List<BackupTransactionV1> = emptyList(),
+    val transactions: List<BackupTransaction>,
 ) {
     companion object {
-        const val MIN_SUPPORTED_SCHEMA_VERSION: Int = 1
         const val SCHEMA_VERSION: Int = 3
     }
 }
 
-/**
- * 卡片备份记录。
- *
- * schema 1 已发布字段继续保持必填；schema 2 的三个新增字段带解码默认值，只为让旧文件可读取。
- * schema 2 文件仍由结构校验要求显式提供 [cardType]，不能靠该默认值掩盖损坏文件。
- */
+/** 卡片备份记录；所有字段均属于当前协议，nullable 不等于可从 JSON 中省略。 */
 @Serializable
 data class BackupCard(
     @SerialName("id")
@@ -68,10 +55,8 @@ data class BackupCard(
     val colorArgb: Int,
     @SerialName("note")
     val note: String,
-    @SerialName("imageUri")
-    val imageUri: String?,
     @SerialName("imageAssetId")
-    val imageAssetId: String? = null,
+    val imageAssetId: String?,
     @SerialName("imageSourceType")
     val imageSourceType: String,
     @SerialName("imageProviderKey")
@@ -83,16 +68,15 @@ data class BackupCard(
     @SerialName("createdAtMillis")
     val createdAtMillis: Long,
     @SerialName("cardType")
-    val cardType: String? = null,
+    val cardType: String,
     @SerialName("statementDay")
-    val statementDay: Int? = null,
+    val statementDay: Int?,
     @SerialName("repaymentDay")
-    val repaymentDay: Int? = null,
+    val repaymentDay: Int?,
 )
 
-/** schema 1 的文件夹记录。 */
 @Serializable
-data class BackupFolderV1(
+data class BackupFolder(
     @SerialName("id")
     val id: Long,
     @SerialName("name")
@@ -105,9 +89,8 @@ data class BackupFolderV1(
     val createdAtMillis: Long,
 )
 
-/** schema 1 的消费记录。 */
 @Serializable
-data class BackupTransactionV1(
+data class BackupTransaction(
     @SerialName("id")
     val id: Long,
     @SerialName("cardId")
@@ -128,8 +111,6 @@ internal fun CardEntity.toBackup(): BackupCard {
         requiredCount = requiredCount,
         colorArgb = colorArgb,
         note = note,
-        // 已有可移植私有资产时不再把设备专属 content:// URI 写入备份。
-        imageUri = imageUri?.takeIf { it.isNotBlank() && imageAssetId.isNullOrBlank() },
         imageAssetId = imageAssetId,
         imageSourceType = imageSourceType,
         imageProviderKey = imageProviderKey,
@@ -142,13 +123,8 @@ internal fun CardEntity.toBackup(): BackupCard {
     )
 }
 
-internal fun BackupCard.toEntity(schemaVersion: Int): CardEntity {
-    val resolvedType =
-        if (schemaVersion == BackupBundle.MIN_SUPPORTED_SCHEMA_VERSION) {
-            CardType.UNSPECIFIED
-        } else {
-            checkNotNull(cardType?.let(CardType::fromKeyOrNull))
-        }
+internal fun BackupCard.toEntity(): CardEntity {
+    val resolvedType = checkNotNull(CardType.fromKeyOrNull(cardType))
     return CardEntity(
         id = id,
         name = name,
@@ -162,9 +138,9 @@ internal fun BackupCard.toEntity(schemaVersion: Int): CardEntity {
         requiredCount = requiredCount,
         colorArgb = colorArgb,
         note = note,
-        // 私有资产已经随目录恢复时，不能把另一台设备的旧 content:// URI 写回新数据库。
-        imageUri = imageUri?.takeIf { it.isNotBlank() && schemaVersion < 3 },
-        imageAssetId = imageAssetId.takeIf { schemaVersion >= 3 },
+        // 设备专属 URI 不属于备份协议；私有资产已经随目录恢复。
+        imageUri = null,
+        imageAssetId = imageAssetId,
         imageSourceType = imageSourceType,
         imageProviderKey = imageProviderKey,
         cardOrientation = cardOrientation,
@@ -173,8 +149,8 @@ internal fun BackupCard.toEntity(schemaVersion: Int): CardEntity {
     )
 }
 
-internal fun CardFolderEntity.toBackupV1(): BackupFolderV1 =
-    BackupFolderV1(
+internal fun CardFolderEntity.toBackup(): BackupFolder =
+    BackupFolder(
         id = id,
         name = name,
         colorArgb = colorArgb,
@@ -182,7 +158,7 @@ internal fun CardFolderEntity.toBackupV1(): BackupFolderV1 =
         createdAtMillis = createdAtMillis,
     )
 
-internal fun BackupFolderV1.toEntity(): CardFolderEntity =
+internal fun BackupFolder.toEntity(): CardFolderEntity =
     CardFolderEntity(
         id = id,
         name = name,
@@ -191,29 +167,28 @@ internal fun BackupFolderV1.toEntity(): CardFolderEntity =
         createdAtMillis = createdAtMillis,
     )
 
-internal fun TransactionEntity.toBackupV1(): BackupTransactionV1 =
-    BackupTransactionV1(
+internal fun TransactionEntity.toBackup(): BackupTransaction =
+    BackupTransaction(
         id = id,
         cardId = cardId,
         occurredAtMillis = occurredAtMillis,
     )
 
-internal fun BackupTransactionV1.toEntity(): TransactionEntity =
+internal fun BackupTransaction.toEntity(): TransactionEntity =
     TransactionEntity(
         id = id,
         cardId = cardId,
         occurredAtMillis = occurredAtMillis,
     )
 
-/** SAF 文件确认页使用的可信摘要；只由完整解码并校验过的 [BackupBundle] 生成。 */
-data class BackupFileInfo(
+/** 备份确认页使用的可信摘要；只由完整解码并校验过的 [BackupBundle] 生成。 */
+data class BackupPreview(
     val cardCount: Int,
     val folderCount: Int,
     val transactionCount: Int,
-    val legacyImageUriCount: Int,
     val lastModifiedMillis: Long?,
-    /** 预览时所读原始文件的 SHA-256，用于确认后阻止导入已被替换的内容。 */
-    val contentSha256: String,
+    /** 预览时所读 JSON 清单的 SHA-256，用于确认后阻止导入已被替换的内容。 */
+    val manifestSha256: String,
 )
 
 /**
@@ -236,8 +211,6 @@ enum class BackupCancelResult {
  * - [transactionsSkipped] — MERGE 模式下因 cardId 找不到映射被跳过的孤立 transaction 数
  * - [cardsSkippedInvalidFolder] — REPLACE 模式下被置为未分组的 card 数（folder 引用失效）
  * - [duplicateFolderNames] / [duplicateCardNames] — MERGE 模式下与现库重名的 folder / card 数
- * - [legacyImageUriCount] — 旧备份里仍保存外部图片 URI 的卡数；即使当前切到其他卡面样式，
- *   该引用仍可能是用户数据，UI 据此提示跨设备后可能需要重新选择
  * - 出错时抛 [BackupException]，UI 层 try-catch 转 Snackbar
  */
 data class ImportResult(
@@ -248,7 +221,6 @@ data class ImportResult(
     val cardsSkippedInvalidFolder: Int = 0,
     val duplicateFolderNames: Int = 0,
     val duplicateCardNames: Int = 0,
-    val legacyImageUriCount: Int = 0,
 )
 
 class BackupException(

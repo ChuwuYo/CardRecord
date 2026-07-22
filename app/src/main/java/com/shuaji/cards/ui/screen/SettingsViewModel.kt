@@ -9,7 +9,7 @@ import com.shuaji.cards.R
 import com.shuaji.cards.data.SettingsDoneEvent
 import com.shuaji.cards.data.backup.BackupCancelResult
 import com.shuaji.cards.data.backup.BackupException
-import com.shuaji.cards.data.backup.BackupFileInfo
+import com.shuaji.cards.data.backup.BackupPreview
 import com.shuaji.cards.data.backup.BackupRepository
 import com.shuaji.cards.data.backup.ExportSummary
 import com.shuaji.cards.data.backup.ImportMode
@@ -45,7 +45,7 @@ sealed interface SettingsUiState {
 
 data class PendingImport(
     val uri: Uri,
-    val info: BackupFileInfo,
+    val info: BackupPreview,
 )
 
 /**
@@ -85,10 +85,10 @@ class SettingsViewModel(
     }
 
     /**
-     * 用仓库的正式解码路径检查待导入文件；成功才允许 UI 进入模式确认对话框。
-     * 失败通过全局 Snackbar 告知原因，避免把损坏文件伪装成“0 条记录”。
+     * 用仓库的正式解码路径检查待导入目录；成功才允许 UI 进入模式确认对话框。
+     * 失败通过全局 Snackbar 告知原因，避免把损坏备份伪装成“0 条记录”。
      */
-    suspend fun inspectBackup(uri: Uri): BackupFileInfo? {
+    suspend fun inspectBackup(uri: Uri): BackupPreview? {
         val job = checkNotNull(currentCoroutineContext()[Job])
         if (!registerOperation(job)) return null
         return try {
@@ -147,11 +147,11 @@ class SettingsViewModel(
     fun import(
         uri: Uri,
         mode: ImportMode,
-        expectedContentSha256: String,
+        expectedManifestSha256: String,
     ) {
         launchOperation { job ->
             try {
-                val result = backup.import(uri, mode, expectedContentSha256)
+                val result = backup.import(uri, mode, expectedManifestSha256)
                 val message = formatImportMessage(result, mode)
                 finalize(job, message = message, isError = false)
             } catch (e: CancellationException) {
@@ -172,7 +172,7 @@ class SettingsViewModel(
         import(
             uri = pending.uri,
             mode = mode,
-            expectedContentSha256 = pending.info.contentSha256,
+            expectedManifestSha256 = pending.info.manifestSha256,
         )
     }
 
@@ -278,7 +278,7 @@ class SettingsViewModel(
     /**
      * 把 [ImportResult] 拼成一行可读消息。
      *
-     * 拼接顺序：模式前缀 → 主体（卡/文件夹/流水）→ 副提示（跳过/重名/FK 校验失败 / 卡面 URI 跨设备失效）。
+     * 拼接顺序：模式前缀 → 主体（卡/文件夹/流水）→ 副提示（跳过、重名、所属文件夹不存在）。
      * 任何副提示为 0 就不出现对应字段，让消息保持简洁。
      *
      * 所有用户可见文案和分隔符都从字符串资源获取。
@@ -331,14 +331,6 @@ class SettingsViewModel(
                         app.quantityString(
                             R.plurals.settings_result_extras_duplicate_cards,
                             result.duplicateCardNames,
-                        ),
-                    )
-                }
-                if (result.legacyImageUriCount > 0) {
-                    add(
-                        app.quantityString(
-                            R.plurals.settings_result_image_uri_potentially_broken,
-                            result.legacyImageUriCount,
                         ),
                     )
                 }

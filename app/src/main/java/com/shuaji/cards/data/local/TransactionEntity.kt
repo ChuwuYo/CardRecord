@@ -19,7 +19,7 @@ import androidx.room.PrimaryKey
  * 排序走文件 sort 完全够用，避免引入 Room 复合索引在 migration 阶段
  * 出现「索引名相同但列不同」的 schema 对不上陷阱。
  *
- * 备份协议通过独立的 schema DTO 映射，不让 Room 模型的重构隐式改变已发布的 JSON。
+ * 备份协议通过独立的 schema DTO 映射，不让 Room 模型重构隐式改变当前文件协议。
  */
 @Entity(
     tableName = "transactions",

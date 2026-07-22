@@ -24,11 +24,9 @@
     <string name="settings_title">设置</string>
     <string name="settings_section_data">数据</string>
     <string name="settings_export">导出配置</string>
-    <string name="settings_export_subtitle">在所选位置新建备份目录；始终包含 JSON，有图片时再创建图片文件夹</string>
+    <string name="settings_export_subtitle">在所选位置新建备份目录；始终包含 JSON，有图片时会创建图片文件夹</string>
     <string name="settings_import">导入配置</string>
-    <string name="settings_import_subtitle">选择完整备份目录，自动识别 JSON 和图片（覆盖或追加）</string>
-    <string name="settings_import_legacy">导入旧版 JSON</string>
-    <string name="settings_import_legacy_subtitle">仅用于以前导出的单个 JSON 文件</string>
+    <string name="settings_import_subtitle">选择之前导出的完整备份目录（覆盖或追加）</string>
     <string name="settings_privacy_note">备份目录包含明文卡片信息和自定义卡面，请勿分享。成功导入后，图片已经复制到本应用，可删除整个备份目录。</string>
     <string name="settings_import_dialog_title">选择导入方式</string>
     <string name="settings_import_dialog_message">"覆盖"会清空当前数据并恢复备份内容；"追加"会保留当前数据并合并备份内容。</string>
@@ -37,10 +35,10 @@
     <string name="settings_import_replace_confirm_title">确认覆盖？</string>
     <string name="settings_import_merge_confirm_title">确认追加？</string>
     <string name="settings_import_replace_confirm_message_with_count">此备份包含 %1$s / %2$s / %3$s。此操作会清空当前所有数据并写入备份内容，操作不可撤销。</string>
-    <string name="settings_import_merge_confirm_message_with_count">此备份包含 %1$s / %2$s / %3$s。追加到现有数据库，保留现有数据不变。</string>
+    <string name="settings_import_merge_confirm_message_with_count">此备份包含 %1$s / %2$s / %3$s。追加后会保留当前数据，并加入备份内容。</string>
     <string name="settings_backup_time_label">备份时间：%1$s</string>
     <string name="settings_result_export_success_with_count">已导出 %1$s / %2$s / %3$s 到新备份目录</string>
-    <string name="settings_result_export_empty">已创建空备份目录（数据库无任何记录）</string>
+    <string name="settings_result_export_empty">已创建空备份目录（当前没有卡片、文件夹或流水）</string>
     <string name="settings_result_export_directory">%1$s（目录：%2$s）</string>
     <string name="settings_result_import_replace_with_count">覆盖成功：%1$s，%2$s，%3$s</string>
     <string name="settings_result_import_merge_with_count">追加成功：%1$s，%2$s，%3$s</string>
@@ -54,18 +52,18 @@
     <string name="backup_error_open_target_uri">无法在所选位置创建或写入备份</string>
     <string name="backup_error_open_source_uri">无法读取备份目录中的 JSON</string>
     <string name="backup_error_write_failed">写入备份失败</string>
-    <string name="backup_error_source_missing">备份目录或文件不存在</string>
+    <string name="backup_error_source_missing">备份目录不存在或内容不完整</string>
     <string name="backup_error_read_failed">读取备份失败</string>
     <string name="backup_error_empty_file">备份 JSON 为空</string>
     <string name="backup_error_malformed_json">备份 JSON 格式不正确</string>
     <string name="backup_error_file_too_large">备份数据超过 %1$d MiB 上限</string>
-    <string name="backup_error_file_changed">确认期间备份文件内容已变化，请重新选择并检查</string>
-    <string name="backup_error_invalid_structure">备份文件的数据标识或字段结构无效</string>
+    <string name="backup_error_file_changed">确认期间备份内容已变化，请重新选择并检查</string>
+    <string name="backup_error_invalid_structure">备份内容无效或不完整</string>
     <string name="backup_error_image_restore_failed">备份中的卡面图片无效，或设备空间不足</string>
     <string name="backup_error_unowned_image">有旧卡面图片尚未复制到应用，请重新选择该图片后再导出</string>
     <string name="backup_error_operation_busy">另一个备份操作正在进行，请稍后再试</string>
-    <string name="backup_error_version_mismatch">备份 schema 版本不匹配（文件 version=%1$d，当前=%2$d）</string>
-    <string name="backup_error_db_write_failed">数据库写入失败</string>
+    <string name="backup_error_version_mismatch">此备份格式与当前应用版本不兼容</string>
+    <string name="backup_error_db_write_failed">无法恢复备份数据</string>
 
     <!-- ────── 主题设置 ────── -->
     <string name="settings_section_appearance">外观</string>
@@ -247,28 +245,20 @@
         <item quantity="other">%1$d 笔流水</item>
     </plurals>
     <plurals name="settings_result_extras_transactions_skipped">
-        <item quantity="one">%1$d 笔流水因引用不存在的卡被跳过</item>
-        <item quantity="other">%1$d 笔流水因引用不存在的卡被跳过</item>
+        <item quantity="one">%1$d 笔流水因对应卡片不存在而被跳过</item>
+        <item quantity="other">%1$d 笔流水因对应卡片不存在而被跳过</item>
     </plurals>
     <plurals name="settings_result_extras_cards_invalid_folder">
-        <item quantity="one">%1$d 张卡的文件夹引用无效，已置为未分组</item>
-        <item quantity="other">%1$d 张卡的文件夹引用无效，已置为未分组</item>
+        <item quantity="one">%1$d 张卡所属的文件夹不存在，已移到未分类</item>
+        <item quantity="other">%1$d 张卡所属的文件夹不存在，已移到未分类</item>
     </plurals>
     <plurals name="settings_result_extras_duplicate_folders">
-        <item quantity="one">%1$d 个文件夹与现库重名</item>
-        <item quantity="other">%1$d 个文件夹与现库重名</item>
+        <item quantity="one">%1$d 个文件夹与现有文件夹重名</item>
+        <item quantity="other">%1$d 个文件夹与现有文件夹重名</item>
     </plurals>
     <plurals name="settings_result_extras_duplicate_cards">
-        <item quantity="one">%1$d 张卡与现库重名</item>
-        <item quantity="other">%1$d 张卡与现库重名</item>
-    </plurals>
-    <plurals name="settings_result_image_uri_potentially_broken">
-        <item quantity="one">%1$d 张自定义卡面可能需要重新选择（导入无法验证图片 URI 是否仍可访问）</item>
-        <item quantity="other">%1$d 张自定义卡面可能需要重新选择（导入无法验证图片 URI 是否仍可访问）</item>
-    </plurals>
-    <plurals name="settings_dialog_image_warning">
-        <item quantity="one">其中 %1$d 张卡使用自定义图片；导入后可能需要重新选择卡面</item>
-        <item quantity="other">其中 %1$d 张卡使用自定义图片；导入后可能需要重新选择卡面</item>
+        <item quantity="one">%1$d 张卡与现有卡片重名</item>
+        <item quantity="other">%1$d 张卡与现有卡片重名</item>
     </plurals>
     <plurals name="list_filter_folder_count">
         <item quantity="one">%1$d 个文件夹</item>

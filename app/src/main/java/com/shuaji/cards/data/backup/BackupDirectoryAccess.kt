@@ -14,8 +14,6 @@ import java.io.OutputStream
  * 目录备份的存储边界。业务层只认识固定布局，不依赖 SAF 文档 URI 的层级或真实文件路径。
  */
 internal interface BackupDirectoryAccess {
-    fun isDirectory(uri: Uri): Boolean
-
     fun createBackup(
         parentUri: Uri,
         suggestedName: String,
@@ -66,8 +64,6 @@ internal class AndroidBackupDirectoryAccess(
     init {
         require(maxUnrelatedDirectoryEntries >= 0) { "maxUnrelatedDirectoryEntries 不能为负数" }
     }
-
-    override fun isDirectory(uri: Uri): Boolean = uri.scheme == ContentResolver.SCHEME_CONTENT && DocumentsContract.isTreeUri(uri)
 
     override fun createBackup(
         parentUri: Uri,

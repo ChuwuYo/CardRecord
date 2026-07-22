@@ -74,8 +74,7 @@ import java.util.concurrent.TimeUnit
  * 测试策略：
  * - 用 **Robolectric** 跑 JVM 单元测试，模拟 Android Context / ContentResolver
  * - 用 `Room.inMemoryDatabaseBuilder` 拿一次性内存数据库，每个测试建一个
- * - 用 `file://` URI + [TemporaryFolder] 把"用户保存的 JSON 文件"落到临时文件，
- *   ContentResolver.openAssetFileDescriptor 在 Robolectric 下对 file:// 原生支持
+ * - 用 `file://` URI + [TemporaryFolder] 构造完整备份目录，生产 APK 仍只使用 SAF 文档树
  * - 用 `runTest`（kotlinx-coroutines-test）跑 suspend 函数
  *
  * 覆盖矩阵：
@@ -134,24 +133,28 @@ class BackupRepositoryTest {
 
     // ─── 工具 ────────────────────────────────────────────────────
 
-    private fun tempJsonFile(name: String = "backup.json"): File = tempFolder.newFile(name)
+    /** 返回当前格式备份目录里的清单文件，便于测试直接构造或篡改 JSON。 */
+    private fun tempManifestFile(name: String = "backup.json"): File {
+        val directory = tempFolder.newFolder(name.removeSuffix(".json"))
+        return directory.resolve(BACKUP_MANIFEST_FILE_NAME).apply { check(createNewFile()) }
+    }
+
+    private fun File.backupDirectory(): File = if (isDirectory) this else checkNotNull(parentFile)
 
     /** 生产导入必须绑定用户刚确认过的同一份内容；测试也统一走这条不变量。 */
     private suspend fun importInspected(
-        file: File,
+        backup: File,
         mode: ImportMode,
         repository: BackupRepository = repo,
     ): ImportResult {
-        val uri = Uri.fromFile(file)
+        val uri = Uri.fromFile(backup.backupDirectory())
         val inspected = repository.inspect(uri)
-        return repository.import(uri, mode, inspected.contentSha256)
+        return repository.import(uri, mode, inspected.manifestSha256)
     }
 
     private fun json(): Json =
         Json {
             prettyPrint = true
-            ignoreUnknownKeys = true
-            encodeDefaults = true
         }
 
     private fun directoryManifest(directory: File): Pair<BackupBundle, JsonObject> {
@@ -316,9 +319,9 @@ class BackupRepositoryTest {
             assertEquals(1, bundle.folders.size)
             assertEquals(1, bundle.cards.size)
             assertEquals(1, bundle.transactions.size)
-            assertEquals(PUBLISHED_TOP_LEVEL_FIELDS, exportedJson.keys)
+            assertEquals(CURRENT_TOP_LEVEL_FIELDS, exportedJson.keys)
             assertEquals(
-                PUBLISHED_CARD_FIELDS,
+                CURRENT_CARD_FIELDS,
                 exportedJson
                     .getValue("cards")
                     .jsonArray
@@ -326,7 +329,7 @@ class BackupRepositoryTest {
                     .jsonObject.keys,
             )
             assertEquals(
-                PUBLISHED_FOLDER_FIELDS,
+                CURRENT_FOLDER_FIELDS,
                 exportedJson
                     .getValue("folders")
                     .jsonArray
@@ -334,7 +337,7 @@ class BackupRepositoryTest {
                     .jsonObject.keys,
             )
             assertEquals(
-                PUBLISHED_TRANSACTION_FIELDS,
+                CURRENT_TRANSACTION_FIELDS,
                 exportedJson
                     .getValue("transactions")
                     .jsonArray
@@ -345,7 +348,7 @@ class BackupRepositoryTest {
             assertEquals("PROVIDER", bundle.cards.single().imageSourceType)
             assertEquals("visa", bundle.cards.single().imageProviderKey)
             assertEquals(f1.copy(id = f1Id), bundle.folders.single().toEntity())
-            assertEquals(c1.copy(id = c1Id), bundle.cards.single().toEntity(bundle.version))
+            assertEquals(c1.copy(id = c1Id), bundle.cards.single().toEntity())
             assertEquals(sourceTransaction.copy(id = transactionId), bundle.transactions.single().toEntity())
             assertFalse(
                 "BackupBundle 不应再含 exportedAtMillis 字段",
@@ -463,8 +466,6 @@ class BackupRepositoryTest {
                     userImages = FailClosedTestUserCardImageStore,
                     directoryAccess =
                         object : BackupDirectoryAccess {
-                            override fun isDirectory(uri: Uri): Boolean = true
-
                             override fun createBackup(
                                 parentUri: Uri,
                                 suggestedName: String,
@@ -608,29 +609,23 @@ class BackupRepositoryTest {
         }
 
     @Test
-    fun schemaThree_rejectsDeviceSpecificLegacyImageUri() =
+    fun schemaThree_rejectsUnknownImageUriField() =
         runTest {
-            val file = tempJsonFile("schema-three-legacy-uri.json")
-            file.writeText(
+            val file = tempManifestFile("schema-three-unknown-image-uri.json")
+            val current =
                 json().encodeToString(
-                    TestData.backupBundle(
-                        version = 3,
-                        cards =
-                            listOf(
-                                card(
-                                    id = 10L,
-                                    name = "不可移植图片",
-                                    imageUri = "content://other-device/image",
-                                    imageSourceType = ImageSourceType.USER.key,
-                                ),
-                            ),
-                    ),
+                    TestData.backupBundle(cards = listOf(card(id = 10L, name = "不可移植图片"))),
+                )
+            file.writeText(
+                current.replace(
+                    "\"imageAssetId\": null",
+                    "\"imageUri\": \"content://other-device/image\",\n        \"imageAssetId\": null",
                 ),
                 Charsets.UTF_8,
             )
 
             assertThrows(BackupException::class.java) {
-                runBlocking { repo.inspect(Uri.fromFile(file)) }
+                runBlocking { repo.inspect(Uri.fromFile(file.backupDirectory())) }
             }
         }
 
@@ -784,42 +779,38 @@ class BackupRepositoryTest {
         runTest {
             val bundle =
                 TestData.backupBundle(
-                    version = 2,
                     folders = listOf(folder(id = 10L, name = "旅行")),
                     cards =
                         listOf(
                             card(
                                 id = 20L,
-                                name = "自定义卡",
+                                name = "旅行卡",
                                 folderId = 10L,
-                                imageUri = "content://card/image",
-                                imageSourceType = ImageSourceType.USER.key,
                             ),
                         ),
                     transactions = listOf(transaction(id = 30L, cardId = 20L)),
                 )
-            val file = tempJsonFile("inspect.json")
+            val file = tempManifestFile("inspect.json")
             file.writeText(json().encodeToString(bundle), Charsets.UTF_8)
 
-            val info = repo.inspect(Uri.fromFile(file))
+            val info = repo.inspect(Uri.fromFile(file.backupDirectory()))
 
             assertEquals(1, info.folderCount)
             assertEquals(1, info.cardCount)
             assertEquals(1, info.transactionCount)
-            assertEquals(1, info.legacyImageUriCount)
-            assertEquals(64, info.contentSha256.length)
+            assertEquals(64, info.manifestSha256.length)
         }
 
     @Test
     fun import_rejectsFileChangedAfterInspection_withoutWriting() =
         runTest {
             val originalId = db.cardDao().upsert(card(name = "现库卡"))
-            val file = tempJsonFile("changed-after-preview.json")
+            val file = tempManifestFile("changed-after-preview.json")
             file.writeText(
                 json().encodeToString(TestData.backupBundle(cards = listOf(card(id = 10L, name = "预览卡")))),
                 Charsets.UTF_8,
             )
-            val preview = repo.inspect(Uri.fromFile(file))
+            val preview = repo.inspect(Uri.fromFile(file.backupDirectory()))
             file.writeText(
                 json().encodeToString(TestData.backupBundle(cards = listOf(card(id = 20L, name = "替换卡")))),
                 Charsets.UTF_8,
@@ -829,9 +820,9 @@ class BackupRepositoryTest {
                 assertThrows(BackupException::class.java) {
                     runBlocking {
                         repo.import(
-                            Uri.fromFile(file),
+                            Uri.fromFile(file.backupDirectory()),
                             ImportMode.REPLACE,
-                            expectedContentSha256 = preview.contentSha256,
+                            expectedManifestSha256 = preview.manifestSha256,
                         )
                     }
                 }
@@ -888,7 +879,7 @@ class BackupRepositoryTest {
                     repository.import(
                         Uri.fromFile(directory),
                         ImportMode.REPLACE,
-                        preview.contentSha256,
+                        preview.manifestSha256,
                     )
                 }
             }
@@ -899,18 +890,18 @@ class BackupRepositoryTest {
     @Test
     fun import_acceptsUnchangedFileBoundToInspectionDigest() =
         runTest {
-            val file = tempJsonFile("unchanged-after-preview.json")
+            val file = tempManifestFile("unchanged-after-preview.json")
             file.writeText(
                 json().encodeToString(TestData.backupBundle(cards = listOf(card(id = 10L, name = "同一文件")))),
                 Charsets.UTF_8,
             )
-            val preview = repo.inspect(Uri.fromFile(file))
+            val preview = repo.inspect(Uri.fromFile(file.backupDirectory()))
 
             val result =
                 repo.import(
-                    Uri.fromFile(file),
+                    Uri.fromFile(file.backupDirectory()),
                     ImportMode.REPLACE,
-                    expectedContentSha256 = preview.contentSha256,
+                    expectedManifestSha256 = preview.manifestSha256,
                 )
 
             assertEquals(1, result.cardsAdded)
@@ -939,12 +930,11 @@ class BackupRepositoryTest {
             // 2) 备份只有新数据
             val newBundle =
                 TestData.backupBundle(
-                    version = 1,
                     folders = listOf(folder(id = 100L, name = "新分组")),
                     cards = listOf(card(id = 200L, name = "新卡")),
                     transactions = emptyList(),
                 )
-            val file = tempJsonFile()
+            val file = tempManifestFile()
             file.writeText(json().encodeToString(newBundle), Charsets.UTF_8)
 
             // 3) REPLACE 导入
@@ -969,7 +959,6 @@ class BackupRepositoryTest {
             // 备份里 card 引用 folderId=9999，但 bundle.folders 里没有 id=9999 的 folder
             val broken =
                 TestData.backupBundle(
-                    version = 1,
                     folders = listOf(folder(id = 10L, name = "A")),
                     cards =
                         listOf(
@@ -978,7 +967,7 @@ class BackupRepositoryTest {
                         ),
                     transactions = emptyList(),
                 )
-            val file = tempJsonFile()
+            val file = tempManifestFile()
             file.writeText(json().encodeToString(broken), Charsets.UTF_8)
 
             val result = importInspected(file, ImportMode.REPLACE)
@@ -1012,7 +1001,7 @@ class BackupRepositoryTest {
                             card(id = 20L, name = "重复二"),
                         ),
                 )
-            val file = tempJsonFile("duplicate-card-id.json")
+            val file = tempManifestFile("duplicate-card-id.json")
             file.writeText(json().encodeToString(bundle), Charsets.UTF_8)
 
             assertThrows(BackupException::class.java) {
@@ -1025,7 +1014,7 @@ class BackupRepositoryTest {
     fun replace_nonPositiveRequiredCount_isRejectedBeforeWriting() =
         runTest {
             val originalId = db.cardDao().upsert(card(name = "原卡"))
-            val file = tempJsonFile("invalid-required-count.json")
+            val file = tempManifestFile("invalid-required-count.json")
             file.writeText(
                 json().encodeToString(
                     TestData.backupBundle(cards = listOf(card(id = 20L, name = "无效目标", requiredCount = 0))),
@@ -1054,7 +1043,7 @@ class BackupRepositoryTest {
                             ),
                         ),
                 )
-            val file = tempJsonFile("maximum-ids.json")
+            val file = tempManifestFile("maximum-ids.json")
             file.writeText(json().encodeToString(bundle), Charsets.UTF_8)
 
             importInspected(file, ImportMode.REPLACE)
@@ -1086,8 +1075,8 @@ class BackupRepositoryTest {
             assertEquals(5, db.transactionDao().listAll().size)
 
             // 2) REPLACE 一个空 bundle → 期望所有表被清空
-            val empty = TestData.backupBundle(version = 1)
-            val file = tempJsonFile()
+            val empty = TestData.backupBundle()
+            val file = tempManifestFile()
             file.writeText(json().encodeToString(empty), Charsets.UTF_8)
             importInspected(file, ImportMode.REPLACE)
 
@@ -1257,18 +1246,17 @@ class BackupRepositoryTest {
         }
 
     @Test
-    fun schemaTwo_nonCreditCardsDiscardCreditOnlyDays() =
+    fun schemaThree_nonCreditCardsDiscardCreditOnlyDays() =
         runTest {
             val validDebit =
                 TestData.backupBundle(
-                    version = 2,
                     cards = listOf(card(id = 20L, name = "借记卡", cardType = CardType.DEBIT.key)),
                 )
             val inconsistentDebit =
                 validDebit.copy(
                     cards = validDebit.cards.map { it.copy(statementDay = 8, repaymentDay = 21) },
                 )
-            val file = tempJsonFile("debit-with-credit-days.json")
+            val file = tempManifestFile("debit-with-credit-days.json")
             file.writeText(json().encodeToString(inconsistentDebit), Charsets.UTF_8)
 
             importInspected(file, ImportMode.REPLACE)
@@ -1280,12 +1268,11 @@ class BackupRepositoryTest {
         }
 
     @Test
-    fun schemaTwo_rejectsMissingOrUnknownTypeAndInvalidDaysBeforeWriting() =
+    fun schemaThree_rejectsUnknownTypeAndInvalidDaysBeforeWriting() =
         runTest {
             val originalId = db.cardDao().upsert(card(name = "原卡"))
             val valid =
                 TestData.backupBundle(
-                    version = 2,
                     cards =
                         listOf(
                             card(
@@ -1299,7 +1286,6 @@ class BackupRepositoryTest {
                 )
             val invalidCards =
                 listOf(
-                    valid.cards.single().copy(cardType = null),
                     valid.cards.single().copy(cardType = "FUTURE_TYPE"),
                     valid.cards.single().copy(statementDay = 0),
                     valid.cards.single().copy(statementDay = 32),
@@ -1308,7 +1294,7 @@ class BackupRepositoryTest {
                 )
 
             invalidCards.forEachIndexed { index, invalidCard ->
-                val file = tempJsonFile("invalid-card-details-$index.json")
+                val file = tempManifestFile("invalid-card-details-$index.json")
                 file.writeText(
                     json().encodeToString(valid.copy(cards = listOf(invalidCard))),
                     Charsets.UTF_8,
@@ -1341,11 +1327,10 @@ class BackupRepositoryTest {
                     transaction(id = 100L, cardId = 20L, occurredAtMillis = 1_700_000_000_000L),
                     transaction(id = 101L, cardId = 20L, occurredAtMillis = 1_800_000_000_000L),
                 )
-            val file = tempJsonFile()
+            val file = tempManifestFile()
             file.writeText(
                 json().encodeToString(
                     TestData.backupBundle(
-                        version = 2,
                         cards = listOf(originalCard),
                         transactions = originalTransactions,
                     ),
@@ -1379,11 +1364,10 @@ class BackupRepositoryTest {
                 transactions = listOf(transaction(id = 3L, cardId = 2L)),
             )
             val before = snapshotDatabase()
-            val file = tempJsonFile()
+            val file = tempManifestFile()
             file.writeText(
                 json().encodeToString(
                     TestData.backupBundle(
-                        version = 2,
                         cards = listOf(card(id = 20L, name = "备份卡")),
                     ),
                 ),
@@ -1398,6 +1382,7 @@ class BackupRepositoryTest {
                     transactionDao = db.transactionDao(),
                     normalizeInTransaction = { error("归一化失败") },
                     userImages = FailClosedTestUserCardImageStore,
+                    directoryAccess = LocalBackupDirectoryAccess,
                 )
 
             assertThrows(BackupException::class.java) {
@@ -1410,7 +1395,7 @@ class BackupRepositoryTest {
     @Test
     fun imageGarbageCollectionFailure_doesNotReverseCommittedImportResult() =
         runTest {
-            val file = tempJsonFile("image-cleanup-failure.json")
+            val file = tempManifestFile("image-cleanup-failure.json")
             file.writeText(
                 json().encodeToString(TestData.backupBundle(cards = listOf(card(id = 20L, name = "已导入")))),
                 Charsets.UTF_8,
@@ -1424,6 +1409,7 @@ class BackupRepositoryTest {
                     transactionDao = db.transactionDao(),
                     normalizeInTransaction = cardRepository::normalizeOverdueCyclesInTransaction,
                     userImages = GarbageCollectingUserImageStore { error("模拟图片清理失败") },
+                    directoryAccess = LocalBackupDirectoryAccess,
                 )
 
             val result = importInspected(file, ImportMode.REPLACE, repository)
@@ -1449,7 +1435,6 @@ class BackupRepositoryTest {
             // 1) 现库空 → merge 2 个 folder
             val bundle =
                 TestData.backupBundle(
-                    version = 1,
                     folders =
                         listOf(
                             folder(id = 10L, name = "A"),
@@ -1458,7 +1443,7 @@ class BackupRepositoryTest {
                     cards = emptyList(),
                     transactions = emptyList(),
                 )
-            val file = tempJsonFile()
+            val file = tempManifestFile()
             file.writeText(json().encodeToString(bundle), Charsets.UTF_8)
 
             val result = importInspected(file, ImportMode.MERGE)
@@ -1475,7 +1460,6 @@ class BackupRepositoryTest {
         runTest {
             val bundle =
                 TestData.backupBundle(
-                    version = 1,
                     folders = listOf(folder(id = 10L, name = "A")),
                     cards =
                         listOf(
@@ -1492,7 +1476,7 @@ class BackupRepositoryTest {
                         ),
                     transactions = emptyList(),
                 )
-            val file = tempJsonFile()
+            val file = tempManifestFile()
             file.writeText(json().encodeToString(bundle), Charsets.UTF_8)
 
             val result = importInspected(file, ImportMode.MERGE)
@@ -1523,7 +1507,6 @@ class BackupRepositoryTest {
             // 备份里：1 folder + 1 card + 2 transactions
             val bundle =
                 TestData.backupBundle(
-                    version = 1,
                     folders = listOf(folder(id = 10L, name = "A")),
                     cards = listOf(card(id = 20L, name = "C", folderId = 10L)),
                     transactions =
@@ -1532,7 +1515,7 @@ class BackupRepositoryTest {
                             transaction(id = 101L, cardId = 20L, occurredAtMillis = 2_000L),
                         ),
                 )
-            val file = tempJsonFile()
+            val file = tempManifestFile()
             file.writeText(json().encodeToString(bundle), Charsets.UTF_8)
 
             importInspected(file, ImportMode.MERGE)
@@ -1572,7 +1555,6 @@ class BackupRepositoryTest {
                     requiredCount = 6,
                     colorArgb = 0xFF405060.toInt(),
                     note = "历史备注",
-                    imageUri = "content://history/image",
                     imageSourceType = "USER",
                     imageProviderKey = "history-provider",
                     cardOrientation = "PORTRAIT",
@@ -1584,11 +1566,10 @@ class BackupRepositoryTest {
                     transaction(id = 100L, cardId = 20L, occurredAtMillis = 444L),
                     transaction(id = 101L, cardId = 20L, occurredAtMillis = 555L),
                 )
-            val file = tempJsonFile()
+            val file = tempManifestFile()
             file.writeText(
                 json().encodeToString(
                     TestData.backupBundle(
-                        version = 2,
                         folders = listOf(originalFolder),
                         cards = listOf(originalCard),
                         transactions = originalTransactions,
@@ -1625,7 +1606,6 @@ class BackupRepositoryTest {
             // 备份里：1 张 card（id=20）+ 1 笔孤立 transaction（cardId=9999，指向不存在的卡）
             val bundle =
                 TestData.backupBundle(
-                    version = 1,
                     folders = emptyList(),
                     cards = listOf(card(id = 20L, name = "C")),
                     transactions =
@@ -1634,7 +1614,7 @@ class BackupRepositoryTest {
                             transaction(id = 101L, cardId = 9999L), // 孤儿：cardId 找不到映射
                         ),
                 )
-            val file = tempJsonFile()
+            val file = tempManifestFile()
             file.writeText(json().encodeToString(bundle), Charsets.UTF_8)
 
             val result = importInspected(file, ImportMode.MERGE)
@@ -1659,7 +1639,6 @@ class BackupRepositoryTest {
             // 2) 备份里也有 "A" + "C"（重名）+ "B" + "D"（新）→ 期望各 1 个重名
             val bundle =
                 TestData.backupBundle(
-                    version = 1,
                     folders =
                         listOf(
                             folder(id = 10L, name = "A"), // 跟现库重名
@@ -1672,7 +1651,7 @@ class BackupRepositoryTest {
                         ),
                     transactions = emptyList(),
                 )
-            val file = tempJsonFile()
+            val file = tempManifestFile()
             file.writeText(json().encodeToString(bundle), Charsets.UTF_8)
 
             val result = importInspected(file, ImportMode.MERGE)
@@ -1691,29 +1670,45 @@ class BackupRepositoryTest {
     // ════════════════════════════════════════════════════════════
 
     @Test
-    fun import_wrong_version_throws_BackupException() =
+    fun import_rejectsEveryUnsupportedVersion_withoutChangingDatabase() =
         runTest {
-            val file = tempJsonFile()
-            file.writeText(
-                """{"version": 99, "cards": [], "folders": [], "transactions": []}""",
-                Charsets.UTF_8,
-            )
+            val originalId = db.cardDao().upsert(card(name = "原卡"))
 
-            val ex =
-                assertThrows(BackupException::class.java) {
-                    runBlocking { importInspected(file, ImportMode.REPLACE) }
-                }
-            assertTrue(
-                "异常信息应说明版本不匹配，实际：${ex.message}",
-                ex.message.orEmpty().contains("版本不匹配"),
-            )
+            listOf(1, 2, BackupBundle.SCHEMA_VERSION + 1, 99).forEach { version ->
+                val file = tempManifestFile("unsupported-$version.json")
+                file.writeText(
+                    """{"version": $version, "cards": [], "folders": [], "transactions": []}""",
+                    Charsets.UTF_8,
+                )
+
+                val exception =
+                    assertThrows(BackupException::class.java) {
+                        runBlocking { importInspected(file, ImportMode.REPLACE) }
+                    }
+                assertTrue(exception.message.orEmpty().contains("不兼容"))
+                assertEquals("原卡", db.cardDao().getById(originalId)?.name)
+            }
+        }
+
+    @Test
+    fun inspect_rejectsSingleJsonFile_withoutChangingDatabase() =
+        runTest {
+            val originalId = db.cardDao().upsert(card(name = "原卡"))
+            val file = tempFolder.newFile("single-backup.json")
+            file.writeText(json().encodeToString(TestData.backupBundle()), Charsets.UTF_8)
+
+            assertThrows(BackupException::class.java) {
+                runBlocking { repo.inspect(Uri.fromFile(file)) }
+            }
+
+            assertEquals("原卡", db.cardDao().getById(originalId)?.name)
         }
 
     @Test
     fun import_missing_version_field_throws_BackupException() =
         runTest {
-            // 关键：@Required 强制要求 version 字段存在，缺了 → MissingFieldException → 包成 BackupException
-            val file = tempJsonFile()
+            // version 没有解码默认值，缺失时必须失败，不能静默当作当前格式。
+            val file = tempManifestFile()
             file.writeText(
                 """{"cards": [], "folders": [], "transactions": []}""",
                 Charsets.UTF_8,
@@ -1735,13 +1730,13 @@ class BackupRepositoryTest {
             val originalId = db.cardDao().upsert(card(name = "原卡"))
             val incompleteFiles =
                 listOf(
-                    """{"version":1,"folders":[],"transactions":[]}""",
-                    """{"version":1,"cards":[],"transactions":[]}""",
-                    """{"version":1,"cards":[],"folders":[]}""",
+                    """{"version":3,"folders":[],"transactions":[]}""",
+                    """{"version":3,"cards":[],"transactions":[]}""",
+                    """{"version":3,"cards":[],"folders":[]}""",
                 )
 
             incompleteFiles.forEachIndexed { index, content ->
-                val file = tempJsonFile("missing-table-$index.json")
+                val file = tempManifestFile("missing-table-$index.json")
                 file.writeText(content, Charsets.UTF_8)
 
                 assertThrows(BackupException::class.java) {
@@ -1754,7 +1749,7 @@ class BackupRepositoryTest {
     @Test
     fun import_malformed_json_throws_BackupException() =
         runTest {
-            val file = tempJsonFile()
+            val file = tempManifestFile()
             file.writeText("""this is not json {""", Charsets.UTF_8)
 
             val ex =
@@ -1767,9 +1762,8 @@ class BackupRepositoryTest {
     @Test
     fun import_empty_file_throws_BackupException() =
         runTest {
-            val file = tempJsonFile()
-            // 文件存在但内容为空（0 字节）—— openInputStream 拿到 0 字节流
-            // text.isBlank() → BackupException("备份文件为空")
+            val file = tempManifestFile()
+            // 清单存在但内容为空（0 字节），应在解码前给出明确错误。
             val ex =
                 assertThrows(BackupException::class.java) {
                     runBlocking { importInspected(file, ImportMode.REPLACE) }
@@ -1781,9 +1775,9 @@ class BackupRepositoryTest {
     fun import_fileOverConfiguredLimit_isRejectedBeforeWriting() =
         runTest {
             val originalId = db.cardDao().upsert(card(name = "原卡"))
-            val file = tempJsonFile("oversized.json")
+            val file = tempManifestFile("oversized.json")
             file.writeText(
-                """{"version":1,"cards":[],"folders":[],"transactions":[]}""" + " ".repeat(256),
+                """{"version":3,"cards":[],"folders":[],"transactions":[]}""" + " ".repeat(256),
                 Charsets.UTF_8,
             )
             val limitedRepo = repositoryWithLimit(maxBackupBytes = 96L)
@@ -1809,7 +1803,7 @@ class BackupRepositoryTest {
                 transactionDao = db.transactionDao(),
                 normalizeInTransaction = cardRepository::normalizeOverdueCyclesInTransaction,
                 userImages = FailClosedTestUserCardImageStore,
-                openInputStream = { _, _ -> blockingInput },
+                directoryAccess = FixedImportDirectoryAccess { blockingInput },
             )
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
@@ -1847,12 +1841,24 @@ class BackupRepositoryTest {
                 transactionDao = db.transactionDao(),
                 normalizeInTransaction = cardRepository::normalizeOverdueCyclesInTransaction,
                 userImages = FailClosedTestUserCardImageStore,
-                openInputStream = { _, signal ->
-                    signal.setOnCancelListener { providerCancelled.countDown() }
-                    openStarted.countDown()
-                    providerCancelled.await()
-                    throw OperationCanceledException("provider open cancelled")
-                },
+                directoryAccess =
+                    object : BackupDirectoryAccess {
+                        override fun createBackup(
+                            parentUri: Uri,
+                            suggestedName: String,
+                            cancellationSignal: android.os.CancellationSignal,
+                        ): BackupDirectory = error("not used")
+
+                        override fun openBackup(
+                            directoryUri: Uri,
+                            cancellationSignal: android.os.CancellationSignal,
+                        ): BackupDirectory {
+                            cancellationSignal.setOnCancelListener { providerCancelled.countDown() }
+                            openStarted.countDown()
+                            providerCancelled.await()
+                            throw OperationCanceledException("provider open cancelled")
+                        }
+                    },
             )
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
@@ -1886,8 +1892,6 @@ class BackupRepositoryTest {
                 userImages = FailClosedTestUserCardImageStore,
                 directoryAccess =
                     object : BackupDirectoryAccess {
-                        override fun isDirectory(uri: Uri): Boolean = true
-
                         override fun createBackup(
                             parentUri: Uri,
                             suggestedName: String,
@@ -1968,7 +1972,7 @@ class BackupRepositoryTest {
                 transactionDao = db.transactionDao(),
                 normalizeInTransaction = cardRepository::normalizeOverdueCyclesInTransaction,
                 userImages = FailClosedTestUserCardImageStore,
-                openInputStream = { _, _ -> blockingInput },
+                directoryAccess = FixedImportDirectoryAccess { blockingInput },
             )
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
@@ -1991,7 +1995,7 @@ class BackupRepositoryTest {
     @Test
     fun importCommitBoundary_rejectsCancellation_andReturnsCommittedResult() {
         val existingId = runBlocking { db.cardDao().upsert(card(name = "提交前")) }
-        val file = tempJsonFile("commit-boundary.json")
+        val file = tempManifestFile("commit-boundary.json")
         file.writeText(
             json().encodeToString(TestData.backupBundle(cards = listOf(card(id = 10L, name = "已提交")))),
             Charsets.UTF_8,
@@ -2011,6 +2015,7 @@ class BackupRepositoryTest {
                         cleanupStarted.countDown()
                         finishCleanup.await()
                     },
+                directoryAccess = LocalBackupDirectoryAccess,
             )
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
@@ -2047,7 +2052,7 @@ class BackupRepositoryTest {
             runBlocking {
                 db.cardDao().upsert(card(name = "原卡", folderId = originalFolderId))
             }
-        val file = tempJsonFile("cancel-during-normalize.json")
+        val file = tempManifestFile("cancel-during-normalize.json")
         file.writeText(
             json().encodeToString(TestData.backupBundle(cards = listOf(card(id = 10L, name = "不应提交")))),
             Charsets.UTF_8,
@@ -2067,6 +2072,7 @@ class BackupRepositoryTest {
                     keepNormalizing.await()
                     0
                 },
+                directoryAccess = LocalBackupDirectoryAccess,
             )
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
@@ -2098,179 +2104,23 @@ class BackupRepositoryTest {
     }
 
     @Test
-    fun import_missingRequiredEntityTimestamp_isRejected() =
-        runTest {
-            val file = tempJsonFile("missing-created-at.json")
-            file.writeText(
-                """
-                {
-                  "version": 1,
-                  "cards": [{
-                    "id": 20,
-                    "name": "缺时间",
-                    "bank": "测试银行",
-                    "cardNumberMasked": "**** 1234",
-                    "requiredCount": 5,
-                    "colorArgb": -1
-                  }],
-                  "folders": [],
-                  "transactions": []
-                }
-                """.trimIndent(),
-                Charsets.UTF_8,
-            )
-
-            val exception =
-                assertThrows(BackupException::class.java) {
-                    runBlocking { importInspected(file, ImportMode.REPLACE) }
-                }
-
-            assertTrue(exception.message.orEmpty().contains("格式不正确"))
-        }
-
-    @Test
-    fun schemaOneDto_rejectsEveryMissingPublishedEntityField() {
+    fun schemaThreeDto_rejectsEveryMissingCurrentEntityField() {
         val requiredFields =
             mapOf(
-                "cards" to SCHEMA_ONE_CARD_FIELDS,
-                "folders" to PUBLISHED_FOLDER_FIELDS,
-                "transactions" to PUBLISHED_TRANSACTION_FIELDS,
+                "cards" to CURRENT_CARD_FIELDS,
+                "folders" to CURRENT_FOLDER_FIELDS,
+                "transactions" to CURRENT_TRANSACTION_FIELDS,
             )
 
         requiredFields.forEach { (table, fields) ->
             fields.forEach { field ->
-                val incompleteJson = frozenFixtureWithoutField(table, field)
-                assertThrows("schema 1 必须拒绝缺失字段 $table.$field", SerializationException::class.java) {
+                val incompleteJson = currentFixtureWithoutField(table, field)
+                assertThrows("schema 3 必须拒绝缺失字段 $table.$field", SerializationException::class.java) {
                     json().decodeFromString<BackupBundle>(incompleteJson)
                 }
             }
         }
     }
-
-    @Test
-    fun frozenSchemaOneFixture_importsInReplaceAndMergeModes() =
-        runTest {
-            val file = tempJsonFile("schema-one-frozen.json")
-            file.writeText(FROZEN_SCHEMA_ONE_JSON, Charsets.UTF_8)
-
-            val expectedFolder =
-                folder(
-                    name = "历史分组",
-                    colorArgb = -65536,
-                    sortOrder = 2,
-                    createdAtMillis = 111L,
-                )
-            val expectedCard =
-                card(
-                    name = "历史卡",
-                    bank = "历史银行",
-                    cardNumberMasked = "**** 1234",
-                    requiredCount = 5,
-                    colorArgb = -16776961,
-                    note = "历史备注",
-                    imageSourceType = "NONE",
-                    imageProviderKey = "visa",
-                    cardOrientation = "LANDSCAPE",
-                    createdAtMillis = 333L,
-                )
-
-            importInspected(file, ImportMode.REPLACE)
-
-            val replacedFolder = db.cardFolderDao().listAll().single()
-            val replacedCard = db.cardDao().listAll().single()
-            val replacedTransaction = db.transactionDao().listAll().single()
-            assertEquals(expectedFolder.copy(id = replacedFolder.id), replacedFolder)
-            assertEquals(
-                expectedCard.copy(id = replacedCard.id, folderId = replacedFolder.id),
-                replacedCard,
-            )
-            assertEquals(CardType.UNSPECIFIED.key, replacedCard.cardType)
-            assertNull(replacedCard.statementDay)
-            assertNull(replacedCard.repaymentDay)
-            assertEquals(replacedFolder.id, replacedCard.folderId)
-            assertEquals(
-                transaction(id = replacedTransaction.id, cardId = replacedCard.id, occurredAtMillis = 444L),
-                replacedTransaction,
-            )
-
-            importInspected(file, ImportMode.MERGE)
-
-            val mergedFolders = db.cardFolderDao().listAll()
-            val mergedCards = db.cardDao().listAll()
-            val mergedTransactions = db.transactionDao().listAll()
-            assertEquals(2, mergedFolders.size)
-            assertTrue(mergedFolders.all { it.copy(id = 0L) == expectedFolder })
-            assertEquals(2, mergedCards.size)
-            assertTrue(mergedCards.all { it.copy(id = 0L, folderId = null) == expectedCard })
-            assertEquals(2, mergedTransactions.size)
-            assertTrue(mergedTransactions.all { it.occurredAtMillis == 444L })
-            assertTrue(mergedTransactions.all { transaction -> mergedCards.any { it.id == transaction.cardId } })
-        }
-
-    @Test
-    fun frozenSchemaTwoWithoutImageAssetId_importsInReplaceAndMergeModes() =
-        runTest {
-            val file = tempJsonFile("schema-two-frozen.json")
-            file.writeText(FROZEN_SCHEMA_TWO_JSON, Charsets.UTF_8)
-
-            importInspected(file, ImportMode.REPLACE)
-
-            val replaced = db.cardDao().listAll().single()
-            assertEquals(CardType.CREDIT.key, replaced.cardType)
-            assertEquals(8, replaced.statementDay)
-            assertEquals(26, replaced.repaymentDay)
-            assertNull(replaced.imageAssetId)
-
-            importInspected(file, ImportMode.MERGE)
-
-            val merged = db.cardDao().listAll()
-            assertEquals(2, merged.size)
-            assertTrue(merged.all { it.imageAssetId == null })
-            assertTrue(merged.all { it.cardType == CardType.CREDIT.key })
-        }
-
-    // ════════════════════════════════════════════════════════════
-    // 旧外部 imageUri 的跨设备提示
-    // ════════════════════════════════════════════════════════════
-
-    @Test
-    fun replace_counts_cardsWithLegacyImageUris() =
-        runTest {
-            // 备份里 2 张 USER 卡 + 1 张 PROVIDER 卡 + 1 张 NONE 卡
-            // 显式使用稳定 key 覆盖 USER / PROVIDER / NONE 三类。
-            val userCard = card(id = 10L, name = "U", imageUri = "content://image/u").copy(imageSourceType = "USER")
-            val providerCard = card(id = 11L, name = "P").copy(imageSourceType = "PROVIDER")
-            val noneCard = card(id = 12L, name = "N").copy(imageSourceType = "NONE")
-            val bundle =
-                TestData.backupBundle(
-                    version = 1,
-                    cards = listOf(userCard, providerCard, noneCard),
-                )
-            val file = tempJsonFile()
-            file.writeText(json().encodeToString(bundle), Charsets.UTF_8)
-
-            val result = importInspected(file, ImportMode.REPLACE)
-            assertEquals(1, result.legacyImageUriCount)
-        }
-
-    @Test
-    fun merge_counts_cardsWithLegacyImageUris() =
-        runTest {
-            // 现库空 + 备份 3 张卡（USER / PROVIDER / NONE 各 1）→ expect 1
-            val userCard = card(id = 10L, name = "U", imageUri = "content://image/u").copy(imageSourceType = "USER")
-            val providerCard = card(id = 11L, name = "P").copy(imageSourceType = "PROVIDER")
-            val noneCard = card(id = 12L, name = "N").copy(imageSourceType = "NONE")
-            val bundle =
-                TestData.backupBundle(
-                    version = 1,
-                    cards = listOf(userCard, providerCard, noneCard),
-                )
-            val file = tempJsonFile()
-            file.writeText(json().encodeToString(bundle), Charsets.UTF_8)
-
-            val result = importInspected(file, ImportMode.MERGE)
-            assertEquals(1, result.legacyImageUriCount)
-        }
 
     @Test
     fun merge_missingBackupFolder_doesNotAttachCardToSameNumericExistingFolder() =
@@ -2280,7 +2130,7 @@ class BackupRepositoryTest {
                 TestData.backupBundle(
                     cards = listOf(card(id = 10L, name = "备份卡", folderId = existingFolderId)),
                 )
-            val file = tempJsonFile("missing-backup-folder.json")
+            val file = tempManifestFile("missing-backup-folder.json")
             file.writeText(json().encodeToString(bundle), Charsets.UTF_8)
 
             val result = importInspected(file, ImportMode.MERGE)
@@ -2293,61 +2143,6 @@ class BackupRepositoryTest {
                     .single()
                     .folderId,
             )
-        }
-
-    @Test
-    fun legacyImageUriCount_zero_whenNoLegacyUriExists() =
-        runTest {
-            // 现库空 + 备份 0 张 USER 卡 → expect 0
-            val bundle =
-                TestData.backupBundle(
-                    version = 1,
-                    cards =
-                        listOf(
-                            card(id = 10L, name = "P").copy(imageSourceType = "PROVIDER"),
-                            card(id = 11L, name = "N").copy(imageSourceType = "NONE"),
-                        ),
-                )
-            val file = tempJsonFile()
-            file.writeText(json().encodeToString(bundle), Charsets.UTF_8)
-
-            val result = importInspected(file, ImportMode.REPLACE)
-            assertEquals(0, result.legacyImageUriCount)
-        }
-
-    @Test
-    fun legacyImageUriCount_doesNotWarnForUserSourceWithoutImageUri() =
-        runTest {
-            val bundle =
-                TestData.backupBundle(
-                    cards = listOf(card(id = 10L, name = "旧默认卡", imageSourceType = ImageSourceType.USER.key)),
-                )
-            val file = tempJsonFile("user-without-uri.json")
-            file.writeText(json().encodeToString(bundle), Charsets.UTF_8)
-
-            val result = importInspected(file, ImportMode.REPLACE)
-
-            assertEquals(0, result.legacyImageUriCount)
-        }
-
-    @Test
-    fun export_omits_idRemap_field_in_bundle() =
-        runTest {
-            // MERGE 后重新导出，兼容格式中不应重新出现已删除的字段。
-            seed(cards = listOf(card(id = 0L, name = "现库卡")))
-
-            val bundle =
-                TestData.backupBundle(
-                    version = 1,
-                    cards = listOf(card(id = 100L, name = "备份卡")),
-                )
-            val file = tempJsonFile(name = "input_for_omits_idremap.json")
-            file.writeText(json().encodeToString(bundle), Charsets.UTF_8)
-            importInspected(file, ImportMode.MERGE)
-
-            val (out, _) = exportBackup("output-for-omits-idremap-parent")
-            val text = out.resolve(BACKUP_MANIFEST_FILE_NAME).readText(Charsets.UTF_8)
-            assertFalse("bundle JSON 不应含 idRemap 字段", text.contains("idRemap"))
         }
 
     // ════════════════════════════════════════════════════════════
@@ -2374,7 +2169,6 @@ class BackupRepositoryTest {
             //    ⇒ REPLACE 找不到文件内 cardId 映射时主动拒绝 ⇒ withTransaction 应该 ROLLBACK
             val broken =
                 TestData.backupBundle(
-                    version = 1,
                     folders = listOf(folder(id = 10L, name = "备份分组")),
                     cards = listOf(card(id = 20L, name = "备份卡", folderId = 10L)),
                     transactions =
@@ -2383,7 +2177,7 @@ class BackupRepositoryTest {
                             transaction(id = 101L, cardId = 9999L), // 引用不存在的 card → 文件内映射失败
                         ),
                 )
-            val file = tempJsonFile()
+            val file = tempManifestFile()
             file.writeText(json().encodeToString(broken), Charsets.UTF_8)
 
             // 3) import 应该抛异常
@@ -2403,11 +2197,17 @@ class BackupRepositoryTest {
             assertEquals("C", cardsAfter[0].name)
         }
 
-    private fun frozenFixtureWithoutField(
+    private fun currentFixtureWithoutField(
         table: String,
         field: String,
     ): String {
-        val root = json().parseToJsonElement(FROZEN_SCHEMA_ONE_JSON).jsonObject
+        val current =
+            TestData.backupBundle(
+                folders = listOf(folder(id = 10L, name = "分组")),
+                cards = listOf(card(id = 20L, name = "卡片", folderId = 10L)),
+                transactions = listOf(transaction(id = 30L, cardId = 20L)),
+            )
+        val root = json().parseToJsonElement(json().encodeToString(current)).jsonObject
         val record =
             root
                 .getValue(table)
@@ -2448,11 +2248,50 @@ class BackupRepositoryTest {
         }
     }
 
+    private class FixedImportDirectoryAccess(
+        private val openManifest: (android.os.CancellationSignal) -> InputStream?,
+    ) : BackupDirectoryAccess {
+        override fun createBackup(
+            parentUri: Uri,
+            suggestedName: String,
+            cancellationSignal: android.os.CancellationSignal,
+        ): BackupDirectory = error("not used")
+
+        override fun openBackup(
+            directoryUri: Uri,
+            cancellationSignal: android.os.CancellationSignal,
+        ): BackupDirectory =
+            object : BackupDirectory {
+                override val displayName: String = "test-backup"
+                override val lastModifiedMillis: Long? = null
+
+                override fun openManifestInput(cancellationSignal: android.os.CancellationSignal): InputStream? =
+                    openManifest(cancellationSignal)
+
+                override fun openManifestOutput(cancellationSignal: android.os.CancellationSignal): OutputStream? = null
+
+                override fun indexImageInputs(
+                    assetFileNames: Set<String>,
+                    cancellationSignal: android.os.CancellationSignal,
+                ) = Unit
+
+                override fun openImageInput(
+                    assetFileName: String,
+                    cancellationSignal: android.os.CancellationSignal,
+                ): InputStream? = null
+
+                override fun openImageOutput(
+                    assetFileName: String,
+                    cancellationSignal: android.os.CancellationSignal,
+                ): OutputStream? = null
+
+                override fun delete(): Boolean = true
+            }
+    }
+
     private class FixedExportDirectoryAccess(
         private val output: OutputStream,
     ) : BackupDirectoryAccess {
-        override fun isDirectory(uri: Uri): Boolean = true
-
         override fun createBackup(
             parentUri: Uri,
             suggestedName: String,
@@ -2500,8 +2339,8 @@ class BackupRepositoryTest {
 
     private companion object {
         const val CANCELLATION_RACE_ITERATIONS = 25
-        val PUBLISHED_TOP_LEVEL_FIELDS = setOf("version", "cards", "folders", "transactions")
-        val PUBLISHED_CARD_FIELDS =
+        val CURRENT_TOP_LEVEL_FIELDS = setOf("version", "cards", "folders", "transactions")
+        val CURRENT_CARD_FIELDS =
             setOf(
                 "id",
                 "name",
@@ -2512,7 +2351,6 @@ class BackupRepositoryTest {
                 "requiredCount",
                 "colorArgb",
                 "note",
-                "imageUri",
                 "imageAssetId",
                 "imageSourceType",
                 "imageProviderKey",
@@ -2523,75 +2361,8 @@ class BackupRepositoryTest {
                 "statementDay",
                 "repaymentDay",
             )
-        val SCHEMA_ONE_CARD_FIELDS =
-            PUBLISHED_CARD_FIELDS - setOf("cardType", "statementDay", "repaymentDay", "imageAssetId")
-        val PUBLISHED_FOLDER_FIELDS = setOf("id", "name", "colorArgb", "sortOrder", "createdAtMillis")
-        val PUBLISHED_TRANSACTION_FIELDS = setOf("id", "cardId", "occurredAtMillis")
-
-        val FROZEN_SCHEMA_ONE_JSON =
-            """
-            {
-              "version": 1,
-              "cards": [{
-                "id": 20,
-                "name": "历史卡",
-                "bank": "历史银行",
-                "cardNumberMasked": "**** 1234",
-                "validUntilMillis": null,
-                "nextDueDateMillis": null,
-                "requiredCount": 5,
-                "colorArgb": -16776961,
-                "note": "历史备注",
-                "imageUri": null,
-                "imageSourceType": "NONE",
-                "imageProviderKey": "visa",
-                "cardOrientation": "LANDSCAPE",
-                "folderId": 10,
-                "createdAtMillis": 333
-              }],
-              "folders": [{
-                "id": 10,
-                "name": "历史分组",
-                "colorArgb": -65536,
-                "sortOrder": 2,
-                "createdAtMillis": 111
-              }],
-              "transactions": [{
-                "id": 30,
-                "cardId": 20,
-                "occurredAtMillis": 444
-              }]
-            }
-            """.trimIndent()
-
-        val FROZEN_SCHEMA_TWO_JSON =
-            """
-            {
-              "version": 2,
-              "cards": [{
-                "id": 20,
-                "name": "旧版信用卡",
-                "bank": "历史银行",
-                "cardNumberMasked": "**** 5678",
-                "validUntilMillis": null,
-                "nextDueDateMillis": null,
-                "requiredCount": 6,
-                "colorArgb": -16776961,
-                "note": "schema 2",
-                "imageUri": null,
-                "imageSourceType": "NONE",
-                "imageProviderKey": "visa",
-                "cardOrientation": "LANDSCAPE",
-                "folderId": null,
-                "createdAtMillis": 333,
-                "cardType": "CREDIT",
-                "statementDay": 8,
-                "repaymentDay": 26
-              }],
-              "folders": [],
-              "transactions": []
-            }
-            """.trimIndent()
+        val CURRENT_FOLDER_FIELDS = setOf("id", "name", "colorArgb", "sortOrder", "createdAtMillis")
+        val CURRENT_TRANSACTION_FIELDS = setOf("id", "cardId", "occurredAtMillis")
 
         val ONE_PIXEL_PNG: ByteArray =
             Base64.getDecoder().decode(

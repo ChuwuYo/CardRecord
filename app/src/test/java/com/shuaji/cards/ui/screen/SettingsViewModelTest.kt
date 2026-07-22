@@ -8,7 +8,7 @@ import com.shuaji.cards.data.SettingsRepository
 import com.shuaji.cards.data.ThemeSettings
 import com.shuaji.cards.data.backup.BackupCancelResult
 import com.shuaji.cards.data.backup.BackupException
-import com.shuaji.cards.data.backup.BackupFileInfo
+import com.shuaji.cards.data.backup.BackupPreview
 import com.shuaji.cards.data.backup.BackupRepository
 import com.shuaji.cards.data.backup.ExportSummary
 import com.shuaji.cards.data.backup.ImportMode
@@ -177,14 +177,13 @@ class SettingsViewModelTest {
         }
 
     @Test
-    fun import_with_legacyImageUriCount_includes_image_warning() =
+    fun merge_import_success_formats_counts() =
         runTest(mainDispatcherRule.testDispatcher.scheduler) {
             whenever(backup.import(any(), any(), any())).doReturn(
                 ImportResult(
                     cardsAdded = 3,
                     foldersAdded = 1,
                     transactionsAdded = 0,
-                    legacyImageUriCount = 2,
                 ),
             )
 
@@ -196,11 +195,8 @@ class SettingsViewModelTest {
 
             assertEquals(1, collected.size)
             val msg = collected[0].message
+            assertTrue("消息应含「追加成功」，实际：$msg", msg.contains("追加成功"))
             assertTrue("消息应含「3 张卡」，实际：$msg", msg.contains("3 张卡"))
-            assertTrue(
-                "legacyImageUriCount=2 应触发自定义卡面可能需重新选择的提示，实际：$msg",
-                msg.contains("2 张") && msg.contains("重新选择"),
-            )
         }
 
     // ════════════════════════════════════════════════════════════
@@ -274,7 +270,7 @@ class SettingsViewModelTest {
     fun inspect_success_returnsTrustedInfo_andRestoresIdle() =
         runTest(mainDispatcherRule.testDispatcher.scheduler) {
             val uri = android.net.Uri.parse("content://test/backup")
-            val expected = BackupFileInfo(2, 1, 3, 1, 123L, "preview-sha256")
+            val expected = BackupPreview(2, 1, 3, 123L, "preview-sha256")
             whenever(backup.inspect(uri)).doReturn(expected)
             val vm = newVm()
 
@@ -300,16 +296,16 @@ class SettingsViewModelTest {
     fun importPending_usesAtomicUriAndDigestThenClearsConfirmation() =
         runTest(mainDispatcherRule.testDispatcher.scheduler) {
             val uri = android.net.Uri.parse("content://test/pending")
-            val info = BackupFileInfo(2, 1, 3, 0, null, "pending-sha256")
+            val info = BackupPreview(2, 1, 3, null, "pending-sha256")
             whenever(backup.inspect(uri)).doReturn(info)
-            whenever(backup.import(uri, ImportMode.REPLACE, info.contentSha256)).doReturn(ImportResult(2, 1, 3))
+            whenever(backup.import(uri, ImportMode.REPLACE, info.manifestSha256)).doReturn(ImportResult(2, 1, 3))
             val vm = newVm()
             vm.inspectBackup(uri)
 
             runAndCollect { vm.importPending(ImportMode.REPLACE) }
 
             assertEquals(null, vm.pendingImport.value)
-            verify(backup).import(uri, ImportMode.REPLACE, info.contentSha256)
+            verify(backup).import(uri, ImportMode.REPLACE, info.manifestSha256)
         }
 
     // ════════════════════════════════════════════════════════════
@@ -458,18 +454,17 @@ class SettingsViewModelTest {
         }
 
     // ════════════════════════════════════════════════════════════
-    // REPLACE 模式 + legacyImageUriCount 显式提示
+    // REPLACE 模式结果文案
     // ════════════════════════════════════════════════════════════
 
     @Test
-    fun replace_import_with_image_warning_message() =
+    fun replace_import_success_formats_counts() =
         runTest(mainDispatcherRule.testDispatcher.scheduler) {
             whenever(backup.import(any(), any(), any())).doReturn(
                 ImportResult(
                     cardsAdded = 5,
                     foldersAdded = 2,
                     transactionsAdded = 10,
-                    legacyImageUriCount = 3,
                 ),
             )
 
@@ -485,10 +480,6 @@ class SettingsViewModelTest {
             assertTrue("消息应含「5 张卡」，实际：$msg", msg.contains("5 张卡"))
             assertTrue("消息应含「2 个文件夹」，实际：$msg", msg.contains("2 个文件夹"))
             assertTrue("消息应含「10 笔流水」，实际：$msg", msg.contains("10 笔流水"))
-            assertTrue(
-                "legacyImageUriCount=3 应触发自定义卡面可能需重新选择的提示，实际：$msg",
-                msg.contains("3 张") && msg.contains("重新选择"),
-            )
         }
 
     // ════════════════════════════════════════════════════════════
@@ -498,8 +489,7 @@ class SettingsViewModelTest {
     @Test
     fun merge_import_with_all_extras_triggers_all_submessages() =
         runTest(mainDispatcherRule.testDispatcher.scheduler) {
-            // 触发所有 5 个 extras：transactionsSkipped / cardsSkippedInvalidFolder /
-            // duplicateFolderNames / duplicateCardNames / legacyImageUriCount
+            // 触发全部附加结果：跳过流水、无效文件夹、文件夹重名、卡片重名。
             whenever(backup.import(any(), any(), any())).doReturn(
                 ImportResult(
                     cardsAdded = 8,
@@ -509,7 +499,6 @@ class SettingsViewModelTest {
                     cardsSkippedInvalidFolder = 1,
                     duplicateFolderNames = 1,
                     duplicateCardNames = 2,
-                    legacyImageUriCount = 4,
                 ),
             )
 
@@ -530,8 +519,8 @@ class SettingsViewModelTest {
                 msg.contains("2 笔流水") && msg.contains("跳过"),
             )
             assertTrue(
-                "cardsSkippedInvalidFolder=1 应触发「1 张卡...未分组」，实际：$msg",
-                msg.contains("1 张卡") && msg.contains("未分组"),
+                "cardsSkippedInvalidFolder=1 应触发「1 张卡...未分类」，实际：$msg",
+                msg.contains("1 张卡") && msg.contains("未分类"),
             )
             assertTrue(
                 "duplicateFolderNames=1 应触发「1 个文件夹...重名」，实际：$msg",
@@ -540,10 +529,6 @@ class SettingsViewModelTest {
             assertTrue(
                 "duplicateCardNames=2 应触发「2 张卡...重名」，实际：$msg",
                 msg.contains("2 张卡") && msg.contains("重名"),
-            )
-            assertTrue(
-                "legacyImageUriCount=4 应触发自定义卡面可能需重新选择的提示，实际：$msg",
-                msg.contains("4 张") && msg.contains("重新选择"),
             )
         }
 

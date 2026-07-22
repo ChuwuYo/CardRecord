@@ -4,7 +4,6 @@ import android.content.Context
 import android.net.Uri
 import android.os.CancellationSignal
 import android.os.OperationCanceledException
-import android.provider.DocumentsContract
 import android.util.Log
 import androidx.room.withTransaction
 import com.shuaji.cards.R
@@ -15,6 +14,7 @@ import com.shuaji.cards.data.UserImageImportException
 import com.shuaji.cards.data.UserImageMissingException
 import com.shuaji.cards.data.local.AppDatabase
 import com.shuaji.cards.data.local.CardDao
+import com.shuaji.cards.data.local.CardEntity
 import com.shuaji.cards.data.local.CardFolderDao
 import com.shuaji.cards.data.local.CardType
 import com.shuaji.cards.data.local.TransactionDao
@@ -58,7 +58,7 @@ internal const val DEFAULT_MAX_BACKUP_IMAGE_BYTES: Long = 32L * 1024L * 1024L
  *
  * 设计哲学：用户对自己所有数据（卡 / 文件夹 / 流水）拥有**导出和恢复**的权利。
  * 当前备份始终包含可读 JSON；只有实际引用图片时才创建同级 `card_images/`，方便人工检查和
- * 跨设备搬运；旧版单 JSON 仍可导入。JSON 只保存稳定图片资源 ID，不保存应用私有路径。
+ * 跨设备搬运。JSON 只保存稳定图片资源 ID，不保存应用私有路径。
  *
  * 导入两种模式（用户在 UI 选）：
  * - [ImportMode.REPLACE]：清空现有数据库，写入备份
@@ -98,9 +98,6 @@ class BackupRepository internal constructor(
     private val maxImageBytes: Long = DEFAULT_MAX_BACKUP_IMAGE_BYTES,
     private val directoryAccess: BackupDirectoryAccess = AndroidBackupDirectoryAccess(context),
     private val backupDirectoryName: () -> String = ::defaultBackupDirectoryName,
-    private val openInputStream: (Uri, CancellationSignal) -> InputStream? = { uri, signal ->
-        context.contentResolver.openAssetFileDescriptor(uri, "r", signal)?.createInputStream()
-    },
 ) {
     init {
         require(maxBackupBytes > 0L) { "maxBackupBytes 必须大于 0" }
@@ -110,9 +107,6 @@ class BackupRepository internal constructor(
     private val json =
         Json {
             prettyPrint = true
-            // 同一 schema 版本新增可选字段时，旧客户端仍可读取；破坏性变更必须提升 version。
-            ignoreUnknownKeys = true
-            encodeDefaults = true // 默认值字段也写出来，避免空备份看起来"什么都没有"
         }
     private val operationMutex = Mutex()
 
@@ -130,21 +124,20 @@ class BackupRepository internal constructor(
     /**
      * 完整读取并校验备份，返回确认对话框所需摘要。
      *
-     * 预览与真正导入复用同一解码和结构校验路径，避免 UI 对一个文件显示“可导入”，
+     * 预览与真正导入复用同一解码和结构校验路径，避免 UI 对一个备份显示“可导入”，
      * 到仓库层却按另一套规则拒绝。
      */
-    suspend fun inspect(uri: Uri): BackupFileInfo =
+    suspend fun inspect(directoryUri: Uri): BackupPreview =
         runExclusive {
-            val decoded = readAndValidateManifest(uri)
-            decoded.directory?.let { directory -> validateDirectoryImages(decoded.bundle, directory) }
+            val decoded = readAndValidateManifest(directoryUri)
+            validateDirectoryImages(decoded.bundle, decoded.directory)
             val bundle = decoded.bundle
-            BackupFileInfo(
+            BackupPreview(
                 cardCount = bundle.cards.size,
                 folderCount = bundle.folders.size,
                 transactionCount = bundle.transactions.size,
-                legacyImageUriCount = countLegacyImageUris(bundle),
                 lastModifiedMillis = decoded.lastModifiedMillis,
-                contentSha256 = decoded.contentSha256,
+                manifestSha256 = decoded.manifestSha256,
             )
         }
 
@@ -153,19 +146,20 @@ class BackupRepository internal constructor(
      * 没有图片时不创建空目录，最后统一写 JSON 清单。
      * 预检失败不会创建目录；写入中断会尽力删除本次未完成目录，不覆盖任何既有备份。
      */
-    suspend fun export(uri: Uri): ExportSummary =
+    suspend fun export(parentDirectoryUri: Uri): ExportSummary =
         runExclusive {
             // 尽量先把仍可读取的历史外部 URI 转成私有资产，确保本次备份真正携带图片。
             userImages.migrateLegacyImages()
             // 三张表必须来自同一个数据库快照，否则导出期间的一笔并发写入可能制造孤立外键。
             val bundle =
                 database.withTransaction {
-                    val cards = cardDao.listAll().map { it.toBackup() }
+                    val cards = cardDao.listAll()
+                    validateOwnedImages(cards)
                     BackupBundle(
                         version = BackupBundle.SCHEMA_VERSION,
-                        cards = cards,
-                        folders = folderDao.listAll().map { it.toBackupV1() },
-                        transactions = transactionDao.listAll().map { it.toBackupV1() },
+                        cards = cards.map { it.toBackup() },
+                        folders = folderDao.listAll().map { it.toBackup() },
+                        transactions = transactionDao.listAll().map { it.toBackup() },
                     )
                 }
             val cancellationSignal = checkNotNull(activeOperation).cancellationSignal
@@ -173,14 +167,14 @@ class BackupRepository internal constructor(
             var target: BackupDirectory? = null
             var completed = false
             try {
-                validatePortableImages(bundle)
                 preflightManifest(bundle, operationJob, cancellationSignal)
-                val assetIds = referencedAssetIds(bundle)
+                val assetIds = referencedAssetIds(bundle).sortedBy(ImageAssetId::value)
                 preflightAssetSizes(assetIds, operationJob, cancellationSignal)
                 cancellationSignal.throwIfCanceled()
-                val createdTarget = directoryAccess.createBackup(uri, backupDirectoryName(), cancellationSignal)
+                val createdTarget =
+                    directoryAccess.createBackup(parentDirectoryUri, backupDirectoryName(), cancellationSignal)
                 target = createdTarget
-                assetIds.sortedBy(ImageAssetId::value).forEach { assetId ->
+                assetIds.forEach { assetId ->
                     writeAsset(createdTarget, assetId, operationJob, cancellationSignal)
                 }
                 cancellationSignal.throwIfCanceled()
@@ -235,28 +229,25 @@ class BackupRepository internal constructor(
         }
 
     /**
-     * 导入：从 [uri] 读 JSON，按 [mode] 写入数据库。
+     * 导入：从 [directoryUri] 读 JSON，按 [mode] 写入数据库。
      *
-     * 返回 [ImportResult] 含实际插入条数 + 跳过 / 重名 / 卡面 URI 统计。
+     * 返回 [ImportResult] 含实际插入条数及跳过 / 重名统计。
      * 失败抛 [BackupException]（UI 层 try-catch 转 Snackbar）。
-     * [expectedContentSha256] 必须来自本次用户确认前的 [inspect]，仓库会重新读取并比对原始内容。
+     * [expectedManifestSha256] 必须来自本次用户确认前的 [inspect]，仓库会重新读取并比对清单内容。
      * 显式取消在读取、写入与归一化阶段会回滚；提交边界后应等待事务与图片收尾的确定结果。
      */
     suspend fun import(
-        uri: Uri,
+        directoryUri: Uri,
         mode: ImportMode,
-        expectedContentSha256: String,
+        expectedManifestSha256: String,
     ): ImportResult =
         runExclusive {
-            val decoded = readAndValidateManifest(uri)
-            if (decoded.contentSha256 != expectedContentSha256) {
+            val decoded = readAndValidateManifest(directoryUri)
+            if (decoded.manifestSha256 != expectedManifestSha256) {
                 throw BackupException(context.getString(R.string.backup_error_file_changed))
             }
             // 先拒绝确认后变化的 JSON，再复制图片；失败得越早，越不制造无效 I/O 与待回收文件。
-            val stagedImages =
-                decoded.directory
-                    ?.let { stageDirectoryImages(decoded.bundle, it) }
-                    .orEmpty()
+            val stagedImages = stageDirectoryImages(decoded.bundle, decoded.directory)
             try {
                 val bundle = decoded.bundle
 
@@ -294,43 +285,28 @@ class BackupRepository internal constructor(
         }
 
     /** 解码并验证 JSON 清单；图片校验或暂存由调用场景在清单通过后显式执行。 */
-    private suspend fun readAndValidateManifest(uri: Uri): DecodedBackup {
-        val decoded = readBundle(uri)
+    private suspend fun readAndValidateManifest(directoryUri: Uri): DecodedManifest {
+        val decoded = readDirectoryManifest(directoryUri)
         val bundle = decoded.bundle
         currentCoroutineContext().ensureActive()
-        if (bundle.version !in BackupBundle.MIN_SUPPORTED_SCHEMA_VERSION..BackupBundle.SCHEMA_VERSION) {
+        if (bundle.version != BackupBundle.SCHEMA_VERSION) {
             throw BackupException(
-                context.getString(
-                    R.string.backup_error_version_mismatch,
-                    bundle.version,
-                    BackupBundle.SCHEMA_VERSION,
-                ),
+                context.getString(R.string.backup_error_version_mismatch),
             )
         }
-        if (
-            !bundle.hasValidStructure() ||
-            (decoded.directory == null && bundle.cards.any { !it.imageAssetId.isNullOrBlank() })
-        ) {
+        if (!bundle.hasValidStructure()) {
             throw BackupException(context.getString(R.string.backup_error_invalid_structure))
         }
         return decoded
     }
 
     @OptIn(ExperimentalSerializationApi::class)
-    private suspend fun readBundle(uri: Uri): DecodedBackup {
+    private suspend fun readDirectoryManifest(directoryUri: Uri): DecodedManifest {
         try {
-            val directory =
-                if (directoryAccess.isDirectory(uri)) {
-                    directoryAccess.openBackup(uri, checkNotNull(activeOperation).cancellationSignal)
-                } else {
-                    null
-                }
+            val cancellationSignal = checkNotNull(activeOperation).cancellationSignal
+            val directory = directoryAccess.openBackup(directoryUri, cancellationSignal)
             val raw =
-                if (directory != null) {
-                    directory.openManifestInput(checkNotNull(activeOperation).cancellationSignal)
-                } else {
-                    openInputStream(uri, checkNotNull(activeOperation).cancellationSignal)
-                }
+                directory.openManifestInput(cancellationSignal)
                     ?: throw BackupException(context.getString(R.string.backup_error_open_source_uri))
             val bounded = SizeLimitedInputStream(raw, maxBackupBytes)
             val digest = MessageDigest.getInstance(SHA_256)
@@ -340,11 +316,11 @@ class BackupRepository internal constructor(
                     skipWhitespaceOrThrowEmpty(tracked)
                     json.decodeFromStream(BackupBundle.serializer(), tracked)
                 }
-            return DecodedBackup(
+            return DecodedManifest(
                 bundle = bundle,
-                contentSha256 = digest.digest().toLowerHex(),
+                manifestSha256 = digest.digest().toLowerHex(),
                 directory = directory,
-                lastModifiedMillis = directory?.lastModifiedMillis ?: queryLastModified(uri),
+                lastModifiedMillis = directory.lastModifiedMillis,
             )
         } catch (e: CancellationException) {
             throw e
@@ -382,9 +358,9 @@ class BackupRepository internal constructor(
         }
     }
 
-    private fun validatePortableImages(bundle: BackupBundle) {
+    private fun validateOwnedImages(cards: List<CardEntity>) {
         val hasUnownedLegacyImage =
-            bundle.cards.any { card ->
+            cards.any { card ->
                 card.imageAssetId.isNullOrBlank() &&
                     !card.imageUri.isNullOrBlank()
             }
@@ -415,11 +391,11 @@ class BackupRepository internal constructor(
     }
 
     private fun preflightAssetSizes(
-        assetIds: Set<ImageAssetId>,
+        assetIds: List<ImageAssetId>,
         job: Job,
         cancellationSignal: CancellationSignal,
     ) {
-        assetIds.sortedBy(ImageAssetId::value).forEach { assetId ->
+        assetIds.forEach { assetId ->
             job.ensureActive()
             cancellationSignal.throwIfCanceled()
             val size = userImages.assetSize(assetId)
@@ -563,31 +539,6 @@ class BackupRepository internal constructor(
         }
     }
 
-    private suspend fun queryLastModified(uri: Uri): Long? =
-        try {
-            context.contentResolver
-                .query(
-                    uri,
-                    arrayOf(DocumentsContract.Document.COLUMN_LAST_MODIFIED),
-                    null,
-                    null,
-                    null,
-                    checkNotNull(activeOperation).cancellationSignal,
-                )?.use { cursor ->
-                    if (!cursor.moveToFirst()) return@use null
-                    val index = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_LAST_MODIFIED)
-                    if (index >= 0 && !cursor.isNull(index)) cursor.getLong(index) else null
-                }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (_: OperationCanceledException) {
-            checkNotNull(activeOperation).ensureCallerActive()
-            null
-        } catch (_: Exception) {
-            checkNotNull(activeOperation).ensureCallerActive()
-            null
-        }
-
     private suspend fun <T> runExclusive(block: suspend () -> T): T {
         if (!operationMutex.tryLock()) {
             throw BackupException(context.getString(R.string.backup_error_operation_busy))
@@ -675,9 +626,6 @@ class BackupRepository internal constructor(
         }
     }
 
-    /** URI 代表曾选择的用户图片；即使当前切到其他样式也要提醒，空 URI 不计。 */
-    private fun countLegacyImageUris(bundle: BackupBundle): Int = bundle.cards.count { card -> !card.imageUri.isNullOrBlank() }
-
     /**
      * REPLACE 模式：先清空（含 CASCADE），再按依赖顺序写入。
      *
@@ -707,7 +655,7 @@ class BackupRepository internal constructor(
                 }
             cardRemap[card.id] =
                 cardDao.upsert(
-                    card.toEntity(bundle.version).copy(id = 0L, folderId = safeFolderId),
+                    card.toEntity().copy(id = 0L, folderId = safeFolderId),
                 )
         }
         bundle.transactions.forEach { transaction ->
@@ -719,7 +667,6 @@ class BackupRepository internal constructor(
             foldersAdded = bundle.folders.size,
             transactionsAdded = bundle.transactions.size,
             cardsSkippedInvalidFolder = invalidCount,
-            legacyImageUriCount = countLegacyImageUris(bundle),
         )
     }
 
@@ -730,7 +677,7 @@ class BackupRepository internal constructor(
      * [ImportResult.duplicateFolderNames] / [ImportResult.duplicateCardNames] 返回给 UI。
      *
      * 孤立 transaction（cardId 在备份卡片中找不到映射）被跳过不写入，
-     * 计入 [ImportResult.transactionsSkipped]，UI 提示用户「其中 N 笔因引用不存在的卡被跳过」。
+     * 计入 [ImportResult.transactionsSkipped]，UI 提示对应卡片不存在。
      *
      * `Cards.folder_id` 是外键引用 `card_folders.id`，MERGE 写库时必须
      * 保证 `card.folderId` 只能指向 backup 自身包含且已重映射的 folder。
@@ -771,7 +718,7 @@ class BackupRepository internal constructor(
                 }
             val newId =
                 cardDao.upsert(
-                    card.toEntity(bundle.version).copy(id = 0L, folderId = safeFolderId),
+                    card.toEntity().copy(id = 0L, folderId = safeFolderId),
                 )
             cardRemap[card.id] = newId
         }
@@ -801,7 +748,6 @@ class BackupRepository internal constructor(
             cardsSkippedInvalidFolder = invalidCount,
             duplicateFolderNames = duplicateFolders,
             duplicateCardNames = duplicateCards,
-            legacyImageUriCount = countLegacyImageUris(bundle),
         )
     }
 }
@@ -812,10 +758,10 @@ private const val BACKUP_LOG_TAG = "BackupRepository"
 private const val COPY_BUFFER_BYTES = 32 * 1024
 private val JSON_WHITESPACE_BYTES = setOf(' '.code, '\t'.code, '\r'.code, '\n'.code)
 
-private data class DecodedBackup(
+private data class DecodedManifest(
     val bundle: BackupBundle,
-    val contentSha256: String,
-    val directory: BackupDirectory?,
+    val manifestSha256: String,
+    val directory: BackupDirectory,
     val lastModifiedMillis: Long?,
 )
 
@@ -836,29 +782,15 @@ private val BACKUP_DIRECTORY_NAME_FORMATTER = DateTimeFormatter.ofPattern("'Card
 private fun BackupBundle.hasValidStructure(): Boolean {
     fun List<Long>.containsUniquePositiveIds(): Boolean = all { it > 0L } && distinct().size == size
 
-    val hasValidImageProtocol =
-        if (version >= 3) {
-            cards.none { !it.imageUri.isNullOrBlank() }
-        } else {
-            cards.none { it.imageAssetId != null }
-        }
-
-    return hasValidImageProtocol &&
-        folders.map { it.id }.containsUniquePositiveIds() &&
+    return folders.map { it.id }.containsUniquePositiveIds() &&
         cards.map { it.id }.containsUniquePositiveIds() &&
         transactions.map { it.id }.containsUniquePositiveIds() &&
         cards.all { card ->
-            val parsedType = card.cardType?.let(CardType::fromKeyOrNull)
-            val hasValidType =
-                when {
-                    card.cardType != null && parsedType == null -> false
-                    version >= 2 -> parsedType != null
-                    else -> true
-                }
+            val parsedType = CardType.fromKeyOrNull(card.cardType)
             card.requiredCount > 0 &&
                 (card.folderId == null || card.folderId > 0L) &&
                 (card.imageAssetId == null || ImageAssetId.parse(card.imageAssetId) != null) &&
-                hasValidType &&
+                parsedType != null &&
                 (card.statementDay == null || card.statementDay.isValidCardMonthDay()) &&
                 (card.repaymentDay == null || card.repaymentDay.isValidCardMonthDay())
         } &&

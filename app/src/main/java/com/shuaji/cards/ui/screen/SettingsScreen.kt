@@ -67,7 +67,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.shuaji.cards.R
 import com.shuaji.cards.data.ColorSource
 import com.shuaji.cards.data.ThemeMode
-import com.shuaji.cards.data.backup.BackupFileInfo
+import com.shuaji.cards.data.backup.BackupPreview
 import com.shuaji.cards.data.backup.ImportMode
 import com.shuaji.cards.ui.AppLanguage
 import com.shuaji.cards.ui.ViewModelFactories
@@ -90,7 +90,7 @@ import java.util.Locale
  *     - 导入配置 ListItem
  *   - 隐私说明 section
  *
- * SAF 目录 / 文件选择器（`ActivityResultContracts.OpenDocumentTree` / `OpenDocument`）由
+ * SAF 目录选择器（`ActivityResultContracts.OpenDocumentTree`）由
  * [rememberLauncherForActivityResult] 持有——不需要任何存储权限。
  *
  * 状态机：
@@ -101,10 +101,10 @@ import java.util.Locale
  *
  * SnackbarHost 由 `ShuajiApp` 顶层持有，本页只发布操作结果。
  *
- * 导入目录或旧版 JSON 先由 [SettingsViewModel.inspectBackup] 走与正式导入相同的受限解码；
+ * 导入目录先由 [SettingsViewModel.inspectBackup] 走与正式导入相同的受限解码；
  * 只有结构校验成功后才显示模式确认对话框及记录数量。
  *
- * 备份是一次性读取，不申请持久化 URI 权限。进程若在确认期间结束，用户重新选择目录或文件即可。
+ * 备份是一次性读取，不申请持久化 URI 权限。进程若在确认期间结束，用户重新选择目录即可。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -135,11 +135,9 @@ fun SettingsScreen(onBack: () -> Unit) {
         rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
             if (uri != null) viewModel.export(uri)
         }
-    // 当前格式直接选择备份目录；旧格式继续允许选择单个 JSON。
+    // 导入只接受由本应用导出的完整备份目录。
     val importDirectoryLauncher =
         rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree(), ::inspectSelection)
-    val legacyJsonLauncher =
-        rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument(), ::inspectSelection)
 
     // Done 状态变化 → acknowledge；完成消息由进程级一次性事件队列独立交付。
     LaunchedEffect(state) {
@@ -226,23 +224,6 @@ fun SettingsScreen(onBack: () -> Unit) {
                         modifier =
                             Modifier.clickable(enabled = enabled) {
                                 importDirectoryLauncher.launch(null)
-                            },
-                    )
-                }
-                item {
-                    ListItem(
-                        headlineContent = { Text(stringResource(R.string.settings_import_legacy)) },
-                        supportingContent = { Text(stringResource(R.string.settings_import_legacy_subtitle)) },
-                        leadingContent = {
-                            Icon(
-                                Icons.Default.FileDownload,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        },
-                        modifier =
-                            Modifier.clickable(enabled = enabled) {
-                                legacyJsonLauncher.launch(arrayOf("application/json", "text/json", "*/*"))
                             },
                     )
                 }
@@ -504,23 +485,12 @@ fun SettingsScreen(onBack: () -> Unit) {
 }
 
 /**
- * 导入模式选择 + 二次确认。
- *
- * 用户视角：从备份恢复时，常见两种意图：
- * 1) "把现在的全删了换成备份" → REPLACE
- * 2) "保留现在的，再把备份加进来" → MERGE
- * 这里把两种放一起给用户选，REPLACE 还弹一次二次确认（破坏性操作）。
- *
- * REPLACE/MERGE 确认对话框都把 [BackupFileInfo]（行数 + 备份时间 +
- * legacyImageUriCount）拼进确认文案——「此备份包含 N 张卡 / M 个文件夹 / K 笔流水」+
- * 「其中 N 张卡的卡面需要重新上传」（跨设备恢复时）+ 「备份时间：xxx」，
- * 用户能看清要操作的数据规模 + 风险再点确认。
- *
- * [step] 用 [rememberSaveable] + [Saver] 保存，避免旋转屏幕时重置。
+ * 先选择覆盖或追加，再显示记录数量与备份时间；覆盖在提交前必须二次确认。
+ * [step] 可保存，避免配置变化绕过确认步骤。
  */
 @Composable
 private fun ImportModeDialog(
-    info: BackupFileInfo,
+    info: BackupPreview,
     onDismiss: () -> Unit,
     onConfirm: (ImportMode) -> Unit,
 ) {
@@ -595,14 +565,13 @@ private val ImportModeStepStateSaver: Saver<MutableState<ImportModeStep>, Int> =
     )
 
 /**
- * 把「此备份包含 N 张卡 / M 个文件夹 / K 笔流水」+ 「其中 N 张卡需重新上传」+
- * 「备份时间：xxx」拼起来。
+ * 把记录数量与备份时间拼成确认文案。
  * 对话框只接收仓库完整校验后的摘要，不存在以 0 冒充解析失败的降级路径。
  */
 @Composable
 private fun confirmMessage(
     @androidx.annotation.StringRes templateRes: Int,
-    info: BackupFileInfo,
+    info: BackupPreview,
 ): String {
     val template =
         stringResource(
@@ -620,15 +589,7 @@ private fun confirmMessage(
             val fmt = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
             stringResource(R.string.settings_backup_time_label, fmt.format(Date(it)))
         } ?: ""
-    val imageWarningLine =
-        info.takeIf { it.legacyImageUriCount > 0 }?.let {
-            pluralStringResource(
-                R.plurals.settings_dialog_image_warning,
-                it.legacyImageUriCount,
-                it.legacyImageUriCount,
-            )
-        } ?: ""
-    return listOf(template, timeLine, imageWarningLine)
+    return listOf(template, timeLine)
         .filter { it.isNotEmpty() }
         .joinToString(separator = "\n")
 }

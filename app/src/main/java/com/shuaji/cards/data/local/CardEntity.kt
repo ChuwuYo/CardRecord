@@ -38,7 +38,7 @@ internal const val CARD_ORIENTATION_LANDSCAPE_KEY = "LANDSCAPE"
  * 朝向：
  * - [cardOrientation] = "LANDSCAPE"（横版 1.586:1，标准卡片） / "PORTRAIT"（竖版）
  *
- * 备份协议通过独立的 schema DTO 映射，不让 Room 模型的重构隐式改变已发布的 JSON。
+ * 备份协议通过独立的 schema DTO 映射，不让 Room 模型重构隐式改变当前文件协议。
  */
 @Entity(
     tableName = "cards",

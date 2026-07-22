@@ -10,7 +10,7 @@ import androidx.room.PrimaryKey
  * - [colorArgb] 文件夹在主页中作为分组色块显示
  * - [sortOrder] 主页分组排序：升序排列，值小者排在前
  *
- * 备份协议通过独立的 schema DTO 映射，不让 Room 模型的重构隐式改变已发布的 JSON。
+ * 备份协议通过独立的 schema DTO 映射，不让 Room 模型重构隐式改变当前文件协议。
  */
 @Entity(tableName = "card_folders")
 data class CardFolderEntity(
