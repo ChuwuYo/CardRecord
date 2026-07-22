@@ -25,6 +25,12 @@ import com.shuaji.cards.data.CardNetworkProvider
 
 internal const val COMPACT_PROVIDER_DECORATION_SCALE = 0.46f
 
+private val NetworkDecorationShadowColor = Color.Black.copy(alpha = 0.28f)
+private val NetworkDecorationShadowOffset = 0.75.dp
+private val NetworkDecorationColor = Color.White.copy(alpha = 0.16f)
+private val NetworkBadgeSurfaceColor = Color.White.copy(alpha = 0.14f)
+private val NetworkBadgeShape = RoundedCornerShape(8.dp)
+
 internal data class RingLayout(
     val diameter: Dp,
     val centerX: Dp,
@@ -126,18 +132,32 @@ internal fun BoxScope.ProviderNetworkDecoration(
 ) {
     NetworkRing(layout.largeRing, layout.ringStroke)
     NetworkRing(layout.smallRing, layout.ringStroke)
-    Image(
-        painter = painterResource(network.markRes),
-        contentDescription = null,
+    Box(
         modifier =
             Modifier
                 .align(Alignment.TopEnd)
                 .padding(top = layout.watermarkTop, end = layout.watermarkRight)
                 .size(width = layout.watermarkWidth, height = layout.watermarkHeight),
-        colorFilter = ColorFilter.tint(Color.White),
-        contentScale = ContentScale.Fit,
-        alpha = 0.16f,
-    )
+    ) {
+        // 白色半透明水印在浅色卡面会完全消失；同形暗色底层只补轮廓，不改变品牌图形。
+        Image(
+            painter = painterResource(network.markRes),
+            contentDescription = null,
+            modifier =
+                Modifier
+                    .fillMaxSize()
+                    .offset(y = NetworkDecorationShadowOffset),
+            colorFilter = ColorFilter.tint(NetworkDecorationShadowColor),
+            contentScale = ContentScale.Fit,
+        )
+        Image(
+            painter = painterResource(network.markRes),
+            contentDescription = null,
+            modifier = Modifier.fillMaxSize(),
+            colorFilter = ColorFilter.tint(NetworkDecorationColor),
+            contentScale = ContentScale.Fit,
+        )
+    }
 }
 
 @Composable
@@ -152,9 +172,22 @@ private fun BoxScope.NetworkRing(
                 .offset(
                     x = layout.centerX - layout.radius,
                     y = layout.centerY - layout.radius,
-                ).size(layout.diameter)
-                .border(strokeWidth, Color.White.copy(alpha = 0.16f), CircleShape),
-    )
+                ).size(layout.diameter),
+    ) {
+        Box(
+            modifier =
+                Modifier
+                    .fillMaxSize()
+                    .offset(y = NetworkDecorationShadowOffset)
+                    .border(strokeWidth, NetworkDecorationShadowColor, CircleShape),
+        )
+        Box(
+            modifier =
+                Modifier
+                    .fillMaxSize()
+                    .border(strokeWidth, NetworkDecorationColor, CircleShape),
+        )
+    }
 }
 
 @Composable
@@ -167,16 +200,30 @@ internal fun BoxScope.NetworkCornerBadge(
             Modifier
                 .align(Alignment.BottomEnd)
                 .padding(end = layout.badgeInset, bottom = layout.badgeInset)
-                .size(width = layout.badgeWidth, height = layout.badgeHeight)
-                .background(Color.White.copy(alpha = 0.14f), RoundedCornerShape(8.dp))
-                .padding(horizontal = 6.dp, vertical = 4.dp),
-        contentAlignment = Alignment.Center,
+                .size(width = layout.badgeWidth, height = layout.badgeHeight),
     ) {
-        Image(
-            painter = painterResource(network.markRes),
-            contentDescription = stringResource(network.displayNameRes),
-            modifier = Modifier.fillMaxSize(),
-            contentScale = ContentScale.Fit,
+        // 底板保留原透明度；暗色同形底层提供浅色卡面上的边界与轻微纵深。
+        Box(
+            modifier =
+                Modifier
+                    .fillMaxSize()
+                    .offset(y = NetworkDecorationShadowOffset)
+                    .background(NetworkDecorationShadowColor, NetworkBadgeShape),
         )
+        Box(
+            modifier =
+                Modifier
+                    .fillMaxSize()
+                    .background(NetworkBadgeSurfaceColor, NetworkBadgeShape)
+                    .padding(horizontal = 6.dp, vertical = 4.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Image(
+                painter = painterResource(network.markRes),
+                contentDescription = stringResource(network.displayNameRes),
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Fit,
+            )
+        }
     }
 }

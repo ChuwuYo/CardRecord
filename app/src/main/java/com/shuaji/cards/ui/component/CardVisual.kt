@@ -58,7 +58,7 @@ private const val PORTRAIT_WIDTH_FRACTION = 0.6f
  */
 private const val CARD_MIN_HEIGHT_DP = 96f
 
-/** 只作用于文字本身，确保浅色用户图片上可读，不改变上传图片像素。 */
+/** 卡面文字统一使用的暗色投影；银行图标复用其颜色绘制同形底层，不改变上传图片像素。 */
 private val CardTextShadow =
     Shadow(
         color = Color.Black.copy(alpha = 0.65f),
