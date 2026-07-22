@@ -259,6 +259,29 @@ jobs:
               | jq -r --arg name "$1" '[.assets[] | select(.name == $name) | .id][0] // empty'
           }
 
+          wait_for_asset_digest() {
+            local name="$1"
+            local expected="$2"
+            local expected_id="${3:-}"
+            local attempt asset_id digest
+            for attempt in {1..15}; do
+              asset_id="$(asset_id_by_name "$name" 2>/dev/null || true)"
+              if [ -n "$asset_id" ] && { [ -z "$expected_id" ] || [ "$asset_id" = "$expected_id" ]; }; then
+                digest="$(
+                  gh api "repos/$GITHUB_REPOSITORY/releases/assets/$asset_id" \
+                    --jq '.digest // empty' 2>/dev/null || true
+                )"
+                if [ "$digest" = "$expected" ]; then
+                  printf '%s\n' "$asset_id"
+                  return 0
+                fi
+              fi
+              sleep 2
+            done
+            echo "::error::等待 Release 资产 $name 的摘要就绪超时。" >&2
+            return 1
+          }
+
           staged_id=''
           old_asset_id="$(asset_id_by_name 'app-release.apk')"
           existing_staged_id="$(asset_id_by_name "$staged_name")"
@@ -353,10 +376,8 @@ jobs:
 
           # 旧固定资产仍在线时先上传、校验唯一暂存资产。
           gh release upload apk-latest "$staged_apk" --repo "$GITHUB_REPOSITORY"
-          staged_id="$(asset_id_by_name "$staged_name")"
-          test -n "$staged_id"
-          staged_digest="$(gh api "repos/$GITHUB_REPOSITORY/releases/assets/$staged_id" --jq '.digest')"
-          test "$staged_digest" = "sha256:$expected_digest"
+          # 上传接口可能先返回、资产列表与 digest 稍后才一致；只等待精确摘要，不放宽校验。
+          staged_id="$(wait_for_asset_digest "$staged_name" "sha256:$expected_digest")"
 
           # 上传暂存资产可能耗时；在触碰旧固定资产前再核对一次 main。
           assert_current_main
@@ -396,11 +417,8 @@ jobs:
           actual_tag="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/apk-latest" --jq '.object.sha')"
           test "$actual_tag" = "$GITHUB_SHA"
 
-          asset_id="$(asset_id_by_name 'app-release.apk')"
-          test -n "$asset_id"
-          api_digest="$(gh api "repos/$GITHUB_REPOSITORY/releases/assets/$asset_id" --jq '.digest')"
+          asset_id="$(wait_for_asset_digest 'app-release.apk' "sha256:$expected_digest" "$staged_id")"
           test "$asset_id" = "$staged_id"
-          test "$api_digest" = "sha256:$expected_digest"
           gh api -H 'Accept: application/octet-stream' \
             "repos/$GITHUB_REPOSITORY/releases/assets/$asset_id" > "$RUNNER_TEMP/published.apk"
           published_digest="$(sha256sum "$RUNNER_TEMP/published.apk" | awk '{print $1}')"
