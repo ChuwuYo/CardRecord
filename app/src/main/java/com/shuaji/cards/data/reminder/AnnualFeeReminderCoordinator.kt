@@ -43,13 +43,21 @@ class AnnualFeeReminderCoordinator(
     /** 递增即可踢一次重排（权限变化 / 时区 / 闹钟回调后）。 */
     private val refreshTick = MutableStateFlow(0L)
 
+    /**
+     * 串行化所有 [applyPlan] / 取消：Boot、闹钟回调与 Flow 重排可能并行触达，
+     * 否则两趟 [AnnualFeeReminderScheduler.replaceAll] 交错会留下未登记或过期闹钟。
+     */
+    private val planLock = Any()
+
     fun requestRefresh() {
         refreshTick.value = refreshTick.value + 1L
     }
 
     /** REPLACE 导入等场景：在清空 prefs 登记前同步取消 AlarmManager 条目。 */
     fun cancelAllTrackedAlarms() {
-        scheduler.cancelAllTracked()
+        synchronized(planLock) {
+            scheduler.cancelAllTracked()
+        }
     }
 
     fun start(scope: CoroutineScope) {
@@ -82,34 +90,36 @@ class AnnualFeeReminderCoordinator(
         cards: List<com.shuaji.cards.data.CardWithCount>,
         enabled: Boolean,
     ) {
-        try {
-            val canPost = notifier.canPostNotifications()
-            if (!enabled || !canPost) {
-                // 无权限时不排闹钟，避免触发后无法投递又反复补排。
-                scheduler.cancelAllTracked()
-                return
+        synchronized(planLock) {
+            try {
+                val canPost = notifier.canPostNotifications()
+                if (!enabled || !canPost) {
+                    // 无权限时不排闹钟，避免触发后无法投递又反复补排。
+                    scheduler.cancelAllTracked()
+                    return
+                }
+                val liveCardDueTokens =
+                    cards
+                        .mapNotNull { item ->
+                            val due = item.card.nextDueDateMillis ?: return@mapNotNull null
+                            item.card.id to due
+                        }.toSet()
+                store.pruneNotifiedKeeping(liveCardDueTokens)
+                val plan =
+                    AnnualFeeReminderPlanner.plan(
+                        cards = cards,
+                        enabled = true,
+                        now = clock.instant(),
+                        zoneId = zoneIdProvider(),
+                        alreadyNotified = store::wasNotified,
+                    )
+                scheduler.replaceAll(plan)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: RuntimeException) {
+                // 测试拆卸或 OEM 异常不得打崩后台协程；下次 refresh / 前台再试。
+                Log.w("AnnualFeeReminder", "applyPlan failed", error)
             }
-            val liveCardDueTokens =
-                cards
-                    .mapNotNull { item ->
-                        val due = item.card.nextDueDateMillis ?: return@mapNotNull null
-                        item.card.id to due
-                    }.toSet()
-            store.pruneNotifiedKeeping(liveCardDueTokens)
-            val plan =
-                AnnualFeeReminderPlanner.plan(
-                    cards = cards,
-                    enabled = true,
-                    now = clock.instant(),
-                    zoneId = zoneIdProvider(),
-                    alreadyNotified = store::wasNotified,
-                )
-            scheduler.replaceAll(plan)
-        } catch (error: CancellationException) {
-            throw error
-        } catch (error: RuntimeException) {
-            // 测试拆卸或 OEM 异常不得打崩后台协程；下次 refresh / 前台再试。
-            Log.w("AnnualFeeReminder", "applyPlan failed", error)
         }
     }
 

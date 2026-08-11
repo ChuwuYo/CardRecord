@@ -326,8 +326,9 @@ class BackupRepository internal constructor(
             throw error
         } catch (error: RuntimeException) {
             // DB 事务已提交；偏好/闹钟失败不得伪装成写库失败。
+            // 权限引导仍按备份意图，本机实际开关由 reminderStore / UI 另行观察。
             Log.w(BACKUP_LOG_TAG, "applyReminderSettings failed after DB commit", error)
-            reminderStore.isEnabled()
+            settings.annualFeeRemindersEnabled
         }
     }
 
