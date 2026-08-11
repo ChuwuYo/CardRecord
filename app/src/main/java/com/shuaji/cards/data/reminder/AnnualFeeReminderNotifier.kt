@@ -102,15 +102,21 @@ class AnnualFeeReminderNotifier(
 
         /** 设置页与 Notifier 共用，避免两处判断漂移。 */
         fun canPostNotifications(context: Context): Boolean {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                val granted =
-                    ContextCompat.checkSelfPermission(
-                        context,
-                        android.Manifest.permission.POST_NOTIFICATIONS,
-                    ) == PackageManager.PERMISSION_GRANTED
-                if (!granted) return false
+            return try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    val granted =
+                        ContextCompat.checkSelfPermission(
+                            context,
+                            android.Manifest.permission.POST_NOTIFICATIONS,
+                        ) == PackageManager.PERMISSION_GRANTED
+                    if (!granted) return false
+                }
+                NotificationManagerCompat.from(context).areNotificationsEnabled()
+            } catch (_: RuntimeException) {
+                // Robolectric 用例拆卸时 ActivityThread 可能已空；生产路径不应落到这里。
+                // 视为不可投递，避免 IO 协程把未捕获异常泄漏到下一条单测。
+                false
             }
-            return NotificationManagerCompat.from(context).areNotificationsEnabled()
         }
     }
 }

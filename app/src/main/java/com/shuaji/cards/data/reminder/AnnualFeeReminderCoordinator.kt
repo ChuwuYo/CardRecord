@@ -1,5 +1,6 @@
 package com.shuaji.cards.data.reminder
 
+import android.util.Log
 import com.shuaji.cards.data.CardRepository
 import com.shuaji.cards.data.processForegroundFlow
 import kotlinx.coroutines.CoroutineScope
@@ -80,21 +81,26 @@ class AnnualFeeReminderCoordinator(
         cards: List<com.shuaji.cards.data.CardWithCount>,
         enabled: Boolean,
     ) {
-        val canPost = notifier.canPostNotifications()
-        if (!enabled || !canPost) {
-            // 无权限时不排闹钟，避免触发后无法投递又反复补排。
-            scheduler.cancelAllTracked()
-            return
+        try {
+            val canPost = notifier.canPostNotifications()
+            if (!enabled || !canPost) {
+                // 无权限时不排闹钟，避免触发后无法投递又反复补排。
+                scheduler.cancelAllTracked()
+                return
+            }
+            val plan =
+                AnnualFeeReminderPlanner.plan(
+                    cards = cards,
+                    enabled = true,
+                    now = clock.instant(),
+                    zoneId = zoneIdProvider(),
+                    alreadyNotified = store::wasNotified,
+                )
+            scheduler.replaceAll(plan)
+        } catch (error: RuntimeException) {
+            // 测试拆卸或 OEM 异常不得打崩后台协程；下次 refresh / 前台再试。
+            Log.w("AnnualFeeReminder", "applyPlan failed", error)
         }
-        val plan =
-            AnnualFeeReminderPlanner.plan(
-                cards = cards,
-                enabled = true,
-                now = clock.instant(),
-                zoneId = zoneIdProvider(),
-                alreadyNotified = store::wasNotified,
-            )
-        scheduler.replaceAll(plan)
     }
 
     /** 供 Receiver / Boot 在没有最新 Flow 排放时拉取快照重排。 */
