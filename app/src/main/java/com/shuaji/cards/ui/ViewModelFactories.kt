@@ -36,6 +36,8 @@ object ViewModelFactories {
                     backup = container.backup,
                     emitSettingsEvent = container::emitSettings,
                     settingsRepo = container.settings,
+                    reminderStore = container.reminderStore,
+                    requestReminderReschedule = container::requestReminderReschedule,
                 )
             }
         }

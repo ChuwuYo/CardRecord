@@ -61,16 +61,50 @@ class SettingsViewModel(
     private val backup: BackupRepository,
     private val emitSettingsEvent: suspend (SettingsDoneEvent) -> Unit,
     private val settingsRepo: com.shuaji.cards.data.SettingsRepository,
+    private val reminderStore: com.shuaji.cards.data.reminder.AnnualFeeReminderStore,
+    private val requestReminderReschedule: () -> Unit = {},
 ) : AndroidViewModel(application) {
     private val _state = MutableStateFlow<SettingsUiState>(SettingsUiState.Idle)
     val state: StateFlow<SettingsUiState> = _state.asStateFlow()
     private val _pendingImport = MutableStateFlow<PendingImport?>(null)
     val pendingImport: StateFlow<PendingImport?> = _pendingImport.asStateFlow()
+
+    /**
+     * 导入成功且备份要求开启年费提醒时置 true；设置页消费后申请通知权限。
+     * 不表示权限本身——权限从不进备份。
+     */
+    private val _pendingReminderPermissionRequest = MutableStateFlow(false)
+    val pendingReminderPermissionRequest: StateFlow<Boolean> =
+        _pendingReminderPermissionRequest.asStateFlow()
+
     private val operationLock = ReentrantLock()
     private var operationJob: Job? = null
 
     /** 主题设置：UI 用 collectAsState 订阅，用户切换时自动重组 */
     val themeSettings = settingsRepo.themeSettings
+
+    /** 年费本地提醒总开关（默认关）。 */
+    val annualFeeRemindersEnabled = reminderStore.observeEnabled()
+
+    fun setAnnualFeeRemindersEnabled(enabled: Boolean) {
+        // enabled 流已接入协调器 combine；勿再显式 requestRefresh，避免同一次切换拆装两遍闹钟。
+        reminderStore.setEnabled(enabled)
+    }
+
+    fun hasAskedNotificationPermission(): Boolean = reminderStore.hasAskedNotificationPermission()
+
+    fun markAskedNotificationPermission() {
+        reminderStore.markAskedNotificationPermission()
+    }
+
+    /** 通知权限可能已变（授权/系统设置返回）；强制按 canPost 重排闹钟。 */
+    fun onNotificationPermissionMaybeChanged() {
+        requestReminderReschedule()
+    }
+
+    fun acknowledgeReminderPermissionRequest() {
+        _pendingReminderPermissionRequest.value = false
+    }
 
     fun setThemeMode(mode: com.shuaji.cards.data.ThemeMode) {
         viewModelScope.launch { settingsRepo.setThemeMode(mode) }
@@ -152,6 +186,9 @@ class SettingsViewModel(
         launchOperation { job ->
             try {
                 val result = backup.import(uri, mode, expectedManifestSha256)
+                if (result.annualFeeRemindersEnabled) {
+                    _pendingReminderPermissionRequest.value = true
+                }
                 val message = formatImportMessage(result, mode)
                 finalize(job, message = message, isError = false)
             } catch (e: CancellationException) {

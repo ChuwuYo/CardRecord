@@ -4,7 +4,13 @@ import android.content.Context
 import com.shuaji.cards.core.OneShotEventQueue
 import com.shuaji.cards.data.backup.BackupRepository
 import com.shuaji.cards.data.local.AppDatabase
+import com.shuaji.cards.data.reminder.AnnualFeeReminderCoordinator
+import com.shuaji.cards.data.reminder.AnnualFeeReminderNotifier
+import com.shuaji.cards.data.reminder.AnnualFeeReminderScheduler
+import com.shuaji.cards.data.reminder.AnnualFeeReminderStore
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.launch
 import java.io.File
@@ -15,6 +21,23 @@ interface AppContainer {
     val repository: CardRepository
     val settings: SettingsRepository
     val backup: BackupRepository
+    val reminderStore: AnnualFeeReminderStore
+    val reminderNotifier: AnnualFeeReminderNotifier
+
+    /** Receiver 异步发通知用；生命周期绑进程。 */
+    val reminderScope: CoroutineScope
+
+    /**
+     * 权限/时区/闹钟回调后强制按当前快照重排本地提醒。
+     * 不依赖 `enabled` 或卡片流是否变化。
+     */
+    fun requestReminderReschedule()
+
+    /**
+     * 同步拉取卡片快照并重排（供 Boot / 闹钟 Receiver 在 `goAsync` 协程内调用）。
+     * 与 [requestReminderReschedule] 最终同一套 plan 规则，但不依赖 Flow 排放时机。
+     */
+    suspend fun rescheduleRemindersFromStore()
 
     /**
      * 自动续期事件：前台首发或跨零时归一化成功/失败后 emit 到这里，
@@ -36,7 +59,7 @@ interface AppContainer {
      */
     suspend fun emitSettings(event: SettingsDoneEvent)
 
-    /** 启动图片迁移/回收与前台年度周期协调器；[ShuajiApplication] 只负责调用一次。 */
+    /** 启动图片迁移/回收、年费周期协调器与本地提醒调度；[ShuajiApplication] 只负责调用一次。 */
     fun startBackgroundWork(scope: CoroutineScope)
 }
 
@@ -44,6 +67,7 @@ class DefaultAppContainer(
     context: Context,
     startupThemeModeCache: ThemeModeStartupCache = SharedPreferencesThemeModeStartupCache(context),
 ) : AppContainer {
+    private val appContext = context.applicationContext
     private val database = AppDatabase.get(context)
     private val clock = Clock.systemUTC()
     private val zoneIdProvider: () -> ZoneId = { ZoneId.systemDefault() }
@@ -66,6 +90,22 @@ class DefaultAppContainer(
             userImages = userImages,
         )
     override val settings: SettingsRepository = SettingsRepository(context.appDataStore, startupThemeModeCache)
+    override val reminderStore = AnnualFeeReminderStore(appContext)
+    override val reminderNotifier = AnnualFeeReminderNotifier(appContext)
+    private val reminderScheduler = AnnualFeeReminderScheduler(appContext, reminderStore)
+    override val reminderScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    private val annualFeeReminderCoordinator =
+        AnnualFeeReminderCoordinator(
+            repository = repository,
+            store = reminderStore,
+            scheduler = reminderScheduler,
+            notifier = reminderNotifier,
+            enabledFlow = reminderStore.observeEnabled(),
+            clock = clock,
+            zoneIdProvider = zoneIdProvider,
+        )
+
     override val backup: BackupRepository =
         BackupRepository(
             context = context,
@@ -75,6 +115,9 @@ class DefaultAppContainer(
             transactionDao = database.transactionDao(),
             normalizeInTransaction = repository::normalizeOverdueCyclesInTransaction,
             userImages = userImages,
+            reminderStore = reminderStore,
+            onRemindersPreferenceApplied = annualFeeReminderCoordinator::requestRefresh,
+            cancelTrackedReminders = annualFeeReminderCoordinator::cancelAllTrackedAlarms,
         )
 
     private val annualFeeCycleEventQueue = AnnualFeeCycleEventQueue()
@@ -95,6 +138,15 @@ class DefaultAppContainer(
     override fun startBackgroundWork(scope: CoroutineScope) {
         scope.launch { repository.maintainUserImagesOnStartupBestEffort() }
         annualFeeCycleCoordinator.start(scope)
+        annualFeeReminderCoordinator.start(scope)
+    }
+
+    override fun requestReminderReschedule() {
+        annualFeeReminderCoordinator.requestRefresh()
+    }
+
+    override suspend fun rescheduleRemindersFromStore() {
+        annualFeeReminderCoordinator.rescheduleFromStore()
     }
 
     /** 把设置页结果事件发布到顶层 SnackbarHost。 */

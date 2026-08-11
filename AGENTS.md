@@ -6,7 +6,7 @@
 
 - **刷记 / CardRecord**：本地优先的 Android 卡片消费笔数记录应用。
 - 包名 `com.shuaji.cards`；当前 `v1.6.0 / versionCode 24`。
-- Kotlin + Jetpack Compose + Material 3；Room v9 存业务数据并用 KSP 生成代码，DataStore 存设置。
+- Kotlin + Jetpack Compose + Material 3；Room v9 存业务数据并用 KSP 生成代码；外观主题走 DataStore Preferences，年费提醒开关与去重状态走 SharedPreferences（见第 46 行，勿当成第二套设置真源）。
 - 无账号、后端或自动云同步；用户通过 SAF 主动导入/导出备份目录（JSON + 可选图片文件夹）；系统云备份和设备迁移关闭。
 - 手写依赖容器 `AppContainer`；Screen → ViewModel → Repository → DAO，Repository 仍会向 ViewModel 暴露部分 Entity / 投影，不是完整领域模型隔离层。
 
@@ -42,7 +42,8 @@
 - 卡片有效期按用户本地日历日判断，进入次日后才算过期。
 - 禁止用 SQLite `REPLACE` 写被外键引用的父表。新卡可 `@Upsert`；编辑必须 `@Update` 并在目标已不存在时失败，不能复活已删除卡片。删除卡片必须二次确认并永久级联删除流水。
 - Room 升级必须显式迁移并 fail closed；新增或改列同步导出 `app/schemas/` 并补 `MigrationTest`，不得用 destructive fallback 掩盖缺失迁移。
-- 备份只接受当前 schema `3` 的完整目录，不接受单 JSON 或 schema `1/2`。目录始终含 `cardrecord_backup.json`；仅当卡片实际引用图片时创建 `card_images/`，图片内容 ID 同时作为稳定引用与文件名真源，不另存“有无图片”或图片数量等派生字段。导入会核对引用、文件内容并复制回应用私有目录。任何字段、ID、归一化或写入路径变更都要验证导出、REPLACE、MERGE 与当前格式往返；多表导出取同一事务快照，导入写入保持单事务。
+- 备份只接受当前 schema `3` 的完整目录，不接受单 JSON 或 schema `1/2`。目录始终含 `cardrecord_backup.json`；仅当卡片实际引用图片时创建 `card_images/`，图片内容 ID 同时作为稳定引用与文件名真源，不另存“有无图片”或图片数量等派生字段。导入会核对引用、文件内容并复制回应用私有目录。任何字段、ID、归一化或写入路径变更都要验证导出、REPLACE、MERGE 与当前格式往返；多表导出取同一事务快照，导入写入保持单事务。备份 `settings` 只允许应用偏好（年费提醒开关），禁止写入系统通知权限；REPLACE 导入后须清空提醒去重/已排登记再应用开关，MERGE 不覆盖本机提醒开关。
+- 年费进度本地提醒：开关与去重在 SharedPreferences；调度边界与失败语义见 `docs/Design.md` §10。改提醒行为时按「用户体验 / 数据不变量 / 失败语义」三条一起核对，不要只改一条路径。
 
 ## 测试、审查与交付
 

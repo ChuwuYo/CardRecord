@@ -1,5 +1,13 @@
 package com.shuaji.cards.ui.screen
 
+import android.Manifest
+import android.app.Activity
+import android.content.ActivityNotFoundException
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.net.Uri
+import android.os.Build
+import android.provider.Settings
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -28,6 +36,8 @@ import androidx.compose.material.icons.filled.BrightnessMedium
 import androidx.compose.material.icons.filled.Colorize
 import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.FileUpload
+import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material3.AlertDialog
@@ -40,10 +50,12 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
@@ -56,12 +68,18 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.hideFromAccessibility
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import androidx.core.app.NotificationManagerCompat
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.shuaji.cards.R
@@ -69,6 +87,7 @@ import com.shuaji.cards.data.ColorSource
 import com.shuaji.cards.data.ThemeMode
 import com.shuaji.cards.data.backup.BackupPreview
 import com.shuaji.cards.data.backup.ImportMode
+import com.shuaji.cards.data.reminder.AnnualFeeReminderNotifier
 import com.shuaji.cards.ui.AppLanguage
 import com.shuaji.cards.ui.ViewModelFactories
 import com.shuaji.cards.ui.component.ModernColorPicker
@@ -113,8 +132,139 @@ fun SettingsScreen(onBack: () -> Unit) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val pendingImport by viewModel.pendingImport.collectAsStateWithLifecycle()
     val themeSettings by viewModel.themeSettings.collectAsStateWithLifecycle(initialValue = null)
+    val remindersEnabled by viewModel.annualFeeRemindersEnabled.collectAsStateWithLifecycle(initialValue = false)
+    val pendingReminderPermissionRequest by
+        viewModel.pendingReminderPermissionRequest.collectAsStateWithLifecycle()
     val coroutineScope = rememberCoroutineScope()
     val isWorking = state is SettingsUiState.Working
+    val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+
+    // 系统通知权限状态（与「年费提醒」功能开关分开展示）
+    var notificationsAllowed by remember {
+        mutableStateOf(AnnualFeeReminderNotifier.canPostNotifications(context))
+    }
+
+    fun refreshNotificationPermission() {
+        val allowed = AnnualFeeReminderNotifier.canPostNotifications(context)
+        val changed = allowed != notificationsAllowed
+        notificationsAllowed = allowed
+        // 仅在实际变化时重排，避免设置页每次 resume 都拆装全部闹钟。
+        if (changed) {
+            viewModel.onNotificationPermissionMaybeChanged()
+        }
+    }
+
+    DisposableEffect(lifecycleOwner) {
+        val observer =
+            LifecycleEventObserver { _, event ->
+                if (event == Lifecycle.Event.ON_RESUME) {
+                    refreshNotificationPermission()
+                }
+            }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    val notificationSettingsLauncher =
+        rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+            // 从系统设置返回：无论是否改过权限，都按当前 canPost 重排。
+            refreshNotificationPermission()
+        }
+
+    val notificationPermissionLauncher =
+        rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
+            // 系统权限弹窗关闭后立刻回到本页；授权成功则此处就会创建闹钟。
+            refreshNotificationPermission()
+        }
+
+    fun openAppNotificationSettings() {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                val channelIntent =
+                    Intent(Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS).apply {
+                        putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+                        putExtra(
+                            Settings.EXTRA_CHANNEL_ID,
+                            AnnualFeeReminderNotifier.CHANNEL_ID,
+                        )
+                    }
+                // 渠道被关时优先打开渠道页；否则仍走应用通知总设置。
+                val manager = NotificationManagerCompat.from(context)
+                val channel = manager.getNotificationChannel(AnnualFeeReminderNotifier.CHANNEL_ID)
+                if (channel != null &&
+                    channel.importance == android.app.NotificationManager.IMPORTANCE_NONE
+                ) {
+                    notificationSettingsLauncher.launch(channelIntent)
+                    return
+                }
+            }
+            val intent =
+                Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+                    putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+                }
+            notificationSettingsLauncher.launch(intent)
+        } catch (_: ActivityNotFoundException) {
+            val fallback =
+                Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                    data = Uri.fromParts("package", context.packageName, null)
+                }
+            notificationSettingsLauncher.launch(fallback)
+        }
+    }
+
+    /** 申请或引导开启系统通知权限（不直接改年费提醒开关）。 */
+    fun requestNotificationPermission() {
+        if (AnnualFeeReminderNotifier.canPostNotifications(context)) {
+            refreshNotificationPermission()
+            return
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            val granted =
+                ContextCompat.checkSelfPermission(
+                    context,
+                    Manifest.permission.POST_NOTIFICATIONS,
+                ) == PackageManager.PERMISSION_GRANTED
+            if (!granted) {
+                val activity = context as? Activity
+                val showRationale =
+                    activity?.shouldShowRequestPermissionRationale(
+                        Manifest.permission.POST_NOTIFICATIONS,
+                    ) == true
+                if (viewModel.hasAskedNotificationPermission() && !showRationale) {
+                    openAppNotificationSettings()
+                } else {
+                    viewModel.markAskedNotificationPermission()
+                    notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                }
+                return
+            }
+        }
+        // 运行时已授权但系统总开关关了（或 API < 33）
+        openAppNotificationSettings()
+    }
+
+    fun setNotificationPermissionEnabled(enabled: Boolean) {
+        if (!enabled) {
+            // App 内无法撤销权限，只能去系统设置关闭
+            openAppNotificationSettings()
+            return
+        }
+        requestNotificationPermission()
+    }
+
+    fun setRemindersEnabled(enabled: Boolean) {
+        if (!enabled) {
+            viewModel.setAnnualFeeRemindersEnabled(false)
+            return
+        }
+        // 先持久化「要提醒」：即使用户去系统设置授权时进程被杀，下次启动仍会重排。
+        // 无权限时协调器只会取消闹钟，不会误投递。
+        viewModel.setAnnualFeeRemindersEnabled(true)
+        if (!AnnualFeeReminderNotifier.canPostNotifications(context)) {
+            requestNotificationPermission()
+        }
+    }
 
     BackHandler(enabled = isWorking, onBack = viewModel::cancel)
 
@@ -143,6 +293,17 @@ fun SettingsScreen(onBack: () -> Unit) {
     LaunchedEffect(state) {
         if (state is SettingsUiState.Done) {
             viewModel.acknowledge()
+        }
+    }
+
+    // 导入开启了年费提醒：沿用设置页权限路径（系统弹窗 / 跳转系统设置）。
+    LaunchedEffect(pendingReminderPermissionRequest) {
+        if (!pendingReminderPermissionRequest) return@LaunchedEffect
+        viewModel.acknowledgeReminderPermissionRequest()
+        if (!AnnualFeeReminderNotifier.canPostNotifications(context)) {
+            requestNotificationPermission()
+        } else {
+            refreshNotificationPermission()
         }
     }
 
@@ -233,6 +394,68 @@ fun SettingsScreen(onBack: () -> Unit) {
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 16.dp),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+
+                // ────── 提醒 ──────
+                item {
+                    Text(
+                        text = stringResource(R.string.settings_section_reminders),
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
+                item {
+                    ListItem(
+                        headlineContent = { Text(stringResource(R.string.settings_notification_permission)) },
+                        supportingContent = {
+                            Text(stringResource(R.string.settings_notification_permission_subtitle))
+                        },
+                        leadingContent = {
+                            Icon(
+                                Icons.Default.NotificationsActive,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                            )
+                        },
+                        trailingContent = {
+                            Switch(
+                                checked = notificationsAllowed,
+                                onCheckedChange = { setNotificationPermissionEnabled(it) },
+                                enabled = enabled,
+                            )
+                        },
+                        modifier =
+                            Modifier.clickable(enabled = enabled) {
+                                setNotificationPermissionEnabled(!notificationsAllowed)
+                            },
+                    )
+                }
+                item {
+                    ListItem(
+                        headlineContent = { Text(stringResource(R.string.settings_annual_fee_reminders)) },
+                        supportingContent = {
+                            Text(stringResource(R.string.settings_annual_fee_reminders_subtitle))
+                        },
+                        leadingContent = {
+                            Icon(
+                                Icons.Default.Notifications,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                            )
+                        },
+                        trailingContent = {
+                            Switch(
+                                checked = remindersEnabled,
+                                onCheckedChange = { setRemindersEnabled(it) },
+                                enabled = enabled,
+                            )
+                        },
+                        modifier =
+                            Modifier.clickable(enabled = enabled) {
+                                setRemindersEnabled(!remindersEnabled)
+                            },
                     )
                 }
 
