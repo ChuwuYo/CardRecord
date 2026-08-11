@@ -5,7 +5,7 @@
 ## 项目与架构
 
 - **刷记 / CardRecord**：本地优先的 Android 卡片消费笔数记录应用。
-- 包名 `com.shuaji.cards`；当前 `v1.6.0 / versionCode 24`。
+- 包名 `com.shuaji.cards`；当前 `v1.6.1 / versionCode 25`。
 - Kotlin + Jetpack Compose + Material 3；Room v9 存业务数据并用 KSP 生成代码；外观主题走 DataStore Preferences，年费提醒开关与去重状态走 SharedPreferences（见第 46 行，勿当成第二套设置真源）。
 - 无账号、后端或自动云同步；用户通过 SAF 主动导入/导出备份目录（JSON + 可选图片文件夹）；系统云备份和设备迁移关闭。
 - 手写依赖容器 `AppContainer`；Screen → ViewModel → Repository → DAO，Repository 仍会向 ViewModel 暴露部分 Entity / 投影，不是完整领域模型隔离层。

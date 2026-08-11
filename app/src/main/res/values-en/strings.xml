@@ -89,7 +89,7 @@
     <string name="settings_notification_permission">Notification permission</string>
     <string name="settings_notification_permission_subtitle">Allow CardRecord to post notifications. To turn this off, use system settings.</string>
     <string name="settings_annual_fee_reminders">Annual-fee progress reminders</string>
-    <string name="settings_annual_fee_reminders_subtitle">Requires notification permission above. When about 30 or 10 days remain before the due date and the count is unmet, show a system notification (approximate timing). Cards you already had before this update are included automatically after you turn this on—no need to recreate due dates.</string>
+    <string name="settings_annual_fee_reminders_subtitle">Requires notification permission above. You will be reminded twice, about 30 and 10 days before the due date.</string>
     <string name="reminder_channel_name">Annual-fee progress</string>
     <string name="reminder_channel_description">Local reminders when annual-fee swipe targets are unmet</string>
     <string name="reminder_notification_title">Annual-fee progress</string>

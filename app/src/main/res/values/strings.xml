@@ -90,7 +90,7 @@
     <string name="settings_notification_permission">通知权限</string>
     <string name="settings_notification_permission_subtitle">系统允许刷记发送通知。关闭请前往系统设置。</string>
     <string name="settings_annual_fee_reminders">年费进度提醒</string>
-    <string name="settings_annual_fee_reminders_subtitle">需同时打开上方通知权限。距结算日约还剩 30 天、10 天且未刷满时，用系统通知提醒（大概时间，不保证卡点）。更新前已有的卡片在开启后也会自动纳入，无需重建设置结算日。</string>
+    <string name="settings_annual_fee_reminders_subtitle">需同时打开上方通知权限，以及将在距结算日 30 天、10 天两个时间点提醒两次。</string>
     <string name="reminder_channel_name">年费进度提醒</string>
     <string name="reminder_channel_description">未刷满年费笔数时的本地提醒</string>
     <string name="reminder_notification_title">年费进度提醒</string>
