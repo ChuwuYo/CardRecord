@@ -17,6 +17,7 @@ import kotlinx.serialization.Serializable
  * 正式导出目录始终包含 `cardrecord_backup.json`；仅当卡片实际引用图片资源时创建
  * `card_images/`，JSON 通过资源 ID 对应图片文件。
  * 当前版本只接受 schema 3 目录，避免未发布协议的兼容分支成为长期维护负担。
+ * `settings` 仅持久化应用偏好（如年费提醒开关），不包含系统通知权限状态。
  */
 @Serializable
 data class BackupBundle(
@@ -28,11 +29,25 @@ data class BackupBundle(
     val folders: List<BackupFolder>,
     @SerialName("transactions")
     val transactions: List<BackupTransaction>,
+    /** 缺省兼容 1.6.0 及更早未写 settings 的 schema 3 文件。 */
+    @SerialName("settings")
+    val settings: BackupSettings = BackupSettings(),
 ) {
     companion object {
         const val SCHEMA_VERSION: Int = 3
     }
 }
+
+/**
+ * 备份内的应用设置。
+ *
+ * 只存「用户是否开启年费进度提醒」；通知权限属于系统状态，禁止写入备份。
+ */
+@Serializable
+data class BackupSettings(
+    @SerialName("annualFeeRemindersEnabled")
+    val annualFeeRemindersEnabled: Boolean = false,
+)
 
 /** 卡片备份记录；所有字段均属于当前协议，nullable 不等于可从 JSON 中省略。 */
 @Serializable
@@ -221,6 +236,8 @@ data class ImportResult(
     val cardsSkippedInvalidFolder: Int = 0,
     val duplicateFolderNames: Int = 0,
     val duplicateCardNames: Int = 0,
+    /** 备份中的年费提醒开关；UI 据此在导入成功后按需申请通知权限。 */
+    val annualFeeRemindersEnabled: Boolean = false,
 )
 
 class BackupException(

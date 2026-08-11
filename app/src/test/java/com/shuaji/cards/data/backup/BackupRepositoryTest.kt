@@ -22,6 +22,7 @@ import com.shuaji.cards.data.local.CardFolderEntity
 import com.shuaji.cards.data.local.CardType
 import com.shuaji.cards.data.local.ImageSourceType
 import com.shuaji.cards.data.local.TransactionEntity
+import com.shuaji.cards.data.reminder.AnnualFeeReminderStore
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
@@ -92,6 +93,7 @@ class BackupRepositoryTest {
     private lateinit var context: Context
     private lateinit var db: AppDatabase
     private lateinit var repo: BackupRepository
+    private lateinit var reminderStore: AnnualFeeReminderStore
     private lateinit var cardRepository: CardRepository
 
     @Before
@@ -113,6 +115,7 @@ class BackupRepositoryTest {
                 boundaryTicks = flowOf(Unit),
                 userImages = FailClosedTestUserCardImageStore,
             )
+        reminderStore = AnnualFeeReminderStore(context)
         repo =
             BackupRepository(
                 context = context,
@@ -122,6 +125,7 @@ class BackupRepositoryTest {
                 transactionDao = db.transactionDao(),
                 normalizeInTransaction = cardRepository::normalizeOverdueCyclesInTransaction,
                 userImages = FailClosedTestUserCardImageStore,
+                reminderStore = reminderStore,
                 directoryAccess = LocalBackupDirectoryAccess,
             )
     }
@@ -155,6 +159,7 @@ class BackupRepositoryTest {
     private fun json(): Json =
         Json {
             prettyPrint = true
+            encodeDefaults = true
         }
 
     private fun directoryManifest(directory: File): Pair<BackupBundle, JsonObject> {
@@ -198,6 +203,7 @@ class BackupRepositoryTest {
             transactionDao = db.transactionDao(),
             normalizeInTransaction = cardRepository::normalizeOverdueCyclesInTransaction,
             userImages = FailClosedTestUserCardImageStore,
+            reminderStore = reminderStore,
             maxBackupBytes = maxBackupBytes,
             directoryAccess = LocalBackupDirectoryAccess,
         )
@@ -211,6 +217,7 @@ class BackupRepositoryTest {
             transactionDao = db.transactionDao(),
             normalizeInTransaction = cardRepository::normalizeOverdueCyclesInTransaction,
             userImages = userImages,
+            reminderStore = reminderStore,
             directoryAccess = LocalBackupDirectoryAccess,
         )
 
@@ -226,6 +233,7 @@ class BackupRepositoryTest {
             transactionDao = db.transactionDao(),
             normalizeInTransaction = cardRepository::normalizeOverdueCyclesInTransaction,
             userImages = userImages,
+            reminderStore = reminderStore,
             maxImageBytes = maxImageBytes,
             directoryAccess = LocalBackupDirectoryAccess,
         )
@@ -321,6 +329,11 @@ class BackupRepositoryTest {
             assertEquals(1, bundle.transactions.size)
             assertEquals(CURRENT_TOP_LEVEL_FIELDS, exportedJson.keys)
             assertEquals(
+                CURRENT_SETTINGS_FIELDS,
+                exportedJson.getValue("settings").jsonObject.keys,
+            )
+            assertFalse(bundle.settings.annualFeeRemindersEnabled)
+            assertEquals(
                 CURRENT_CARD_FIELDS,
                 exportedJson
                     .getValue("cards")
@@ -328,6 +341,9 @@ class BackupRepositoryTest {
                     .single()
                     .jsonObject.keys,
             )
+            // 通知权限状态不得进入备份协议。
+            assertFalse(exportedJson.getValue("settings").jsonObject.containsKey("notificationPermission"))
+            assertFalse(exportedJson.getValue("settings").jsonObject.containsKey("askedNotificationPermission"))
             assertEquals(
                 CURRENT_FOLDER_FIELDS,
                 exportedJson
@@ -354,6 +370,94 @@ class BackupRepositoryTest {
                 "BackupBundle 不应再含 exportedAtMillis 字段",
                 exportedJson.containsKey("exportedAtMillis"),
             )
+        }
+
+    @Test
+    fun export_includesAnnualFeeRemindersEnabled_only() =
+        runTest {
+            reminderStore.setEnabled(true)
+            val (backupDirectory, _) = exportBackup("reminder-export-parent")
+            val (bundle, exportedJson) = directoryManifest(backupDirectory)
+            assertTrue(bundle.settings.annualFeeRemindersEnabled)
+            assertEquals(
+                CURRENT_SETTINGS_FIELDS,
+                exportedJson.getValue("settings").jsonObject.keys,
+            )
+        }
+
+    @Test
+    fun import_appliesAnnualFeeRemindersEnabled_fromSettings() =
+        runTest {
+            reminderStore.setEnabled(false)
+            val directory = tempFolder.newFolder("reminder-on-backup")
+            writeBackupDirectory(
+                directory,
+                TestData.backupBundle(annualFeeRemindersEnabled = true),
+            )
+            val result = importInspected(directory, ImportMode.REPLACE)
+            assertTrue(result.annualFeeRemindersEnabled)
+            assertTrue(reminderStore.isEnabled())
+        }
+
+    @Test
+    fun import_replace_clearsStaleNotifiedKeys_beforeApplyingSettings() =
+        runTest {
+            reminderStore.setEnabled(false)
+            reminderStore.markNotified(cardId = 99L, thresholdDays = 10, dueDateToken = 1L)
+            reminderStore.writeScheduledKeys(
+                setOf(AnnualFeeReminderStore.scheduleKey(99L, 10, 1L)),
+            )
+            val directory = tempFolder.newFolder("replace-clears-reminder-state")
+            writeBackupDirectory(
+                directory,
+                TestData.backupBundle(annualFeeRemindersEnabled = true),
+            )
+            importInspected(directory, ImportMode.REPLACE)
+            assertTrue(reminderStore.isEnabled())
+            assertFalse(reminderStore.wasNotified(99L, 10, 1L))
+            assertTrue(reminderStore.readScheduledKeys().isEmpty())
+        }
+
+    @Test
+    fun import_legacySchemaThreeWithoutSettings_defaultsRemindersOff() =
+        runTest {
+            reminderStore.setEnabled(true)
+            val directory = tempFolder.newFolder("legacy-no-settings")
+            directory
+                .resolve(BACKUP_MANIFEST_FILE_NAME)
+                .writeText(
+                    """{"version":3,"cards":[],"folders":[],"transactions":[]}""",
+                    Charsets.UTF_8,
+                )
+            val result = importInspected(directory, ImportMode.REPLACE)
+            assertFalse(result.annualFeeRemindersEnabled)
+            assertFalse(reminderStore.isEnabled())
+        }
+
+    @Test
+    fun import_rejectsUnknownPermissionFieldInsideSettings() =
+        runTest {
+            val directory = tempFolder.newFolder("settings-permission-reject")
+            directory
+                .resolve(BACKUP_MANIFEST_FILE_NAME)
+                .writeText(
+                    """
+                    {
+                      "version": 3,
+                      "cards": [],
+                      "folders": [],
+                      "transactions": [],
+                      "settings": {
+                        "annualFeeRemindersEnabled": true,
+                        "notificationPermission": true
+                      }
+                    }
+                    """.trimIndent(),
+                    Charsets.UTF_8,
+                )
+            assertThrows(BackupException::class.java) {
+                runBlocking { repo.inspect(Uri.fromFile(directory)) }
+            }
         }
 
     @Test
@@ -464,6 +568,7 @@ class BackupRepositoryTest {
                     transactionDao = db.transactionDao(),
                     normalizeInTransaction = cardRepository::normalizeOverdueCyclesInTransaction,
                     userImages = FailClosedTestUserCardImageStore,
+                    reminderStore = reminderStore,
                     directoryAccess =
                         object : BackupDirectoryAccess {
                             override fun createBackup(
@@ -744,6 +849,7 @@ class BackupRepositoryTest {
                     transactionDao = db.transactionDao(),
                     normalizeInTransaction = cardRepository::normalizeOverdueCyclesInTransaction,
                     userImages = FailClosedTestUserCardImageStore,
+                    reminderStore = reminderStore,
                     maxBackupBytes = referenceLength - 1L,
                     directoryAccess = LocalBackupDirectoryAccess,
                 )
@@ -1382,6 +1488,7 @@ class BackupRepositoryTest {
                     transactionDao = db.transactionDao(),
                     normalizeInTransaction = { error("归一化失败") },
                     userImages = FailClosedTestUserCardImageStore,
+                    reminderStore = reminderStore,
                     directoryAccess = LocalBackupDirectoryAccess,
                 )
 
@@ -1409,6 +1516,7 @@ class BackupRepositoryTest {
                     transactionDao = db.transactionDao(),
                     normalizeInTransaction = cardRepository::normalizeOverdueCyclesInTransaction,
                     userImages = GarbageCollectingUserImageStore { error("模拟图片清理失败") },
+                    reminderStore = reminderStore,
                     directoryAccess = LocalBackupDirectoryAccess,
                 )
 
@@ -1803,6 +1911,7 @@ class BackupRepositoryTest {
                 transactionDao = db.transactionDao(),
                 normalizeInTransaction = cardRepository::normalizeOverdueCyclesInTransaction,
                 userImages = FailClosedTestUserCardImageStore,
+                reminderStore = reminderStore,
                 directoryAccess = FixedImportDirectoryAccess { blockingInput },
             )
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -1841,6 +1950,7 @@ class BackupRepositoryTest {
                 transactionDao = db.transactionDao(),
                 normalizeInTransaction = cardRepository::normalizeOverdueCyclesInTransaction,
                 userImages = FailClosedTestUserCardImageStore,
+                reminderStore = reminderStore,
                 directoryAccess =
                     object : BackupDirectoryAccess {
                         override fun createBackup(
@@ -1890,6 +2000,7 @@ class BackupRepositoryTest {
                 transactionDao = db.transactionDao(),
                 normalizeInTransaction = cardRepository::normalizeOverdueCyclesInTransaction,
                 userImages = FailClosedTestUserCardImageStore,
+                reminderStore = reminderStore,
                 directoryAccess =
                     object : BackupDirectoryAccess {
                         override fun createBackup(
@@ -1939,6 +2050,7 @@ class BackupRepositoryTest {
                     transactionDao = db.transactionDao(),
                     normalizeInTransaction = cardRepository::normalizeOverdueCyclesInTransaction,
                     userImages = FailClosedTestUserCardImageStore,
+                    reminderStore = reminderStore,
                     directoryAccess = FixedExportDirectoryAccess(blockingOutput),
                 )
             val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -1972,6 +2084,7 @@ class BackupRepositoryTest {
                 transactionDao = db.transactionDao(),
                 normalizeInTransaction = cardRepository::normalizeOverdueCyclesInTransaction,
                 userImages = FailClosedTestUserCardImageStore,
+                reminderStore = reminderStore,
                 directoryAccess = FixedImportDirectoryAccess { blockingInput },
             )
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -2015,6 +2128,7 @@ class BackupRepositoryTest {
                         cleanupStarted.countDown()
                         finishCleanup.await()
                     },
+                reminderStore = reminderStore,
                 directoryAccess = LocalBackupDirectoryAccess,
             )
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -2067,6 +2181,7 @@ class BackupRepositoryTest {
                 folderDao = db.cardFolderDao(),
                 transactionDao = db.transactionDao(),
                 userImages = FailClosedTestUserCardImageStore,
+                reminderStore = reminderStore,
                 normalizeInTransaction = {
                     normalizeStarted.complete(Unit)
                     keepNormalizing.await()
@@ -2339,7 +2454,8 @@ class BackupRepositoryTest {
 
     private companion object {
         const val CANCELLATION_RACE_ITERATIONS = 25
-        val CURRENT_TOP_LEVEL_FIELDS = setOf("version", "cards", "folders", "transactions")
+        val CURRENT_TOP_LEVEL_FIELDS = setOf("version", "cards", "folders", "transactions", "settings")
+        val CURRENT_SETTINGS_FIELDS = setOf("annualFeeRemindersEnabled")
         val CURRENT_CARD_FIELDS =
             setOf(
                 "id",

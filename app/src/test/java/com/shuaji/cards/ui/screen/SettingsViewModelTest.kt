@@ -13,6 +13,7 @@ import com.shuaji.cards.data.backup.BackupRepository
 import com.shuaji.cards.data.backup.ExportSummary
 import com.shuaji.cards.data.backup.ImportMode
 import com.shuaji.cards.data.backup.ImportResult
+import com.shuaji.cards.data.reminder.AnnualFeeReminderStore
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.awaitCancellation
@@ -66,6 +67,7 @@ class SettingsViewModelTest {
 
     private lateinit var application: Application
     private lateinit var backup: BackupRepository
+    private lateinit var reminderStore: AnnualFeeReminderStore
 
     /** 产线 SettingsViewModel 构造即读取 themeSettings；测试只需 stub 出一个非空流。 */
     private val settingsRepo: SettingsRepository =
@@ -84,11 +86,12 @@ class SettingsViewModelTest {
     @Before
     fun setUp() {
         application = ApplicationProvider.getApplicationContext()
+        reminderStore = AnnualFeeReminderStore(application)
         backup = mock()
         whenever(backup.cancelActive()).doReturn(BackupCancelResult.CANCELLED)
     }
 
-    private fun newVm() = SettingsViewModel(application, backup, emitSettingsEvent, settingsRepo)
+    private fun newVm() = SettingsViewModel(application, backup, emitSettingsEvent, settingsRepo, reminderStore)
 
     /** 跑一段触发 ViewModel 的动作，推进到协程空闲，返回这期间新 emit 的事件快照。 */
     private fun TestScope.runAndCollect(action: () -> Unit): List<SettingsDoneEvent> {

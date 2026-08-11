@@ -19,6 +19,7 @@ import com.shuaji.cards.data.local.CardFolderDao
 import com.shuaji.cards.data.local.CardType
 import com.shuaji.cards.data.local.TransactionDao
 import com.shuaji.cards.data.local.isValidCardMonthDay
+import com.shuaji.cards.data.reminder.AnnualFeeReminderStore
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
@@ -94,6 +95,9 @@ class BackupRepository internal constructor(
     private val transactionDao: TransactionDao,
     private val normalizeInTransaction: suspend () -> Int,
     private val userImages: UserCardImageStore,
+    private val reminderStore: AnnualFeeReminderStore,
+    private val onRemindersPreferenceApplied: () -> Unit = {},
+    private val cancelTrackedReminders: () -> Unit = {},
     private val maxBackupBytes: Long = DEFAULT_MAX_BACKUP_BYTES,
     private val maxImageBytes: Long = DEFAULT_MAX_BACKUP_IMAGE_BYTES,
     private val directoryAccess: BackupDirectoryAccess = AndroidBackupDirectoryAccess(context),
@@ -107,6 +111,8 @@ class BackupRepository internal constructor(
     private val json =
         Json {
             prettyPrint = true
+            // 确保 settings.annualFeeRemindersEnabled=false 也会写出，便于人工核对。
+            encodeDefaults = true
         }
     private val operationMutex = Mutex()
 
@@ -160,6 +166,10 @@ class BackupRepository internal constructor(
                         cards = cards.map { it.toBackup() },
                         folders = folderDao.listAll().map { it.toBackup() },
                         transactions = transactionDao.listAll().map { it.toBackup() },
+                        settings =
+                            BackupSettings(
+                                annualFeeRemindersEnabled = reminderStore.isEnabled(),
+                            ),
                     )
                 }
             val cancellationSignal = checkNotNull(activeOperation).cancellationSignal
@@ -255,16 +265,25 @@ class BackupRepository internal constructor(
                 // DAO 写入与归一化仍可取消并 ROLLBACK；只有全部完成、即将交给 Room 提交时才原子切换
                 // 到拒绝显式取消的阶段，避免大备份一开始写入就失去取消能力。
                 try {
-                    database.withTransaction {
-                        val importResult =
-                            when (mode) {
-                                ImportMode.REPLACE -> doReplace(bundle)
-                                ImportMode.MERGE -> doMerge(bundle)
-                            }
-                        normalizeInTransaction()
-                        enterCommitBoundary()
-                        importResult
-                    }
+                    val importResult =
+                        database.withTransaction {
+                            val result =
+                                when (mode) {
+                                    ImportMode.REPLACE -> doReplace(bundle)
+                                    ImportMode.MERGE -> doMerge(bundle)
+                                }
+                            normalizeInTransaction()
+                            enterCommitBoundary()
+                            result
+                        }
+                    // 偏好写在 DB 事务外：SharedPreferences 无法随 SQLite 回滚。
+                    applyReminderSettings(
+                        settings = bundle.settings,
+                        replaceImport = mode == ImportMode.REPLACE,
+                    )
+                    importResult.copy(
+                        annualFeeRemindersEnabled = bundle.settings.annualFeeRemindersEnabled,
+                    )
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: BackupException) {
@@ -283,6 +302,22 @@ class BackupRepository internal constructor(
                 }
             }
         }
+
+    /**
+     * 只恢复年费提醒开关；通知权限不在备份内，由 UI 在导入后按需申请。
+     * REPLACE 时卡片 ID 已重分配：先同步取消闹钟，再清空去重/登记，最后写入备份开关并重排。
+     */
+    private fun applyReminderSettings(
+        settings: BackupSettings,
+        replaceImport: Boolean,
+    ) {
+        if (replaceImport) {
+            cancelTrackedReminders()
+            reminderStore.clearScheduleAndNotifiedState()
+        }
+        reminderStore.setEnabled(settings.annualFeeRemindersEnabled)
+        onRemindersPreferenceApplied()
+    }
 
     /** 解码并验证 JSON 清单；图片校验或暂存由调用场景在清单通过后显式执行。 */
     private suspend fun readAndValidateManifest(directoryUri: Uri): DecodedManifest {

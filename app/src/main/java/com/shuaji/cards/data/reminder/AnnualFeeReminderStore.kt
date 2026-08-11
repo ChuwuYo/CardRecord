@@ -1,0 +1,107 @@
+package com.shuaji.cards.data.reminder
+
+import android.content.Context
+import android.content.SharedPreferences
+import androidx.core.content.edit
+import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.callbackFlow
+
+/**
+ * 提醒开关与「本结算周期某档位已通知」去重。
+ *
+ * 去重 key = cardId + threshold + dueDateToken；续期换 token 后自动允许再提醒。
+ */
+class AnnualFeeReminderStore(
+    context: Context,
+) {
+    private val prefs: SharedPreferences =
+        context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+
+    /** 默认关，避免 Android 13+ 未授权时空排闹钟；用户在设置中开启并授权后再排。 */
+    fun isEnabled(): Boolean = prefs.getBoolean(KEY_ENABLED, false)
+
+    fun setEnabled(enabled: Boolean) {
+        prefs.edit { putBoolean(KEY_ENABLED, enabled) }
+    }
+
+    /** 是否已向系统申请过 POST_NOTIFICATIONS（用于区分「从未问过」与「永久拒绝」）。 */
+    fun hasAskedNotificationPermission(): Boolean = prefs.getBoolean(KEY_ASKED_NOTIFICATION, false)
+
+    fun markAskedNotificationPermission() {
+        prefs.edit { putBoolean(KEY_ASKED_NOTIFICATION, true) }
+    }
+
+    fun observeEnabled(): Flow<Boolean> =
+        callbackFlow {
+            val listener =
+                SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+                    if (key == null || key == KEY_ENABLED) {
+                        trySend(isEnabled())
+                    }
+                }
+            prefs.registerOnSharedPreferenceChangeListener(listener)
+            trySend(isEnabled())
+            awaitClose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
+        }
+
+    fun wasNotified(
+        cardId: Long,
+        thresholdDays: Int,
+        dueDateToken: Long,
+    ): Boolean = prefs.getBoolean(notifiedKey(cardId, thresholdDays, dueDateToken), false)
+
+    fun markNotified(
+        cardId: Long,
+        thresholdDays: Int,
+        dueDateToken: Long,
+    ) {
+        prefs.edit { putBoolean(notifiedKey(cardId, thresholdDays, dueDateToken), true) }
+    }
+
+    fun readScheduledKeys(): Set<String> = prefs.getStringSet(KEY_SCHEDULED, emptySet()) ?: emptySet()
+
+    fun writeScheduledKeys(keys: Set<String>) {
+        prefs.edit { putStringSet(KEY_SCHEDULED, keys.toSet()) }
+    }
+
+    /**
+     * REPLACE 导入后卡片 ID 全部重分配：清空已排闹钟登记与去重标记，避免旧 ID 脏状态。
+     * 保留「是否开启提醒」与「是否问过通知权限」（后者属本机系统交互史，不是备份内容）。
+     */
+    fun clearScheduleAndNotifiedState() {
+        val enabled = isEnabled()
+        val asked = hasAskedNotificationPermission()
+        prefs.edit { clear() }
+        setEnabled(enabled)
+        if (asked) markAskedNotificationPermission()
+    }
+
+    companion object {
+        private const val PREFS_NAME = "annual_fee_reminders"
+        private const val KEY_ENABLED = "enabled"
+        private const val KEY_ASKED_NOTIFICATION = "asked_notification_permission"
+        private const val KEY_SCHEDULED = "scheduled_keys"
+
+        fun notifiedKey(
+            cardId: Long,
+            thresholdDays: Int,
+            dueDateToken: Long,
+        ): String = "n:$cardId:$thresholdDays:$dueDateToken"
+
+        fun scheduleKey(
+            cardId: Long,
+            thresholdDays: Int,
+            dueDateToken: Long,
+        ): String = "s:$cardId:$thresholdDays:$dueDateToken"
+
+        fun parseScheduleKey(key: String): Triple<Long, Int, Long>? {
+            val parts = key.removePrefix("s:").split(':')
+            if (parts.size != 3) return null
+            val cardId = parts[0].toLongOrNull() ?: return null
+            val threshold = parts[1].toIntOrNull() ?: return null
+            val due = parts[2].toLongOrNull() ?: return null
+            return Triple(cardId, threshold, due)
+        }
+    }
+}

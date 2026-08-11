@@ -78,11 +78,13 @@ object TestData {
         cards: List<CardEntity> = emptyList(),
         folders: List<CardFolderEntity> = emptyList(),
         transactions: List<TransactionEntity> = emptyList(),
+        annualFeeRemindersEnabled: Boolean = false,
     ): BackupBundle =
         BackupBundle(
             version = version,
             cards = cards.map { it.toBackup() },
             folders = folders.map { it.toBackup() },
             transactions = transactions.map { it.toBackup() },
+            settings = BackupSettings(annualFeeRemindersEnabled = annualFeeRemindersEnabled),
         )
 }
