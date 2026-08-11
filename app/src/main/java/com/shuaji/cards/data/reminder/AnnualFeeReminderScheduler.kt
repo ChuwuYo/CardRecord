@@ -4,19 +4,19 @@ import android.app.AlarmManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
-import android.os.Build
 
 /**
  * AlarmManager 非精确调度。官方「用户指定某时刻之后做事」路径：
- * [AlarmManager.setAndAllowWhileIdle] / [AlarmManager.set]（非 setExact*）。
+ * [AlarmManager.setAndAllowWhileIdle]（非 setExact*）。
  *
- * 远未来用 [AlarmManager.set] 交给系统批处理；仅接近触发时用 while-idle，
- * 减轻多卡场景下 while-idle 配额被挤爆的风险。
+ * 每张卡只挂下一档，闹钟数量 ≈ 卡片数，直接 while-idle 即可，
+ * 避免远未来 `set` 后无手递、Doze 下拖到维护窗口才到的问题。
+ *
+ * minSdk 26，可直接使用 while-idle 与 IMMUTABLE PendingIntent。
  */
 class AnnualFeeReminderScheduler(
     private val context: Context,
     private val store: AnnualFeeReminderStore,
-    private val nowMillisProvider: () -> Long = { System.currentTimeMillis() },
 ) {
     private val alarmManager =
         context.applicationContext.getSystemService(Context.ALARM_SERVICE) as AlarmManager
@@ -28,8 +28,9 @@ class AnnualFeeReminderScheduler(
             val parsed = AnnualFeeReminderStore.parseScheduleKey(key) ?: continue
             cancel(appContext, parsed.first, parsed.second, parsed.third)
         }
+        // 先落空集，再每挂成功一只就写入，避免中途失败后 prefs 仍指向未挂上的闹钟。
         val nextKeys = linkedSetOf<String>()
-        val now = nowMillisProvider()
+        store.writeScheduledKeys(nextKeys)
         for (alarm in alarms) {
             val key =
                 AnnualFeeReminderStore.scheduleKey(
@@ -37,10 +38,10 @@ class AnnualFeeReminderScheduler(
                     alarm.thresholdDays,
                     alarm.dueDateToken,
                 )
+            schedule(appContext, alarm)
             nextKeys += key
-            schedule(appContext, alarm, now)
+            store.writeScheduledKeys(nextKeys)
         }
-        store.writeScheduledKeys(nextKeys)
     }
 
     fun cancelAllTracked() {
@@ -50,26 +51,13 @@ class AnnualFeeReminderScheduler(
     private fun schedule(
         appContext: Context,
         alarm: AnnualFeeReminderPlanner.PlannedAlarm,
-        nowMillis: Long,
     ) {
         val pi = pendingIntent(appContext, alarm.cardId, alarm.thresholdDays, alarm.dueDateToken)
-        if (shouldUseWhileIdle(alarm.triggerAtMillis, nowMillis)) {
-            // 非精确：尊重 Doze；允许在 idle 维护窗口送达。
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                alarmManager.setAndAllowWhileIdle(
-                    AlarmManager.RTC_WAKEUP,
-                    alarm.triggerAtMillis,
-                    pi,
-                )
-            } else {
-                @Suppress("DEPRECATION")
-                alarmManager.set(AlarmManager.RTC_WAKEUP, alarm.triggerAtMillis, pi)
-            }
-        } else {
-            // 远闹钟走普通非精确 set，避免大量 while-idle 占满配额。
-            @Suppress("DEPRECATION")
-            alarmManager.set(AlarmManager.RTC_WAKEUP, alarm.triggerAtMillis, pi)
-        }
+        alarmManager.setAndAllowWhileIdle(
+            AlarmManager.RTC_WAKEUP,
+            alarm.triggerAtMillis,
+            pi,
+        )
     }
 
     private fun cancel(
@@ -94,30 +82,15 @@ class AnnualFeeReminderScheduler(
                 putExtra(AnnualFeeReminderReceiver.EXTRA_THRESHOLD_DAYS, thresholdDays)
                 putExtra(AnnualFeeReminderReceiver.EXTRA_DUE_DATE_TOKEN, dueDateToken)
             }
-        val flags =
-            PendingIntent.FLAG_UPDATE_CURRENT or
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                    PendingIntent.FLAG_IMMUTABLE
-                } else {
-                    0
-                }
         return PendingIntent.getBroadcast(
             appContext,
             requestCode(cardId, thresholdDays),
             intent,
-            flags,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
     }
 
     companion object {
-        /** 距触发时刻在此窗口内才用 while-idle。 */
-        const val WHILE_IDLE_WINDOW_MS: Long = 60L * 60L * 1000L
-
-        fun shouldUseWhileIdle(
-            triggerAtMillis: Long,
-            nowMillis: Long,
-        ): Boolean = triggerAtMillis - nowMillis <= WHILE_IDLE_WINDOW_MS
-
         fun requestCode(
             cardId: Long,
             thresholdDays: Int,

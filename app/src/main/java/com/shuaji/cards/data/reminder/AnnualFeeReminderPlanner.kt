@@ -63,7 +63,13 @@ object AnnualFeeReminderPlanner {
                     THRESHOLDS_DAYS
                         .asSequence()
                         .filter { threshold ->
-                            !alreadyNotified(item.card.id, threshold, dueToken)
+                            !alreadyNotified(item.card.id, threshold, dueToken) &&
+                                // 补发窗口：更近档位已通知后，不再排更远且同样已过期的档，
+                                // 否则 10 天补发后会立刻再排 30 天并二次通知。
+                                THRESHOLDS_DAYS.none { nearer ->
+                                    nearer < threshold &&
+                                        alreadyNotified(item.card.id, nearer, dueToken)
+                                }
                         }.map { threshold ->
                             val triggerDate = dueDate.minusDays(threshold.toLong())
                             val triggerAt =

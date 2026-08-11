@@ -3,6 +3,7 @@ package com.shuaji.cards.data.reminder
 import android.util.Log
 import com.shuaji.cards.data.CardRepository
 import com.shuaji.cards.data.processForegroundFlow
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -88,6 +89,13 @@ class AnnualFeeReminderCoordinator(
                 scheduler.cancelAllTracked()
                 return
             }
+            val liveCardDueTokens =
+                cards
+                    .mapNotNull { item ->
+                        val due = item.card.nextDueDateMillis ?: return@mapNotNull null
+                        item.card.id to due
+                    }.toSet()
+            store.pruneNotifiedKeeping(liveCardDueTokens)
             val plan =
                 AnnualFeeReminderPlanner.plan(
                     cards = cards,
@@ -97,6 +105,8 @@ class AnnualFeeReminderCoordinator(
                     alreadyNotified = store::wasNotified,
                 )
             scheduler.replaceAll(plan)
+        } catch (error: CancellationException) {
+            throw error
         } catch (error: RuntimeException) {
             // 测试拆卸或 OEM 异常不得打崩后台协程；下次 refresh / 前台再试。
             Log.w("AnnualFeeReminder", "applyPlan failed", error)

@@ -88,6 +88,24 @@ class AnnualFeeReminderPlannerTest {
     }
 
     @Test
+    fun afterCatchUpTenNotified_doesNotRescheduleThirty() {
+        val due = LocalDate.of(2027, 6, 1)
+        val token = DateToken.fromAnnualDate(due)
+        val now = instant("2027-05-25T12:00:00Z")
+        val plan =
+            AnnualFeeReminderPlanner.plan(
+                cards = listOf(activeUnmet(due = due, now = "2027-05-25T12:00:00Z")),
+                enabled = true,
+                now = now,
+                zoneId = utc,
+                alreadyNotified = { cardId, threshold, dueToken ->
+                    cardId == 7L && threshold == 10 && dueToken == token
+                },
+            )
+        assertTrue(plan.isEmpty())
+    }
+
+    @Test
     fun alreadyNotifiedCatchUp_plansNothingForThatCard() {
         val due = LocalDate.of(2027, 6, 1)
         val token = DateToken.fromAnnualDate(due)

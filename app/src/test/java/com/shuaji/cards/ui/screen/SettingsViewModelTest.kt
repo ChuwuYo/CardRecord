@@ -270,6 +270,43 @@ class SettingsViewModelTest {
         }
 
     @Test
+    fun import_withRemindersEnabledInBackup_requestsNotificationPermission() =
+        runTest(mainDispatcherRule.testDispatcher.scheduler) {
+            whenever(backup.import(any(), any(), any())).doReturn(
+                ImportResult(
+                    cardsAdded = 1,
+                    foldersAdded = 0,
+                    transactionsAdded = 0,
+                    annualFeeRemindersEnabled = true,
+                ),
+            )
+            val vm = newVm()
+
+            runAndCollect { vm.import(android.net.Uri.EMPTY, ImportMode.REPLACE, TEST_CONTENT_SHA256) }
+
+            assertTrue(vm.pendingReminderPermissionRequest.value)
+            vm.acknowledgeReminderPermissionRequest()
+            assertFalse(vm.pendingReminderPermissionRequest.value)
+        }
+
+    @Test
+    fun import_withRemindersDisabledInBackup_doesNotRequestPermission() =
+        runTest(mainDispatcherRule.testDispatcher.scheduler) {
+            whenever(backup.import(any(), any(), any())).doReturn(
+                ImportResult(
+                    cardsAdded = 1,
+                    foldersAdded = 0,
+                    transactionsAdded = 0,
+                ),
+            )
+            val vm = newVm()
+
+            runAndCollect { vm.import(android.net.Uri.EMPTY, ImportMode.MERGE, TEST_CONTENT_SHA256) }
+
+            assertFalse(vm.pendingReminderPermissionRequest.value)
+        }
+
+    @Test
     fun inspect_success_returnsTrustedInfo_andRestoresIdle() =
         runTest(mainDispatcherRule.testDispatcher.scheduler) {
             val uri = android.net.Uri.parse("content://test/backup")

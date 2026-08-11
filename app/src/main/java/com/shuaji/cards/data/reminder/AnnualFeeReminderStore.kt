@@ -66,15 +66,41 @@ class AnnualFeeReminderStore(
     }
 
     /**
+     * 丢掉已不属于任何现存卡片当前结算日的去重项。
+     *
+     * 不能只按「当前已排闹钟」剪枝：同周期 30 天档已通知后只排 10 天档，
+     * 若误删 30 天去重会在下次重排时重复提醒。
+     *
+     * @param liveCardDueTokens (cardId, dueDateToken) 当前库里仍有效的结算日对。
+     */
+    fun pruneNotifiedKeeping(liveCardDueTokens: Set<Pair<Long, Long>>) {
+        val toRemove =
+            prefs.all.keys.filter { key ->
+                if (!key.startsWith("n:")) return@filter false
+                val parts = key.removePrefix("n:").split(':')
+                if (parts.size != 3) return@filter true
+                val cardId = parts[0].toLongOrNull() ?: return@filter true
+                val due = parts[2].toLongOrNull() ?: return@filter true
+                (cardId to due) !in liveCardDueTokens
+            }
+        if (toRemove.isEmpty()) return
+        prefs.edit {
+            toRemove.forEach { remove(it) }
+        }
+    }
+
+    /**
      * REPLACE 导入后卡片 ID 全部重分配：清空已排闹钟登记与去重标记，避免旧 ID 脏状态。
      * 保留「是否开启提醒」与「是否问过通知权限」（后者属本机系统交互史，不是备份内容）。
      */
     fun clearScheduleAndNotifiedState() {
         val enabled = isEnabled()
         val asked = hasAskedNotificationPermission()
-        prefs.edit { clear() }
-        setEnabled(enabled)
-        if (asked) markAskedNotificationPermission()
+        prefs.edit {
+            clear()
+            putBoolean(KEY_ENABLED, enabled)
+            if (asked) putBoolean(KEY_ASKED_NOTIFICATION, true)
+        }
     }
 
     companion object {

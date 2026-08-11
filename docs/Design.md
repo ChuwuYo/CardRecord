@@ -107,7 +107,7 @@ Room v9 有三张表：
 - `REPLACE` 与 `MERGE` 都把备份 ID 仅视为文件内部引用标签，写入时分配新 ID，并用本次备份内的映射重写外键，避免碰撞现库或消耗异常大的自增空间。
 - `REPLACE` 在一个事务内清空旧数据，再按 folder → card → transaction 写入；为保证完整恢复，备份内存在孤立流水时拒绝整个文件并回滚。`MERGE` 保留现有数据；备份未包含的 folder 不能因为数值恰好相同而绑定到现库文件夹，该引用归为未分类；孤立流水跳过并计数。
 - 图片先以暂存租约复制到新安装的应用私有目录，数据库写入和过期结算日归一化再进入同一个事务。失败时释放租约并按数据库真源回收；成功后导入源目录可安全删除。
-- REPLACE 成功后：先同步取消已跟踪的提醒闹钟，再清空提醒去重/已排登记，最后应用备份中的年费提醒开关并重排。MERGE 不清理现有去重。
+- REPLACE 成功后：先同步取消已跟踪的提醒闹钟，再清空提醒去重/已排登记，最后应用备份中的年费提醒开关并重排。MERGE 只追加卡片与流水，不覆盖本机提醒开关，也不清理现有去重。
 - 读取、校验和事务执行阶段都可取消并回滚；全部写入完成、进入 SQLite 提交边界后不再接受显式取消，提交与图片收尾必须给出确定结果。
 - inspect/export/import 互斥。可取消阶段会同时取消协程并关闭当前流，使阻塞 I/O 能退出；UI 在提交已开始时保持处理中并等待回执。
 - 确认状态只在当前进程内保留，日志不记录完整 URI，也不为备份目录申请长期授权。
@@ -143,10 +143,11 @@ Room v9 有三张表：
 ### 数据不变量
 
 - 提醒开关存在独立 SharedPreferences（`annual_fee_reminders`），不进 DataStore；与外观设置分离。
-- 备份 `settings` **只**含 `annualFeeRemindersEnabled`；禁止写入通知权限或「是否问过权限」。旧清单缺 `settings` 视为关。
+- 备份 `settings` **只**含 `annualFeeRemindersEnabled`；禁止写入通知权限或「是否问过权限」。旧清单缺 `settings` 视为关。REPLACE 才应用该开关；MERGE 保留本机开关。
 - 去重 key = `cardId + threshold + dueDateToken`；成功投递后才 mark。不进备份。
 - REPLACE 导入卡片 ID 重分配后，必须清空已排登记与去重标记，再写入备份中的开关；MERGE 不清理现有卡的去重。
-- 每张卡只挂「下一档」闹钟（30 或 10）；触发后再重排。远闹钟用 `AlarmManager.set`，临近窗口才用 `setAndAllowWhileIdle`。
+- 每张卡只挂「下一档」闹钟（30 或 10）；触发后再重排。一律 `AlarmManager.setAndAllowWhileIdle`（非精确）；补发时若更近档已通知，不再排更远档。
+- 可投递判定含应用通知总开关与本渠道 importance；渠道关闭时不得 mark，设置页引导进渠道设置。
 
 ### 失败语义
 
@@ -154,17 +155,7 @@ Room v9 有三张表：
 - `notify` 遇 `SecurityException` 视为未投递，不 mark，留给下次重排重试。
 - 开机 / 时区 / 系统时间变化后重排；闹钟回调结束后无论是否投递都重排下一档。
 
-## 11. 数据库迁移
-
-所有 v1→v9 迁移显式注册在 `AppDatabase.ALL_MIGRATIONS`，数据库打开采用 fail closed，没有 destructive fallback。v7→v8 增加卡类型与两个信用卡日号字段；v8→v9 增加私有图片内容 ID。SQLite 迁移保留旧 URI，文件复制由启动后的幂等迁移完成。
-
-迁移遵循：
-
-- 重建父表时先处理/重连子表外键，不能依赖事务内无效的 `PRAGMA foreign_keys=OFF`。
-- 历史文件夹、卡片和流水必须保留；悬空 folder 引用可归一化为 `NULL`。
-- 当前 schema 导出到 `app/schemas/`；任何列、约束或索引变化都要同步迁移、schema 与 `MigrationTest`。
-
-## 12. 验证与发布边界
+## 11. 验证与发布边界
 
 - JVM 测试覆盖周期、日期、迁移、Repository、备份和 ViewModel 状态机；Robolectric + Room in-memory 验证 Android/数据库边界。
 - `ktlint`、单测、Lint、构建、模拟器/真机和 GitHub Actions 是不同证据层级，报告时必须区分。
@@ -172,10 +163,10 @@ Room v9 有三张表：
 - `apk-latest` 的运行在签名前、发布前和切换 tag 前后都会核对 `main` 当前头，旧提交的 Re-run 不得回退滚动包。发布先上传暂存资产，并在有界等待内核对 GitHub 返回的精确摘要，再切换固定资产、元数据与 tag；失败处理会恢复并核验旧状态。新状态与下载摘要全部通过后才进入清理阶段，成功运行还会收口中断遗留的暂存 APK，并断言只剩一个固定资产。
 - 发版清单见 [`RELEASE_CHECKLIST.md`](RELEASE_CHECKLIST.md)，用户可见变化见 [`CHANGELOG.md`](CHANGELOG.md)。
 
-## 13. 关键取舍
+## 12. 关键取舍
 
 - 不存 `currentCount`：牺牲少量运行时聚合，换取流水单一真源。
 - 手写 DI：项目依赖图小，避免引入更重的框架；依赖仍通过构造函数显式注入。
 - 不提供不完整删除撤销：若未来支持撤销，必须同时恢复卡片与全部流水，或采用完整软删除。
-- 年费进度提醒用非精确本地闹钟，不用 FCM、不用精确闹钟权限；接受 OEM Doze 下的大概送达时间，不用周期 WorkManager 扫库作为主路径。
+- 年费进度提醒用非精确本地闹钟（`setAndAllowWhileIdle`），不用 FCM、不用精确闹钟权限；接受 OEM Doze 下的大概送达时间，不用周期 WorkManager 扫库作为主路径。
 - 不新增独立统计起点字段：统计起点可从下次结算日稳定派生，避免多一份会漂移的年度状态。

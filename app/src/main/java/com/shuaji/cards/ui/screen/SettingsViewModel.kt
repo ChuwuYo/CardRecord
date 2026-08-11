@@ -87,9 +87,8 @@ class SettingsViewModel(
     val annualFeeRemindersEnabled = reminderStore.observeEnabled()
 
     fun setAnnualFeeRemindersEnabled(enabled: Boolean) {
+        // enabled 流已接入协调器 combine；勿再显式 requestRefresh，避免同一次切换拆装两遍闹钟。
         reminderStore.setEnabled(enabled)
-        // enabled 流本身会触发协调器；此处再踢一脚，确保与权限状态对齐。
-        requestReminderReschedule()
     }
 
     fun hasAskedNotificationPermission(): Boolean = reminderStore.hasAskedNotificationPermission()

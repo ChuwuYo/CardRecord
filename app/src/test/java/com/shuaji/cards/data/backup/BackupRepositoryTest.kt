@@ -435,6 +435,23 @@ class BackupRepositoryTest {
         }
 
     @Test
+    fun import_merge_doesNotOverwriteLocalReminderPreference() =
+        runTest {
+            reminderStore.setEnabled(true)
+            val directory = tempFolder.newFolder("merge-keeps-reminder-on")
+            writeBackupDirectory(
+                directory,
+                TestData.backupBundle(annualFeeRemindersEnabled = false),
+            )
+            val result = importInspected(directory, ImportMode.MERGE)
+            assertFalse(
+                "MERGE 不应因备份开关触发导入后权限申请",
+                result.annualFeeRemindersEnabled,
+            )
+            assertTrue(reminderStore.isEnabled())
+        }
+
+    @Test
     fun import_rejectsUnknownPermissionFieldInsideSettings() =
         runTest {
             val directory = tempFolder.newFolder("settings-permission-reject")

@@ -34,6 +34,12 @@ interface AppContainer {
     fun requestReminderReschedule()
 
     /**
+     * 同步拉取卡片快照并重排（供 Boot / 闹钟 Receiver 在 `goAsync` 协程内调用）。
+     * 与 [requestReminderReschedule] 最终同一套 plan 规则，但不依赖 Flow 排放时机。
+     */
+    suspend fun rescheduleRemindersFromStore()
+
+    /**
      * 自动续期事件：前台首发或跨零时归一化成功/失败后 emit 到这里，
      * UI 层订阅后显示对应 Snackbar。事件经单次消费队列交付，不会在 UI 重建后重放；
      * 归一化数量为 0 时不发成功事件，避免噪音。
@@ -137,6 +143,10 @@ class DefaultAppContainer(
 
     override fun requestReminderReschedule() {
         annualFeeReminderCoordinator.requestRefresh()
+    }
+
+    override suspend fun rescheduleRemindersFromStore() {
+        annualFeeReminderCoordinator.rescheduleFromStore()
     }
 
     /** 把设置页结果事件发布到顶层 SnackbarHost。 */

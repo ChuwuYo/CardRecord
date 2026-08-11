@@ -277,12 +277,13 @@ class BackupRepository internal constructor(
                             result
                         }
                     // 偏好写在 DB 事务外：SharedPreferences 无法随 SQLite 回滚。
-                    applyReminderSettings(
-                        settings = bundle.settings,
-                        replaceImport = mode == ImportMode.REPLACE,
-                    )
+                    val remindersEnabledForPermission =
+                        applyReminderSettings(
+                            settings = bundle.settings,
+                            replaceImport = mode == ImportMode.REPLACE,
+                        )
                     importResult.copy(
-                        annualFeeRemindersEnabled = bundle.settings.annualFeeRemindersEnabled,
+                        annualFeeRemindersEnabled = remindersEnabledForPermission,
                     )
                 } catch (e: CancellationException) {
                     throw e
@@ -306,17 +307,28 @@ class BackupRepository internal constructor(
     /**
      * 只恢复年费提醒开关；通知权限不在备份内，由 UI 在导入后按需申请。
      * REPLACE 时卡片 ID 已重分配：先同步取消闹钟，再清空去重/登记，最后写入备份开关并重排。
+     * MERGE 只追加卡片，不覆盖本机提醒开关（避免旧备份默认 false 静默关掉现有提醒）。
+     *
+     * @return 导入后是否应引导申请通知权限（仅 REPLACE 且备份要求开启时为 true）。
      */
     private fun applyReminderSettings(
         settings: BackupSettings,
         replaceImport: Boolean,
-    ) {
-        if (replaceImport) {
+    ): Boolean {
+        if (!replaceImport) return false
+        return try {
             cancelTrackedReminders()
             reminderStore.clearScheduleAndNotifiedState()
+            reminderStore.setEnabled(settings.annualFeeRemindersEnabled)
+            onRemindersPreferenceApplied()
+            settings.annualFeeRemindersEnabled
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: RuntimeException) {
+            // DB 事务已提交；偏好/闹钟失败不得伪装成写库失败。
+            Log.w(BACKUP_LOG_TAG, "applyReminderSettings failed after DB commit", error)
+            reminderStore.isEnabled()
         }
-        reminderStore.setEnabled(settings.annualFeeRemindersEnabled)
-        onRemindersPreferenceApplied()
     }
 
     /** 解码并验证 JSON 清单；图片校验或暂存由调用场景在清单通过后显式执行。 */

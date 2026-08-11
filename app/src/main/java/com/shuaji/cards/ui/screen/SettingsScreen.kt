@@ -2,8 +2,10 @@ package com.shuaji.cards.ui.screen
 
 import android.Manifest
 import android.app.Activity
+import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.provider.Settings
 import androidx.activity.compose.BackHandler
@@ -73,6 +75,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.hideFromAccessibility
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -143,10 +146,13 @@ fun SettingsScreen(onBack: () -> Unit) {
     }
 
     fun refreshNotificationPermission() {
-        notificationsAllowed = AnnualFeeReminderNotifier.canPostNotifications(context)
-        // 权限一变（弹窗回调 / 从系统设置返回 / 设置页 resume）立刻重排：
-        // 提醒开关若已是开，有权限就会自动挂上闹钟。
-        viewModel.onNotificationPermissionMaybeChanged()
+        val allowed = AnnualFeeReminderNotifier.canPostNotifications(context)
+        val changed = allowed != notificationsAllowed
+        notificationsAllowed = allowed
+        // 仅在实际变化时重排，避免设置页每次 resume 都拆装全部闹钟。
+        if (changed) {
+            viewModel.onNotificationPermissionMaybeChanged()
+        }
     }
 
     DisposableEffect(lifecycleOwner) {
@@ -173,11 +179,38 @@ fun SettingsScreen(onBack: () -> Unit) {
         }
 
     fun openAppNotificationSettings() {
-        val intent =
-            Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
-                putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                val channelIntent =
+                    Intent(Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS).apply {
+                        putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+                        putExtra(
+                            Settings.EXTRA_CHANNEL_ID,
+                            AnnualFeeReminderNotifier.CHANNEL_ID,
+                        )
+                    }
+                // 渠道被关时优先打开渠道页；否则仍走应用通知总设置。
+                val manager = NotificationManagerCompat.from(context)
+                val channel = manager.getNotificationChannel(AnnualFeeReminderNotifier.CHANNEL_ID)
+                if (channel != null &&
+                    channel.importance == android.app.NotificationManager.IMPORTANCE_NONE
+                ) {
+                    notificationSettingsLauncher.launch(channelIntent)
+                    return
+                }
             }
-        notificationSettingsLauncher.launch(intent)
+            val intent =
+                Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+                    putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+                }
+            notificationSettingsLauncher.launch(intent)
+        } catch (_: ActivityNotFoundException) {
+            val fallback =
+                Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                    data = Uri.fromParts("package", context.packageName, null)
+                }
+            notificationSettingsLauncher.launch(fallback)
+        }
     }
 
     /** 申请或引导开启系统通知权限（不直接改年费提醒开关）。 */

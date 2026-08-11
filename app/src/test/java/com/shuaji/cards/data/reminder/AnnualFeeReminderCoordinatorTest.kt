@@ -8,7 +8,6 @@ import com.shuaji.cards.data.local.CardEntity
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.mockito.kotlin.any
@@ -122,23 +121,6 @@ class AnnualFeeReminderCoordinatorTest {
         coordinator.applyPlan(listOf(sampleCard()), enabled = false)
 
         verify(scheduler).cancelAllTracked()
-    }
-
-    @Test
-    fun shouldUseWhileIdle_nearUsesWhileIdle_farDoesNot() {
-        val now = 1_000_000L
-        assertTrue(
-            AnnualFeeReminderScheduler.shouldUseWhileIdle(
-                now + AnnualFeeReminderScheduler.WHILE_IDLE_WINDOW_MS,
-                now,
-            ),
-        )
-        assertTrue(
-            !AnnualFeeReminderScheduler.shouldUseWhileIdle(
-                now + AnnualFeeReminderScheduler.WHILE_IDLE_WINDOW_MS + 1,
-                now,
-            ),
-        )
     }
 
     private fun sampleCard(): CardWithCount {

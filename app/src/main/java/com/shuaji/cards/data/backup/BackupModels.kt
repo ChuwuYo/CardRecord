@@ -236,7 +236,7 @@ data class ImportResult(
     val cardsSkippedInvalidFolder: Int = 0,
     val duplicateFolderNames: Int = 0,
     val duplicateCardNames: Int = 0,
-    /** 备份中的年费提醒开关；UI 据此在导入成功后按需申请通知权限。 */
+    /** 备份中的年费提醒开关是否已应用到本机且需引导权限；MERGE 始终为 false。 */
     val annualFeeRemindersEnabled: Boolean = false,
 )
 

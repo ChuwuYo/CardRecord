@@ -3,7 +3,9 @@ package com.shuaji.cards.data.reminder
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.util.Log
 import com.shuaji.cards.requireShuajiApplication
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import java.time.Clock
@@ -27,38 +29,51 @@ class AnnualFeeReminderReceiver : BroadcastReceiver() {
         val pendingResult = goAsync()
         app.container.reminderScope.launch {
             try {
-                val store = app.container.reminderStore
-                if (!store.isEnabled()) return@launch
-                val cards =
-                    app.container.repository
-                        .observeCards()
-                        .first()
-                val card = cards.firstOrNull { it.card.id == cardId }
-                val decision =
-                    AnnualFeeReminderPlanner.decideFire(
-                        card = card,
-                        thresholdDays = thresholdDays,
-                        dueDateTokenFromIntent = dueDateToken,
-                        alreadyNotifiedForDue =
-                            store.wasNotified(cardId, thresholdDays, dueDateToken),
-                        now = Clock.systemUTC().instant(),
-                        zoneId = ZoneId.systemDefault(),
-                    )
-                if (decision.shouldNotify) {
-                    val posted = app.container.reminderNotifier.notifyProgress(decision)
-                    if (posted) {
-                        store.markNotified(cardId, thresholdDays, dueDateToken)
+                try {
+                    val store = app.container.reminderStore
+                    if (!store.isEnabled()) return@launch
+                    val cards =
+                        app.container.repository
+                            .observeCards()
+                            .first()
+                    val card = cards.firstOrNull { it.card.id == cardId }
+                    val decision =
+                        AnnualFeeReminderPlanner.decideFire(
+                            card = card,
+                            thresholdDays = thresholdDays,
+                            dueDateTokenFromIntent = dueDateToken,
+                            alreadyNotifiedForDue =
+                                store.wasNotified(cardId, thresholdDays, dueDateToken),
+                            now = Clock.systemUTC().instant(),
+                            zoneId = ZoneId.systemDefault(),
+                        )
+                    if (decision.shouldNotify) {
+                        val posted = app.container.reminderNotifier.notifyProgress(decision)
+                        if (posted) {
+                            store.markNotified(cardId, thresholdDays, dueDateToken)
+                        }
                     }
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (error: RuntimeException) {
+                    Log.w(TAG, "fire failed cardId=$cardId", error)
+                }
+                // 重排须在 finish 之前完成：finish 后冷启动进程可能被立刻回收。
+                try {
+                    app.container.rescheduleRemindersFromStore()
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (error: RuntimeException) {
+                    Log.w(TAG, "post-fire reschedule failed cardId=$cardId", error)
                 }
             } finally {
-                // 无论是否投递成功，都重排：下一档 / 权限恢复后的补发依赖这里。
-                app.container.requestReminderReschedule()
                 pendingResult.finish()
             }
         }
     }
 
     companion object {
+        private const val TAG = "AnnualFeeReminder"
         const val ACTION_FIRE = "com.shuaji.cards.action.ANNUAL_FEE_REMINDER_FIRE"
         const val EXTRA_CARD_ID = "card_id"
         const val EXTRA_THRESHOLD_DAYS = "threshold_days"

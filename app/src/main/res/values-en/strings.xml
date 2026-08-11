@@ -94,8 +94,8 @@
     <string name="reminder_channel_description">Local reminders when annual-fee swipe targets are unmet</string>
     <string name="reminder_notification_title">Annual-fee progress</string>
     <plurals name="reminder_notification_body">
-        <item quantity="one">%1$s %2$s: about %3$d day left, %4$d / %5$d swipes</item>
-        <item quantity="other">%1$s %2$s: about %3$d days left, %4$d / %5$d swipes</item>
+        <item quantity="one">%1$s %2$s: about %3$d day left · %4$d/%5$d</item>
+        <item quantity="other">%1$s %2$s: about %3$d days left · %4$d/%5$d</item>
     </plurals>
 
     <!-- ────── Home / list ────── -->
