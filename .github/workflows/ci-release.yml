@@ -2,6 +2,8 @@ name: CI and Release APK
 
 # 所有 push / PR 只经过同一个验证关；验证通过的 main 才继续签名与滚动发布。
 # workflow_dispatch 选择其他 ref 时也只验证，不会接触正式签名 Secrets。
+# 提交说明含 [skip ci] / [ci skip] 等时，由 GitHub 官方规则直接不触发本 workflow
+# （见 https://docs.github.com/en/actions/how-tos/manage-workflow-runs/skip-workflow-runs）。
 on:
   push:
   pull_request:
@@ -11,6 +13,8 @@ permissions:
   contents: read
 
 # main 沿用旧发布锁，连历史 run 的误重跑也不能并发改 Release；其他 ref 只保留最新验证。
+# 官方建议：部署/发布类 workflow 不要 cancel-in-progress，避免签名或上传中途被掐断
+# （https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency）。
 concurrency:
   group: ${{ github.ref == 'refs/heads/main' && 'build-apk-release' || format('ci-{0}', github.ref) }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
@@ -18,7 +22,6 @@ concurrency:
 jobs:
   verify:
     name: Verify
-    if: ${{ github.event_name != 'push' || !contains(github.event.head_commit.message, '[skip ci]') }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -40,6 +43,15 @@ jobs:
         with:
           cmdline-tools-version: '14742923'
 
+      - name: Cache Android SDK packages
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: |
+            ${{ env.ANDROID_HOME }}/platforms
+            ${{ env.ANDROID_HOME }}/build-tools
+            ${{ env.ANDROID_HOME }}/platform-tools
+          key: android-sdk-api36-buildtools36.0.0-${{ runner.os }}
+
       - name: Install SDK packages
         run: |
           yes | sdkmanager "platforms;android-36" "build-tools;36.0.0" "platform-tools" > /dev/null
@@ -49,26 +61,23 @@ jobs:
         uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5.0.2
         with:
           dependency-graph: disabled
+          # 默认分支写入缓存，其余只读，避免 PR 互相污染缓存键。
+          cache-read-only: ${{ github.ref != 'refs/heads/main' }}
 
       # gradle.properties 中的本机代理在 runner 上不存在，只修改本次运行的工作副本。
       - name: Disable local Maven proxy
         run: |
           sed -i -E '/^systemProp\.(http|https)\.(proxyHost|proxyPort|nonProxyHosts)=/d' gradle.properties
 
-      - name: ktlint
+      # 单次 Gradle 调用：共用 daemon / 配置阶段，避免 ktlint→test→lint 三次冷启动。
+      - name: Verify (ktlint, unit tests, lint)
         run: |
-          ./gradlew ktlintCheck --no-daemon || {
+          ./gradlew ktlintCheck :app:testDebugUnitTest :app:lintDebug :app:lintRelease --stacktrace || {
             echo "::group::ktlint violation reports"
             find app/build/reports/ktlint -name '*.txt' -exec sh -c 'echo "== $1 =="; cat "$1"' _ {} \;
             echo "::endgroup::"
             exit 1
           }
-
-      - name: Unit tests
-        run: ./gradlew :app:testDebugUnitTest --no-daemon --stacktrace
-
-      - name: Android Lint
-        run: ./gradlew :app:lintDebug :app:lintRelease --no-daemon --stacktrace
 
       - name: Upload test report
         if: ${{ always() }}
@@ -87,64 +96,110 @@ jobs:
     timeout-minutes: 30
     permissions:
       contents: read
+    outputs:
+      signed: ${{ steps.gate.outputs.sign }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-        with:
-          persist-credentials: false
-
-      - name: Reject stale main run
+      # 先做 tip 门禁再装 SDK，避免已被取代的 run 白烧几分钟环境准备。
+      - name: Decide whether to sign this run
+        id: gate
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
-          current_main="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')"
-          if [ "$current_main" != "$GITHUB_SHA" ]; then
-            echo "::error::拒绝为旧提交签名：main=$current_main，run=$GITHUB_SHA"
-            exit 1
+
+          tip_allows_this_sha() {
+            local current msg
+            current="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')"
+            if [ "$current" = "$GITHUB_SHA" ]; then
+              return 0
+            fi
+            # tip 若是官方 skip 指令提交，不视为“有新的待发布内容”，允许本 run 继续发滚动包。
+            msg="$(gh api "repos/$GITHUB_REPOSITORY/commits/$current" --jq '.commit.message')"
+            if printf '%s' "$msg" | grep -Eqi '\[(skip ci|ci skip|no ci|skip actions|actions skip)\]|skip-checks:\s*true'; then
+              echo "::notice::main tip $current 仅跳过 CI，继续为本 run（$GITHUB_SHA）签名。"
+              return 0
+            fi
+            echo "::notice::main 已前进到 $current，跳过为本 run（$GITHUB_SHA）签名（不视为失败）。"
+            return 1
+          }
+
+          if tip_allows_this_sha; then
+            echo 'sign=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'sign=false' >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Checkout
+        if: ${{ steps.gate.outputs.sign == 'true' }}
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
       - name: Set up JDK 17
+        if: ${{ steps.gate.outputs.sign == 'true' }}
         uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5.6.0
         with:
           distribution: temurin
           java-version: '17'
 
       - name: Set up Android SDK
+        if: ${{ steps.gate.outputs.sign == 'true' }}
         uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699 # v4.0.1
         with:
           cmdline-tools-version: '14742923'
 
+      - name: Cache Android SDK packages
+        if: ${{ steps.gate.outputs.sign == 'true' }}
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: |
+            ${{ env.ANDROID_HOME }}/platforms
+            ${{ env.ANDROID_HOME }}/build-tools
+            ${{ env.ANDROID_HOME }}/platform-tools
+          key: android-sdk-api36-buildtools36.0.0-${{ runner.os }}
+
       - name: Install SDK packages
+        if: ${{ steps.gate.outputs.sign == 'true' }}
         run: |
           yes | sdkmanager "platforms;android-36" "build-tools;36.0.0" "platform-tools" > /dev/null
 
       # 仅提供缓存和构建报告；Gradle 版本由经过校验和固定的 Wrapper 唯一决定。
       - name: Set up Gradle cache
+        if: ${{ steps.gate.outputs.sign == 'true' }}
         uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5.0.2
         with:
           dependency-graph: disabled
 
       # 本地代理在 GitHub runner 上不存在，只修改本次运行的工作副本。
       - name: Disable local Maven proxy
+        if: ${{ steps.gate.outputs.sign == 'true' }}
         run: |
           sed -i -E '/^systemProp\.(http|https)\.(proxyHost|proxyPort|nonProxyHosts)=/d' gradle.properties
 
       - name: Recheck main before restoring signing key
+        if: ${{ steps.gate.outputs.sign == 'true' }}
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
-          current_main="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')"
-          if [ "$current_main" != "$GITHUB_SHA" ]; then
-            echo "::error::main 已前进到 $current_main，旧提交 $GITHUB_SHA 不再接触签名密钥。"
-            exit 1
+          current="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')"
+          if [ "$current" = "$GITHUB_SHA" ]; then
+            exit 0
           fi
+          msg="$(gh api "repos/$GITHUB_REPOSITORY/commits/$current" --jq '.commit.message')"
+          if printf '%s' "$msg" | grep -Eqi '\[(skip ci|ci skip|no ci|skip actions|actions skip)\]|skip-checks:\s*true'; then
+            echo "::notice::main tip 仍为 skip-ci（$current），继续接触签名密钥。"
+            exit 0
+          fi
+          echo "::error::main 已前进到 $current，旧提交 $GITHUB_SHA 不再接触签名密钥。"
+          exit 1
 
       # 门禁通过后才把签名密钥写入 runner 临时目录，缩短敏感文件驻留时间。
+      # 签名仍独立成 job：PR 的 Verify 不引用正式 Secrets，避免同仓 PR 误触密钥。
       - name: Restore release keystore
+        if: ${{ steps.gate.outputs.sign == 'true' }}
         env:
           RELEASE_KEYSTORE_BASE64: ${{ secrets.CARDRECORD_RELEASE_KEYSTORE_BASE64 }}
         shell: bash
@@ -155,14 +210,16 @@ jobs:
           chmod 600 "$RUNNER_TEMP/cardrecord-release.p12"
 
       - name: Build release APK
+        if: ${{ steps.gate.outputs.sign == 'true' }}
         env:
           CARDRECORD_RELEASE_STORE_FILE: ${{ runner.temp }}/cardrecord-release.p12
           CARDRECORD_RELEASE_STORE_PASSWORD: ${{ secrets.CARDRECORD_RELEASE_STORE_PASSWORD }}
           CARDRECORD_RELEASE_KEY_ALIAS: ${{ secrets.CARDRECORD_RELEASE_KEY_ALIAS }}
           CARDRECORD_RELEASE_KEY_PASSWORD: ${{ secrets.CARDRECORD_RELEASE_KEY_PASSWORD }}
-        run: ./gradlew :app:assembleRelease --no-daemon --stacktrace
+        run: ./gradlew :app:assembleRelease --stacktrace
 
       - name: Verify release signature
+        if: ${{ steps.gate.outputs.sign == 'true' }}
         env:
           EXPECTED_CERT_SHA256: ${{ secrets.CARDRECORD_RELEASE_CERT_SHA256 }}
         shell: bash
@@ -175,6 +232,7 @@ jobs:
           "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs "$apk"
 
       - name: Record release metadata
+        if: ${{ steps.gate.outputs.sign == 'true' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -184,10 +242,11 @@ jobs:
             > app/build/outputs/apk/release/source-sha.txt
 
       - name: Delete release keystore
-        if: ${{ always() }}
+        if: ${{ always() && steps.gate.outputs.sign == 'true' }}
         run: rm -f "$RUNNER_TEMP/cardrecord-release.p12"
 
       - name: Upload verified APK
+        if: ${{ steps.gate.outputs.sign == 'true' }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: cardrecord-release-apk
@@ -201,7 +260,7 @@ jobs:
   publish:
     name: Publish rolling release
     needs: build-sign
-    if: ${{ github.ref == 'refs/heads/main' }}
+    if: ${{ github.ref == 'refs/heads/main' && needs.build-sign.outputs.signed == 'true' }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -228,17 +287,24 @@ jobs:
             gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha'
           }
 
-          assert_current_main() {
-            local current
+          tip_allows_this_sha() {
+            local current msg
             current="$(current_main_sha)"
-            if [ "$current" != "$GITHUB_SHA" ]; then
-              echo "::error::main 已前进到 $current，拒绝用旧提交 $GITHUB_SHA 更新滚动 Release。"
-              return 1
+            if [ "$current" = "$GITHUB_SHA" ]; then
+              return 0
             fi
+            msg="$(gh api "repos/$GITHUB_REPOSITORY/commits/$current" --jq '.commit.message')"
+            if printf '%s' "$msg" | grep -Eqi '\[(skip ci|ci skip|no ci|skip actions|actions skip)\]|skip-checks:\s*true'; then
+              echo "::notice::main tip $current 仅跳过 CI，允许用已验证的 $GITHUB_SHA 更新滚动 Release。"
+              return 0
+            fi
+            echo "::error::main 已前进到 $current，拒绝用旧提交 $GITHUB_SHA 更新滚动 Release。"
+            return 1
           }
 
           # concurrency 只能约束运行顺序；显式头检查同时拦截旧 run 的 Re-run。
-          assert_current_main
+          # tip 为官方 skip-ci 提交时放行，避免文档类推送把已验证的测试包发布掐死。
+          tip_allows_this_sha
 
           release_api="repos/$GITHUB_REPOSITORY/releases/tags/apk-latest"
           release_before="$RUNNER_TEMP/release-before.json"
@@ -381,7 +447,7 @@ jobs:
           staged_id="$(wait_for_asset_digest "$staged_name" "sha256:$expected_digest")"
 
           # 上传暂存资产可能耗时；在触碰旧固定资产前再核对一次 main。
-          assert_current_main
+          tip_allows_this_sha
 
           # 暂存资产完整后，把旧固定资产改成本次独有回滚名，再切换新资产。
           if [ -n "$old_asset_id" ]; then
@@ -409,7 +475,7 @@ jobs:
             --prerelease
 
           # 新资产和发布说明就绪后才移动轻量 tag。
-          assert_current_main
+          tip_allows_this_sha
           gh api --method PATCH "repos/$GITHUB_REPOSITORY/git/refs/tags/apk-latest" \
             -f sha="$GITHUB_SHA" -F force=true >/dev/null
 
@@ -424,7 +490,7 @@ jobs:
           test "$published_digest" = "$expected_digest"
 
           # 若发布期间 main 已前进，就在旧资产仍可恢复时主动回滚本次结果。
-          assert_current_main
+          tip_allows_this_sha
 
           # 新状态已经完整核验，从这里开始只清理旧副本；即使清理 API 暂时失败，
           # 也不能再删除已发布的新固定资产。

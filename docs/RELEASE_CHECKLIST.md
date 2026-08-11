@@ -23,7 +23,7 @@
 
 - [ ] GitHub 的统一 CI 工作流在目标 `main` 提交上依次通过 `verify`、`build-sign` 与 `publish`
 - [ ] 非 `main` 运行没有接触正式签名 Secrets
-- [ ] 构建与发布阶段核对的 `GITHUB_SHA` 都是 `main` 当前头，旧运行重跑已被拒绝
+- [ ] 构建与发布阶段核对的 `GITHUB_SHA` 仍是可发布 tip：等于 `main` 头，或 tip 仅为官方 `[skip ci]` 类提交；被更新的实质提交会软跳过签名（不标红），旧运行重跑不会覆盖更新 tip
 - [ ] Release APK 的版本号、签名与 SHA-256 已核对
 - [ ] `apk-latest` 只含一个 `app-release.apk`，资产、tag 提交和下载摘要均指向同一构建
 - [ ] 正式版本 tag 与 GitHub Release 使用 `v<versionName>`，说明来自同一 Changelog 条目
