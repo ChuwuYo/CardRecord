@@ -18,6 +18,7 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
@@ -593,5 +594,24 @@ class SettingsViewModelTest {
             // finalize 顺序 = _state.value = Done → emitSettings：state 写到 Done，事件发出 1 条。
             assertEquals(1, collected.size)
             assertEquals(SettingsUiState.Done, vm.state.value)
+        }
+
+    @Test
+    fun annual_fee_reminders_enabled_reflects_store_before_any_collection() {
+        reminderStore.setEnabled(true)
+
+        assertTrue(newVm().annualFeeRemindersEnabled.value)
+    }
+
+    @Test
+    fun theme_settings_keeps_loaded_value_after_collector_leaves() =
+        runTest(mainDispatcherRule.testDispatcher.scheduler) {
+            val vm = newVm()
+            val collector = backgroundScope.launch { vm.themeSettings.collect {} }
+            runCurrent()
+            collector.cancel()
+            advanceUntilIdle()
+
+            assertEquals(ThemeSettings(), vm.themeSettings.value)
         }
 }
