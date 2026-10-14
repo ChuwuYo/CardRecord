@@ -42,6 +42,8 @@ jobs:
         uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699 # v4.0.1
         with:
           cmdline-tools-version: '14742923'
+          # action 默认 packages 含已从 Google SDK 仓库下架的 tools 包，会直接失败。
+          packages: platform-tools
 
       - name: Cache Android SDK packages
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
@@ -148,6 +150,8 @@ jobs:
         uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699 # v4.0.1
         with:
           cmdline-tools-version: '14742923'
+          # action 默认 packages 含已从 Google SDK 仓库下架的 tools 包，会直接失败。
+          packages: platform-tools
 
       - name: Cache Android SDK packages
         if: ${{ steps.gate.outputs.sign == 'true' }}
