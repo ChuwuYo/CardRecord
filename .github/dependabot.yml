@@ -1,0 +1,16 @@
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      github-actions:
+        update-types:
+          - minor
+          - patch
+    ignore:
+      # gradle/actions v6 起缓存组件改为专有许可，升级前需人工确认许可条款。
+      - dependency-name: gradle/actions
+        update-types:
+          - version-update:semver-major
