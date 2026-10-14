@@ -594,4 +594,11 @@ class SettingsViewModelTest {
             assertEquals(1, collected.size)
             assertEquals(SettingsUiState.Done, vm.state.value)
         }
+
+    @Test
+    fun annual_fee_reminders_enabled_reflects_store_before_any_collection() {
+        reminderStore.setEnabled(true)
+
+        assertTrue(newVm().annualFeeRemindersEnabled.value)
+    }
 }

@@ -131,8 +131,8 @@ fun SettingsScreen(onBack: () -> Unit) {
     val viewModel: SettingsViewModel = viewModel(factory = ViewModelFactories.Settings)
     val state by viewModel.state.collectAsStateWithLifecycle()
     val pendingImport by viewModel.pendingImport.collectAsStateWithLifecycle()
-    val themeSettings by viewModel.themeSettings.collectAsStateWithLifecycle(initialValue = null)
-    val remindersEnabled by viewModel.annualFeeRemindersEnabled.collectAsStateWithLifecycle(initialValue = false)
+    val themeSettings by viewModel.themeSettings.collectAsStateWithLifecycle()
+    val remindersEnabled by viewModel.annualFeeRemindersEnabled.collectAsStateWithLifecycle()
     val pendingReminderPermissionRequest by
         viewModel.pendingReminderPermissionRequest.collectAsStateWithLifecycle()
     val coroutineScope = rememberCoroutineScope()

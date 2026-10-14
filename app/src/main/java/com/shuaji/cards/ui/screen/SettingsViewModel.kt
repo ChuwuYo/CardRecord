@@ -7,6 +7,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.shuaji.cards.R
 import com.shuaji.cards.data.SettingsDoneEvent
+import com.shuaji.cards.data.ThemeSettings
 import com.shuaji.cards.data.backup.BackupCancelResult
 import com.shuaji.cards.data.backup.BackupException
 import com.shuaji.cards.data.backup.BackupPreview
@@ -20,8 +21,10 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.yield
 import java.util.concurrent.locks.ReentrantLock
@@ -80,11 +83,19 @@ class SettingsViewModel(
     private val operationLock = ReentrantLock()
     private var operationJob: Job? = null
 
-    /** 主题设置：UI 用 collectAsState 订阅，用户切换时自动重组 */
-    val themeSettings = settingsRepo.themeSettings
+    val themeSettings: StateFlow<ThemeSettings?> =
+        settingsRepo.themeSettings.stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5_000),
+            initialValue = null,
+        )
 
-    /** 年费本地提醒总开关（默认关）。 */
-    val annualFeeRemindersEnabled = reminderStore.observeEnabled()
+    val annualFeeRemindersEnabled: StateFlow<Boolean> =
+        reminderStore.observeEnabled().stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5_000),
+            initialValue = reminderStore.isEnabled(),
+        )
 
     fun setAnnualFeeRemindersEnabled(enabled: Boolean) {
         // enabled 流已接入协调器 combine；勿再显式 requestRefresh，避免同一次切换拆装两遍闹钟。
