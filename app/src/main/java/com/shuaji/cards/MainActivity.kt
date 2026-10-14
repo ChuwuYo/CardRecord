@@ -4,14 +4,17 @@ import android.os.Bundle
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.shuaji.cards.ui.ShuajiApp
+import com.shuaji.cards.ui.ViewModelFactories
+import com.shuaji.cards.ui.theme.AppThemeViewModel
 import com.shuaji.cards.ui.theme.ShuajiTheme
 import com.shuaji.cards.ui.theme.resolveAppCompatNightMode
 import com.shuaji.cards.ui.theme.resolveDarkTheme
@@ -20,6 +23,8 @@ import com.shuaji.cards.ui.theme.resolveDarkTheme
 // （AppCompatDelegate.setApplicationLocales）在 Android 13 以下依赖 AppCompat 的 Activity 委托
 // 来应用 / 恢复语言。Compose 在 AppCompatActivity 上正常工作。
 class MainActivity : AppCompatActivity() {
+    private val themeViewModel: AppThemeViewModel by viewModels { ViewModelFactories.AppTheme }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val settingsRepo = requireShuajiApplication().container.settings
@@ -28,7 +33,7 @@ class MainActivity : AppCompatActivity() {
         setContent {
             // 不用默认主题猜首帧：DataStore 返回真实快照后，再以同一个亮暗判定
             // 同时驱动 Compose 与系统栏，避免两套判断短暂相反。
-            val settings by settingsRepo.themeSettings.collectAsState(initial = null)
+            val settings by themeViewModel.themeSettings.collectAsStateWithLifecycle()
             settings?.let { loadedSettings ->
                 val appCompatNightMode = resolveAppCompatNightMode(loadedSettings.themeMode)
                 LaunchedEffect(loadedSettings.themeMode) {
