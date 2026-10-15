@@ -20,9 +20,9 @@ import kotlinx.coroutines.CancellationException
 class AnnualFeeReminderNotifier(
     private val context: Context,
 ) {
-    private val strings: Context get() = AppLocales.localize(context)
+    fun ensureChannel() = ensureChannel(AppLocales.localize(context))
 
-    fun ensureChannel() {
+    private fun ensureChannel(strings: Context) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         val channel =
@@ -44,7 +44,8 @@ class AnnualFeeReminderNotifier(
      */
     fun notifyProgress(decision: AnnualFeeReminderPlanner.FireDecision): Boolean {
         if (!canPostNotifications()) return false
-        ensureChannel()
+        val strings = AppLocales.localize(context)
+        ensureChannel(strings)
         val title = strings.getString(R.string.reminder_notification_title)
         val remaining = decision.remainingDays.toInt().coerceAtLeast(0)
         val text =
