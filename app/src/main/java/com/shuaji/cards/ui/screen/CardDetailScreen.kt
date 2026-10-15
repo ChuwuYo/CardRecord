@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -68,8 +69,10 @@ import com.shuaji.cards.ui.ViewModelFactories
 import com.shuaji.cards.ui.component.CardVisual
 import com.shuaji.cards.ui.component.CycleProgressContent
 import com.shuaji.cards.ui.component.CycleProgressVariant
+import com.shuaji.cards.ui.component.FabClearance
 import com.shuaji.cards.ui.component.LocalUiDateFormatter
 import com.shuaji.cards.ui.component.ObserveAsEvents
+import com.shuaji.cards.ui.component.plus
 
 /** 卡片元数据、当前周期进度与完整流水的详情页。 */
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
@@ -198,8 +201,8 @@ fun CardDetailScreen(
                     modifier =
                         Modifier
                             .fillMaxSize()
-                            .padding(padding),
-                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 96.dp),
+                            .consumeWindowInsets(padding),
+                    contentPadding = padding + PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = FabClearance),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     item { CardVisual(card = current.card, userImageModel = current.userImageModel) }
