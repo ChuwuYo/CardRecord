@@ -47,12 +47,12 @@ sealed interface CardEditSaveResult {
     data class Saved(
         val id: Long,
     ) : CardEditSaveResult
-
-    data object Failed : CardEditSaveResult
 }
 
 sealed interface CardEditEvent {
     data object ImageImportFailed : CardEditEvent
+
+    data object SaveFailed : CardEditEvent
 
     data object CloseReady : CardEditEvent
 }
@@ -457,7 +457,8 @@ class CardEditViewModel(
                     throw cancelled
                 } catch (error: Exception) {
                     Log.e("CardEditViewModel", "保存卡片失败（${error::class.java.simpleName}）")
-                    _uiState.update { it.copy(isSaving = false, saveResult = CardEditSaveResult.Failed) }
+                    _uiState.update { it.copy(isSaving = false) }
+                    eventQueue.emit(CardEditEvent.SaveFailed)
                 } finally {
                     _uiState.update {
                         if (it.saveResult is CardEditSaveResult.Saved) it else it.copy(isSaving = false)
