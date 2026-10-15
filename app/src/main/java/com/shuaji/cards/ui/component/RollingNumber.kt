@@ -31,16 +31,20 @@ fun RollingNumber(
     fontWeight: FontWeight? = null,
     color: Color = Color.Unspecified,
 ) {
-    val previous = remember { LastValue(value) }
-    val direction = if (value >= previous.value) 1 else -1
-    SideEffect { previous.value = value }
-    val digitStyle = style.merge(TextStyle(fontFeatureSettings = "tnum"))
+    val memory = remember { RollingMemory(value, value.toString().length) }
+    val direction = if (value >= memory.value) 1 else -1
     val digits = value.toString()
+    val placeCount = maxOf(memory.placeCount, digits.length)
+    SideEffect {
+        memory.value = value
+        memory.placeCount = placeCount
+    }
+    val digitStyle = style.merge(TextStyle(fontFeatureSettings = "tnum"))
     Row(modifier) {
-        digits.forEachIndexed { index, digit ->
-            key(digits.length - index) {
+        for (place in placeCount - 1 downTo 0) {
+            key(place) {
                 AnimatedContent(
-                    targetState = digit,
+                    targetState = digits.getOrNull(digits.length - 1 - place),
                     transitionSpec = {
                         val spec = tween<IntOffset>(ROLLING_DIGIT_DURATION_MILLIS, easing = FastOutSlowInEasing)
                         val fade = tween<Float>(ROLLING_DIGIT_DURATION_MILLIS, easing = FastOutSlowInEasing)
@@ -50,18 +54,21 @@ fun RollingNumber(
                     },
                     label = "digit",
                 ) { shown ->
-                    Text(
-                        text = shown.toString(),
-                        style = digitStyle,
-                        fontWeight = fontWeight,
-                        color = color,
-                    )
+                    if (shown != null) {
+                        Text(
+                            text = shown.toString(),
+                            style = digitStyle,
+                            fontWeight = fontWeight,
+                            color = color,
+                        )
+                    }
                 }
             }
         }
     }
 }
 
-private class LastValue(
+private class RollingMemory(
     var value: Int,
+    var placeCount: Int,
 )
