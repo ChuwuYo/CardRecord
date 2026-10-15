@@ -69,7 +69,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
@@ -107,7 +109,12 @@ fun CardListScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val resources = LocalResources.current
 
+    val haptics = LocalHapticFeedback.current
+    ObserveAsEvents(viewModel.swipeRecorded) {
+        haptics.performHapticFeedback(HapticFeedbackType.Confirm)
+    }
     ObserveAsEvents(viewModel.swipeFeedback) { feedback ->
+        haptics.performHapticFeedback(HapticFeedbackType.Reject)
         val message =
             when (feedback) {
                 is SwipeFeedback.CountingNotStarted ->
@@ -708,6 +715,7 @@ private fun CardsList(
                     title = group.title,
                     colorArgb = group.colorArgb,
                     isUnfiledGroup = group.isUnfiledGroup,
+                    modifier = Modifier.animateItem(),
                 )
             }
             items(group.cards, key = { it.card.id }) { card ->
@@ -717,6 +725,7 @@ private fun CardsList(
                     onLongClick = { onLongPress(card) },
                     onSwipe = { onSwipe(card.card.id) },
                     onDetail = { onCardClick(card.card.id) },
+                    modifier = Modifier.animateItem(),
                 )
             }
         }
@@ -728,10 +737,11 @@ private fun FolderHeader(
     title: String,
     colorArgb: Int,
     isUnfiledGroup: Boolean,
+    modifier: Modifier = Modifier,
 ) {
     Row(
         modifier =
-            Modifier
+            modifier
                 .fillMaxWidth()
                 .padding(top = 4.dp, bottom = 2.dp, start = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -814,12 +824,14 @@ private fun CardsGrid(
                         title = cell.title,
                         colorArgb = cell.colorArgb,
                         isUnfiledGroup = cell.isUnfiledGroup,
+                        modifier = Modifier.animateItem(),
                     )
                 is CardGridCell.Item ->
                     CompactCardListItem(
                         card = cell.card,
                         onClick = { onCardClick(cell.card.card.id) },
                         onLongClick = { onLongPress(cell.card) },
+                        modifier = Modifier.animateItem(),
                     )
             }
         }

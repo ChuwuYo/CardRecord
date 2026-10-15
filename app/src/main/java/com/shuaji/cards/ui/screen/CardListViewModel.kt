@@ -104,6 +104,8 @@ class CardListViewModel(
 
     private val swipeFeedbackQueue = OneShotEventQueue<SwipeFeedback>()
     val swipeFeedback: Flow<SwipeFeedback> = swipeFeedbackQueue.events
+    private val swipeRecordedQueue = OneShotEventQueue<Unit>()
+    val swipeRecorded: Flow<Unit> = swipeRecordedQueue.events
     private val eventQueue = OneShotEventQueue<CardListEvent>()
     val events: Flow<CardListEvent> = eventQueue.events
     private var deleteJob: Job? = null
@@ -177,7 +179,7 @@ class CardListViewModel(
         viewModelScope.launch {
             try {
                 when (val result = repository.recordSwipe(cardId)) {
-                    is SwipeRecordResult.Recorded -> Unit
+                    is SwipeRecordResult.Recorded -> swipeRecordedQueue.emit(Unit)
                     is SwipeRecordResult.CountingNotStarted ->
                         swipeFeedbackQueue.emit(SwipeFeedback.CountingNotStarted(result.startDate))
                     SwipeRecordResult.CardMissing -> swipeFeedbackQueue.emit(SwipeFeedback.CardMissing)

@@ -114,6 +114,19 @@ class CardDetailViewModelTest {
         }
 
     @Test
+    fun recordSwipe_signalsRecordedOnlyAfterTheSwipeIsStored() =
+        runTest {
+            val id = repository.upsertCard(card())
+            val viewModel = CardDetailViewModel(repository, id)
+            val recorded = async(start = CoroutineStart.UNDISPATCHED) { viewModel.swipeRecorded.first() }
+
+            viewModel.recordSwipe()
+            recorded.await()
+
+            assertEquals(1, db.transactionDao().listAll().count { it.cardId == id })
+        }
+
+    @Test
     fun detailSnapshot_marksOnlyWindowRowsAsCurrent() {
         val start = LocalDate.of(2027, 6, 1)
         val ui =

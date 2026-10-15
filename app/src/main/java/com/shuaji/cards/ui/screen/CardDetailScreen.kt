@@ -50,6 +50,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
@@ -108,7 +110,12 @@ fun CardDetailScreen(
         }
     val snackbarHostState = remember { SnackbarHostState() }
 
+    val haptics = LocalHapticFeedback.current
+    ObserveAsEvents(viewModel.swipeRecorded) {
+        haptics.performHapticFeedback(HapticFeedbackType.Confirm)
+    }
     ObserveAsEvents(viewModel.swipeFeedback) { feedback ->
+        haptics.performHapticFeedback(HapticFeedbackType.Reject)
         val message =
             when (feedback) {
                 is SwipeFeedback.CountingNotStarted ->
@@ -309,12 +316,12 @@ private fun LazyListScope.swipeListItems(
 ) {
     val swipes = detail.swipes
     item(key = "swipe-header") {
-        SwipeListHeader(count = swipes.size)
+        SwipeListHeader(count = swipes.size, modifier = Modifier.animateItem())
     }
     if (swipes.isEmpty()) {
         item(key = "swipe-empty") {
             Surface(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.animateItem().fillMaxWidth(),
                 shape = MaterialTheme.shapes.medium,
                 color = MaterialTheme.colorScheme.surfaceContainerHigh,
             ) {
@@ -336,15 +343,19 @@ private fun LazyListScope.swipeListItems(
                 transaction = transaction,
                 isCurrentPeriod = detail.isCurrentPeriod(transaction),
                 onRequestDelete = onRequestDelete,
+                modifier = Modifier.animateItem(),
             )
         }
     }
 }
 
 @Composable
-private fun SwipeListHeader(count: Int) {
+private fun SwipeListHeader(
+    count: Int,
+    modifier: Modifier = Modifier,
+) {
     Surface(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.medium,
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
     ) {
@@ -377,10 +388,11 @@ private fun SwipeListRow(
     transaction: TransactionEntity,
     isCurrentPeriod: Boolean,
     onRequestDelete: (TransactionEntity) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val dates = LocalUiDateFormatter.current
     Surface(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.medium,
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
     ) {
