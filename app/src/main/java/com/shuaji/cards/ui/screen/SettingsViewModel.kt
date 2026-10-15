@@ -33,19 +33,11 @@ import java.io.IOException
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
 
-/**
- * 设置页状态机。
- *
- * - [Idle] — 默认态，按钮可点
- * - [Working] — 导入 / 导出中，按钮 disable + 显示进度 + 可见「取消」按钮
- * - [Done] — 完成，**只是个标志位**——具体消息通过 [SettingsDoneEvent] 推到顶层全局 SnackbarHost
- */
 sealed interface SettingsUiState {
     data object Idle : SettingsUiState
 
     data object Working : SettingsUiState
 
-    /** 完成态。Snackbar 消息走 [SettingsDoneEvent] 推到全局；state 只关心"是否忙完"。 */
     data object Done : SettingsUiState
 }
 
@@ -54,14 +46,6 @@ data class PendingImport(
     val info: BackupPreview,
 )
 
-/**
- * SettingsViewModel。
- *
- * 继承 [AndroidViewModel] 只为通过 Application 解析带参数的本地化结果文案，
- * 不持有 Activity 或 Composable Context。
- *
- * 结果发布只依赖窄的 suspend 函数，不让 ViewModel 反向依赖整个应用容器。
- */
 class SettingsViewModel(
     application: Application,
     private val backup: BackupRepository,
@@ -75,10 +59,6 @@ class SettingsViewModel(
     private val _pendingImport = MutableStateFlow<PendingImport?>(null)
     val pendingImport: StateFlow<PendingImport?> = _pendingImport.asStateFlow()
 
-    /**
-     * 导入成功且备份要求开启年费提醒时置 true；设置页消费后申请通知权限。
-     * 不表示权限本身——权限从不进备份。
-     */
     private val _pendingReminderPermissionRequest = MutableStateFlow(false)
     val pendingReminderPermissionRequest: StateFlow<Boolean> =
         _pendingReminderPermissionRequest.asStateFlow()
@@ -101,7 +81,6 @@ class SettingsViewModel(
         )
 
     fun setAnnualFeeRemindersEnabled(enabled: Boolean) {
-        // enabled 流已接入协调器 combine；勿再显式 requestRefresh，避免同一次切换拆装两遍闹钟。
         reminderStore.setEnabled(enabled)
     }
 
@@ -111,7 +90,6 @@ class SettingsViewModel(
         reminderStore.markAskedNotificationPermission()
     }
 
-    /** 通知权限可能已变（授权/系统设置返回）；强制按 canPost 重排闹钟。 */
     fun onNotificationPermissionMaybeChanged() {
         requestReminderReschedule()
     }
@@ -151,10 +129,6 @@ class SettingsViewModel(
         }
     }
 
-    /**
-     * 用仓库的正式解码路径检查待导入目录；成功才允许 UI 进入模式确认对话框。
-     * 失败通过全局 Snackbar 告知原因，避免把损坏备份伪装成“0 条记录”。
-     */
     fun inspectBackup(uri: Uri) {
         launchOperation { job ->
             try {
@@ -167,10 +141,6 @@ class SettingsViewModel(
         }
     }
 
-    /**
-     * 导出。失败弹全局 Snackbar（isError=true → ⚠️ 前缀），UI 转 Done 后自动回到 Idle。
-     * 协程被取消（CancellationException）→ 静默回到 Idle，不弹错误 Snackbar。
-     */
     fun export(uri: Uri) {
         launchOperation { job ->
             try {
@@ -202,10 +172,6 @@ class SettingsViewModel(
         }
     }
 
-    /**
-     * 导入。失败弹全局 Snackbar（isError=true → ⚠️ 前缀），UI 转 Done 后自动回到 Idle。
-     * 协程被取消（CancellationException）→ 静默回到 Idle，不弹错误 Snackbar。
-     */
     fun import(
         uri: Uri,
         mode: ImportMode,
@@ -241,21 +207,12 @@ class SettingsViewModel(
         )
     }
 
-    /**
-     * 取消当前正在跑的导入 / 导出。
-     *
-     * 读取/校验阶段由 [BackupRepository.cancelActive] 关闭流并取消所属 Job；若导入已经进入
-     * 不可取消的提交边界，则保持 Working，等待事务和图片文件收尾给出确定回执。
-     */
     fun cancel() {
         val job = operationLock.withLock { operationJob }
         when (backup.cancelActive()) {
             BackupCancelResult.CANCELLED -> job?.cancel(CancellationException("User cancelled settings operation"))
             BackupCancelResult.COMMIT_IN_PROGRESS -> Unit
             BackupCancelResult.NO_ACTIVE_OPERATION -> {
-                // 可能是 Job 刚启动、仓库尚未来得及登记；让出一轮后只重试仓库取消。
-                // 若这是仓库已返回但 ViewModel 尚未 finalize 的极短窗口，绝不能取消 Job，
-                // 否则数据库已经提交却不会发布成功回执。
                 viewModelScope.launch {
                     yield()
                     if (backup.cancelActive() == BackupCancelResult.CANCELLED) {
@@ -266,25 +223,15 @@ class SettingsViewModel(
         }
     }
 
-    /**
-     * SettingsScreen 观察到完成态后调用，仅重置页面状态；
-     * Snackbar 事件已通过 [emitSettingsEvent] 独立发布。
-     */
     fun acknowledge() {
         _state.compareAndSet(SettingsUiState.Done, SettingsUiState.Idle)
     }
 
-    /**
-     * 完成收尾：state 置 Done + emit 事件到全局 Snackbar。
-     *
-     * 集中一处避免每个 catch 块重复同样的 `_state.value = Done; emitDone(event)`。
-     */
     private suspend fun finalize(
         owner: Job,
         message: String,
         isError: Boolean,
     ) {
-        // 取消是终态：即使底层 Provider 随后返回普通结果/异常，也不能再发布成功或失败回执。
         currentCoroutineContext().ensureActive()
         val stillOwner =
             operationLock.withLock {
@@ -296,7 +243,6 @@ class SettingsViewModel(
         emitSettingsEvent(SettingsDoneEvent(message = message, isError = isError))
     }
 
-    /** 同一时间只允许一个预览、导入或导出操作拥有页面状态。 */
     private fun registerOperation(job: Job): Boolean =
         operationLock.withLock {
             if (operationJob != null || _state.value !is SettingsUiState.Idle) return@withLock false
@@ -330,7 +276,6 @@ class SettingsViewModel(
         }
     }
 
-    /** 只展示仓库已本地化的可控错误；未知异常不得把内部实现信息直接暴露给用户。 */
     private fun backupErrorMessage(
         @androidx.annotation.StringRes templateRes: Int,
         error: Exception,
@@ -340,14 +285,6 @@ class SettingsViewModel(
         return app.getString(templateRes, reason)
     }
 
-    /**
-     * 把 [ImportResult] 拼成一行可读消息。
-     *
-     * 拼接顺序：模式前缀 → 主体（卡/文件夹/流水）→ 副提示（跳过、重名、所属文件夹不存在）。
-     * 任何副提示为 0 就不出现对应字段，让消息保持简洁。
-     *
-     * 所有用户可见文案和分隔符都从字符串资源获取。
-     */
     private fun formatImportMessage(
         result: ImportResult,
         mode: ImportMode,
