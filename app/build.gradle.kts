@@ -29,8 +29,8 @@ android {
         applicationId = "com.shuaji.cards"
         minSdk = 26
         targetSdk = 36
-        versionCode = 25
-        versionName = "1.6.1"
+        versionCode = 26
+        versionName = "1.7.0"
 
         vectorDrawables { useSupportLibrary = true }
     }
