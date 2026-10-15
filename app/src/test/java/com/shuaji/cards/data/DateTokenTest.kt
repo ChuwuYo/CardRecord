@@ -33,14 +33,7 @@ class DateTokenTest {
     }
 
     @Test
-    fun dateToken_isFormattedAsIsoCalendarDate() {
-        val token = DateToken.fromLocalDate(LocalDate.of(2026, 12, 3))
-
-        assertEquals("2026-12-03", DateToken.format(token))
-    }
-
-    @Test
-    fun annualDueToken_leapYearFebruary28IsFormattedAsMonthEnd() {
+    fun annualDueToken_leapYearFebruary28IsReadAsMonthEnd() {
         val legacyToken =
             LocalDate
                 .of(2028, 2, 28)
@@ -48,7 +41,7 @@ class DateTokenTest {
                 .toInstant()
                 .toEpochMilli()
 
-        assertEquals("2028-02-29", DateToken.formatAnnualDue(legacyToken))
-        assertEquals("2028-02-28", DateToken.format(legacyToken))
+        assertEquals(LocalDate.of(2028, 2, 29), DateToken.annualDueDate(legacyToken))
+        assertEquals(LocalDate.of(2028, 2, 28), DateToken.toLocalDate(legacyToken))
     }
 }
