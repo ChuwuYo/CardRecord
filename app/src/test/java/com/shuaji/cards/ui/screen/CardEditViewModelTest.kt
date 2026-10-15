@@ -27,6 +27,7 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.yield
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -650,6 +651,7 @@ class CardEditViewModelTest {
             val before = CardEditViewModel(repository, cardId = id, savedStateHandle = handle)
             before.uiState.first { it.loadState == CardEditLoadState.READY }
             before.update { it.copy(name = "未保存名称", note = "未保存备注") }
+            handle.awaitValueContaining("未保存备注")
 
             val after = CardEditViewModel(repository, cardId = id, savedStateHandle = handle.afterProcessDeath())
 
@@ -747,6 +749,10 @@ class CardEditViewModelTest {
         }
 
     private fun SavedStateHandle.afterProcessDeath() = SavedStateHandle(keys().associateWith { get<Any>(it) })
+
+    private suspend fun SavedStateHandle.awaitValueContaining(text: String) {
+        while (keys().none { get<Any>(it).toString().contains(text) }) yield()
+    }
 
     @Test
     fun selectingAnotherImage_releasesReplacedLeaseImmediately() =
