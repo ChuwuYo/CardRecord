@@ -121,9 +121,6 @@ fun CardEditScreen(
         viewModel.closeWithoutSaving()
     }
 
-    LaunchedEffect(cardId) {
-        viewModel.initialize(cardId)
-    }
     LaunchedEffect(state.saveResult) {
         when (state.saveResult) {
             is CardEditSaveResult.Saved -> onBack()
