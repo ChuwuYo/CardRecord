@@ -1,11 +1,13 @@
 package com.shuaji.cards.ui.screen
 
 import android.app.Application
+import android.content.Context
 import android.net.Uri
 import androidx.annotation.PluralsRes
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.shuaji.cards.R
+import com.shuaji.cards.core.AppLocales
 import com.shuaji.cards.data.SettingsDoneEvent
 import com.shuaji.cards.data.ThemeSettings
 import com.shuaji.cards.data.backup.BackupCancelResult
@@ -137,7 +139,7 @@ class SettingsViewModel(
             } catch (e: IOException) {
                 emitSettingsEvent(
                     SettingsDoneEvent(
-                        message = getApplication<Application>().getString(R.string.settings_result_appearance_save_failed),
+                        message = AppLocales.localize(getApplication<Application>()).getString(R.string.settings_result_appearance_save_failed),
                         isError = true,
                     ),
                 )
@@ -169,7 +171,7 @@ class SettingsViewModel(
         launchOperation { job ->
             try {
                 val summary: ExportSummary = backup.export(uri)
-                val app = getApplication<Application>()
+                val app = AppLocales.localize(getApplication<Application>())
                 val resultMessage =
                     if (summary.isEmpty) {
                         app.getString(R.string.settings_result_export_empty)
@@ -329,7 +331,7 @@ class SettingsViewModel(
         @androidx.annotation.StringRes templateRes: Int,
         error: Exception,
     ): String {
-        val app = getApplication<Application>()
+        val app = AppLocales.localize(getApplication<Application>())
         val reason = (error as? BackupException)?.message ?: app.getString(R.string.common_unknown_reason)
         return app.getString(templateRes, reason)
     }
@@ -346,7 +348,7 @@ class SettingsViewModel(
         result: ImportResult,
         mode: ImportMode,
     ): String {
-        val app = getApplication<Application>()
+        val app = AppLocales.localize(getApplication<Application>())
         val mainResId =
             when (mode) {
                 ImportMode.REPLACE -> R.string.settings_result_import_replace_with_count
@@ -398,7 +400,7 @@ class SettingsViewModel(
         return if (extras.isEmpty()) main else "$main（${extras.joinToString(separator)}）"
     }
 
-    private fun Application.quantityString(
+    private fun Context.quantityString(
         @PluralsRes resourceId: Int,
         count: Int,
     ): String = resources.getQuantityString(resourceId, count, count)
