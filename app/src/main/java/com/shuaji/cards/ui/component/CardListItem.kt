@@ -224,7 +224,7 @@ private fun ExpiredBanner() {
 
 @Composable
 private fun CompactInfoArea(card: CardUi) {
-    val dates = rememberUiDateFormatter()
+    val dates = LocalUiDateFormatter.current
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         CycleProgressContent(
             cycle = card.cycle,
@@ -253,7 +253,7 @@ private fun FullInfoArea(
     onSwipe: () -> Unit,
     onDetail: () -> Unit,
 ) {
-    val dates = rememberUiDateFormatter()
+    val dates = LocalUiDateFormatter.current
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         // 进度块
         CycleProgressContent(
@@ -330,7 +330,7 @@ fun CycleProgressContent(
     requiredCount: Int,
     variant: CycleProgressVariant,
 ) {
-    val dates = rememberUiDateFormatter()
+    val dates = LocalUiDateFormatter.current
     when (cycle) {
         is AnnualFeeCycle.Upcoming ->
             Text(
