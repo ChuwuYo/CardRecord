@@ -33,7 +33,6 @@ sealed interface AnnualFeeCycleEvent {
 
 typealias AnnualFeeCycleEventQueue = OneShotEventQueue<AnnualFeeCycleEvent>
 
-/** 在进程前台期间，按订阅首发与本地零时边界推进过期年费周期。 */
 class AnnualFeeCycleCoordinator(
     private val normalize: suspend () -> Int,
     private val boundaryTicks: Flow<Unit>,
@@ -68,7 +67,6 @@ class AnnualFeeCycleCoordinator(
         }
 }
 
-/** 把进程级 START / STOP 生命周期转换为可注入的前台状态流。 */
 fun processForegroundFlow(lifecycle: Lifecycle = ProcessLifecycleOwner.get().lifecycle): Flow<Boolean> =
     callbackFlow {
         val observer =

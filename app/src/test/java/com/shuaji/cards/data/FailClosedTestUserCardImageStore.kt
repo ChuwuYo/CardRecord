@@ -2,7 +2,6 @@ package com.shuaji.cards.data
 
 import java.io.InputStream
 
-/** 不涉及图片的单测依赖；图片入口 fail closed，避免测试默认值掩盖装配错误。 */
 internal object FailClosedTestUserCardImageStore : UserCardImageStore {
     override suspend fun stageFromUri(uri: String): StagedUserImage = throw UserImageImportException()
 

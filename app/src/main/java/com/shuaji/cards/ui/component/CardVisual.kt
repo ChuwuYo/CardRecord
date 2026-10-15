@@ -46,17 +46,10 @@ import com.shuaji.cards.data.local.CardEntity
 import com.shuaji.cards.data.local.CardOrientation
 import com.shuaji.cards.data.local.ImageSourceType
 
-/**
- * 竖版宽度占父容器比例。
- */
 private const val PORTRAIT_WIDTH_FRACTION = 0.6f
 
-/**
- * 卡面最小可视高度（避免在极窄容器下被压成扁条）。
- */
 private const val CARD_MIN_HEIGHT_DP = 96f
 
-/** 卡面文字统一使用的暗色投影；银行图标复用其颜色绘制同形底层，不改变上传图片像素。 */
 private val CardTextShadow =
     Shadow(
         color = Color.Black.copy(alpha = 0.65f),
@@ -64,22 +57,6 @@ private val CardTextShadow =
         blurRadius = 3f,
     )
 
-/**
- * 卡片视觉组件：底色渐变 + 样式背景层 + 卡面图片与文字。
- *
- * 简化为「只画卡面」，不再附带进度条 / 笔数 / 日期——
- * 那些由列表项 [CardListItem] 在卡外侧的信息区展示。
- *
- * 横版 LANDSCAPE：宽高比 ≈ 1.586 : 1
- * 竖版 PORTRAIT：高宽比 ≈ 1.586 : 1，宽度自动取父级 60% 居中
- *
- * 三种卡面来源：
- * - USER：用户上传图片
- * - PROVIDER：卡组织预设装饰
- * - NONE：无图片层
- *
- * 三种来源都使用 [CardEntity.colorArgb] 作为底色。
- */
 @Composable
 fun CardVisual(
     card: CardEntity,
@@ -96,7 +73,6 @@ fun CardVisual(
         modifier = modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.medium,
         colors = CardDefaults.cardColors(containerColor = Color.Transparent),
-        // 竖版卡面只占父级中间一段；外层 Card 若投影会形成整行阴影，改由实际卡面盒子投影。
         elevation = CardDefaults.cardElevation(defaultElevation = if (orientation == CardOrientation.PORTRAIT) 0.dp else 4.dp),
     ) {
         when (orientation) {
@@ -122,13 +98,10 @@ fun CardVisual(
     }
 }
 
-/** 卡面文字布局。双列列表必须显式选择紧凑布局，不能再由卡宽猜测调用场景。 */
 enum class CardVisualContentLayout {
     STANDARD,
     COMPACT,
 }
-
-// ── 横版 / 竖版 body ──────────────────────────────────────────────
 
 @Composable
 private fun LandscapeCardBody(
@@ -146,7 +119,6 @@ private fun LandscapeCardBody(
                 .heightIn(min = CARD_MIN_HEIGHT_DP.dp)
                 .clip(MaterialTheme.shapes.medium),
     ) {
-        // 严格按 ISO 7810 ID-1 比例，比例单一来源是 CardOrientation.aspectRatio
         val aspectHeight: Dp =
             (maxWidth / card.cardOrientation.aspectRatio).coerceAtLeast(CARD_MIN_HEIGHT_DP.dp)
         val compact = isCompactCardContent(contentLayout)
@@ -190,7 +162,6 @@ private fun LandscapeCardBody(
             } else {
                 0.dp
             }
-        // 双列仍优先保持标准比例；字体放大后则扩展高度，不能为了卡片比例裁掉可访问文本。
         val height = maxOf(aspectHeight, compactMinimumHeight)
         val contentEndPaddings =
             resolveCardContentEndPaddings(
@@ -256,11 +227,9 @@ private fun PortraitCardBody(
         modifier = Modifier.fillMaxWidth(),
         contentAlignment = Alignment.Center,
     ) {
-        // 竖版：width = parent * 0.6，限制在 100..180dp 之间
         val width: Dp =
             (maxWidth * PORTRAIT_WIDTH_FRACTION)
                 .coerceIn(100.dp, 180.dp)
-        // aspectRatio 始终表示宽 / 高；竖版必须用宽度除以比例，不能把 0.631 再当成高 / 宽相乘。
         val height: Dp = resolveCardHeight(width, card.cardOrientation).coerceAtMost(280.dp)
         val compact = isCompactCardContent(contentLayout)
         val networkLayout =
@@ -328,9 +297,6 @@ private fun PortraitCardBody(
     }
 }
 
-// ── 卡面背景（核心：由保存的主题色生成不透明渐变） ──────────────────
-
-/** 卡面来源只决定图片层；底色始终以用户保存的主题色为准。 */
 @Composable
 private fun cardSurfaceBrush(card: CardEntity): Brush = Brush.linearGradient(colors = resolveCardSurfaceColors(card.colorArgb))
 
@@ -342,8 +308,6 @@ internal fun resolveCardSurfaceColors(colorArgb: Int): List<Color> {
         lerp(base, Color.Black, 0.04f).copy(alpha = 1f),
     )
 }
-
-// ── 卡面图片层 ────────────────────────────────────────────────────
 
 @Composable
 private fun CardImageLayer(
@@ -358,7 +322,6 @@ private fun CardImageLayer(
                     model = userImageModel,
                     contentDescription = stringResource(R.string.card_image_content_description),
                     modifier = modifier.clip(MaterialTheme.shapes.medium),
-                    // 与编辑预览一致：用户选择的整张图片都保留，留白由卡片底色承接。
                     contentScale = ContentScale.Fit,
                 )
             }
@@ -384,16 +347,13 @@ internal data class CardContentPlacement(
     val bottom: Dp,
 )
 
-/** 紧凑性由列表容器决定；卡面朝向只负责几何比例，不能反向覆盖排版密度。 */
 internal fun isCompactCardContent(contentLayout: CardVisualContentLayout): Boolean = contentLayout == CardVisualContentLayout.COMPACT
 
-/** 所有朝向统一使用 `宽 / 高` 比例，避免竖版在不同调用点出现互为倒数的解释。 */
 internal fun resolveCardHeight(
     width: Dp,
     orientation: CardOrientation,
 ): Dp = width / orientation.aspectRatio
 
-/** 双列卡文字区的真实最小高度；行高已包含系统 fontScale。 */
 internal fun resolveCompactCardMinimumHeight(
     bankLineHeight: Dp,
     nameLineHeight: Dp,
@@ -468,8 +428,6 @@ internal fun resolveCardContentEndPaddings(
     )
 }
 
-// ── 卡面文字内容 ──────────────────────────────────────────────────
-
 @Composable
 private fun CardContent(
     modifier: Modifier,
@@ -543,7 +501,6 @@ private fun BankIcon() {
         modifier = Modifier.size(14.dp),
         contentAlignment = Alignment.Center,
     ) {
-        // 矢量图标没有文字的 Shadow 能力；叠一层同字形暗色偏移，避免浅色卡面上消失。
         Icon(
             imageVector = Icons.Default.CreditCard,
             contentDescription = null,

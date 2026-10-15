@@ -27,7 +27,6 @@ import java.time.LocalDate
 import java.time.ZoneId
 import java.time.ZoneOffset
 
-/** [CardRepository] 的 Room 数据流、统计窗口与事务写入回归测试。 */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34], manifest = Config.NONE)
 class CardRepositoryTest {

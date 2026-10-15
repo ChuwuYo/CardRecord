@@ -5,7 +5,6 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
 
-/** [parseSeedColor] 的解析与容错单测。 */
 class ColorHexTest {
     @Test
     fun parses_six_digit_hex_as_opaque() {

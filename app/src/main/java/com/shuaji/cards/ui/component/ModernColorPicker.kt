@@ -46,7 +46,6 @@ fun ModernColorPicker(
     var currentColor by remember { mutableStateOf(initialColor) }
 
     Column(modifier = modifier.fillMaxWidth()) {
-        // 圆形 HSV 色板
         HsvColorPicker(
             modifier =
                 Modifier
@@ -63,7 +62,6 @@ fun ModernColorPicker(
 
         Spacer(Modifier.height(8.dp))
 
-        // 当前色 + HEX
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
@@ -100,7 +98,6 @@ fun ModernColorPicker(
 
         Spacer(Modifier.height(12.dp))
 
-        // 亮度 / 明度滑动条
         BrightnessSlider(
             modifier =
                 Modifier

@@ -11,9 +11,6 @@ import kotlinx.coroutines.launch
 import java.time.Clock
 import java.time.ZoneId
 
-/**
- * 非精确闹钟回调：再读 Room 快照，未刷满才发通知并标记去重；结束后强制重排下一档。
- */
 class AnnualFeeReminderReceiver : BroadcastReceiver() {
     override fun onReceive(
         context: Context,

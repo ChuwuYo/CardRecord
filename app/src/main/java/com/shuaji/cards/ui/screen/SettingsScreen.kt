@@ -97,33 +97,6 @@ import com.shuaji.cards.ui.component.withoutBottom
 import com.shuaji.cards.ui.theme.DefaultBrandPrimary
 import com.shuaji.cards.ui.theme.parseSeedColor
 
-/**
- * 设置页。
- *
- * 结构：
- * - TopAppBar：「设置」+ 返回按钮
- * - 列表：
- *   - 数据 section
- *     - 导出配置 ListItem
- *     - 导入配置 ListItem
- *   - 隐私说明 section
- *
- * SAF 目录选择器（`ActivityResultContracts.OpenDocumentTree`）由
- * [rememberLauncherForActivityResult] 持有——不需要任何存储权限。
- *
- * 状态机：
- * - Idle：按钮可点
- * - Working：按钮 disable + 居中显示进度圈 + 可见「取消」按钮（让用户随时中止大文件）
- * - Done：emit 到 [com.shuaji.cards.data.AppContainer.settingsEvents]，由
- *   `ShuajiApp` 顶层全局 `SnackbarHost` 消费（用户在任何页面都能看到）。
- *
- * SnackbarHost 由 `ShuajiApp` 顶层持有，本页只发布操作结果。
- *
- * 导入目录先由 [SettingsViewModel.inspectBackup] 走与正式导入相同的受限解码；
- * 只有结构校验成功后才显示模式确认对话框及记录数量。
- *
- * 备份是一次性读取，不申请持久化 URI 权限。进程若在确认期间结束，用户重新选择目录即可。
- */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(onBack: () -> Unit) {
@@ -138,7 +111,6 @@ fun SettingsScreen(onBack: () -> Unit) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
 
-    // 系统通知权限状态（与「年费提醒」功能开关分开展示）
     var notificationsAllowed by remember {
         mutableStateOf(AnnualFeeReminderNotifier.canPostNotifications(context))
     }
@@ -147,7 +119,6 @@ fun SettingsScreen(onBack: () -> Unit) {
         val allowed = AnnualFeeReminderNotifier.canPostNotifications(context)
         val changed = allowed != notificationsAllowed
         notificationsAllowed = allowed
-        // 仅在实际变化时重排，避免设置页每次 resume 都拆装全部闹钟。
         if (changed) {
             viewModel.onNotificationPermissionMaybeChanged()
         }
@@ -166,13 +137,11 @@ fun SettingsScreen(onBack: () -> Unit) {
 
     val notificationSettingsLauncher =
         rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
-            // 从系统设置返回：无论是否改过权限，都按当前 canPost 重排。
             refreshNotificationPermission()
         }
 
     val notificationPermissionLauncher =
         rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
-            // 系统权限弹窗关闭后立刻回到本页；授权成功则此处就会创建闹钟。
             refreshNotificationPermission()
         }
 
@@ -187,7 +156,6 @@ fun SettingsScreen(onBack: () -> Unit) {
                             AnnualFeeReminderNotifier.CHANNEL_ID,
                         )
                     }
-                // 渠道被关时优先打开渠道页；否则仍走应用通知总设置。
                 val manager = NotificationManagerCompat.from(context)
                 val channel = manager.getNotificationChannel(AnnualFeeReminderNotifier.CHANNEL_ID)
                 if (channel != null &&
@@ -211,7 +179,6 @@ fun SettingsScreen(onBack: () -> Unit) {
         }
     }
 
-    /** 申请或引导开启系统通知权限（不直接改年费提醒开关）。 */
     fun requestNotificationPermission() {
         if (AnnualFeeReminderNotifier.canPostNotifications(context)) {
             refreshNotificationPermission()
@@ -238,13 +205,11 @@ fun SettingsScreen(onBack: () -> Unit) {
                 return
             }
         }
-        // 运行时已授权但系统总开关关了（或 API < 33）
         openAppNotificationSettings()
     }
 
     fun setNotificationPermissionEnabled(enabled: Boolean) {
         if (!enabled) {
-            // App 内无法撤销权限，只能去系统设置关闭
             openAppNotificationSettings()
             return
         }
@@ -257,7 +222,6 @@ fun SettingsScreen(onBack: () -> Unit) {
             return
         }
         // 先持久化「要提醒」：即使用户去系统设置授权时进程被杀，下次启动仍会重排。
-        // 无权限时协调器只会取消闹钟，不会误投递。
         viewModel.setAnnualFeeRemindersEnabled(true)
         if (!AnnualFeeReminderNotifier.canPostNotifications(context)) {
             requestNotificationPermission()
@@ -266,10 +230,8 @@ fun SettingsScreen(onBack: () -> Unit) {
 
     BackHandler(enabled = isWorking, onBack = viewModel::cancel)
 
-    // 自定义颜色取色器对话框显示状态
     var showColorPicker by rememberSaveable { mutableStateOf(false) }
 
-    // 语言选择对话框显示状态
     var showLanguageDialog by rememberSaveable { mutableStateOf(false) }
 
     fun inspectSelection(uri: android.net.Uri?) {
@@ -278,23 +240,19 @@ fun SettingsScreen(onBack: () -> Unit) {
         viewModel.inspectBackup(uri)
     }
 
-    // 导出：选择父目录后，由仓库新建备份目录；仅有图片引用时才创建 card_images。
     val exportLauncher =
         rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
             if (uri != null) viewModel.export(uri)
         }
-    // 导入只接受由本应用导出的完整备份目录。
     val importDirectoryLauncher =
         rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree(), ::inspectSelection)
 
-    // Done 状态变化 → acknowledge；完成消息由进程级一次性事件队列独立交付。
     LaunchedEffect(state) {
         if (state is SettingsUiState.Done) {
             viewModel.acknowledge()
         }
     }
 
-    // 导入开启了年费提醒：沿用设置页权限路径（系统弹窗 / 跳转系统设置）。
     LaunchedEffect(pendingReminderPermissionRequest) {
         if (!pendingReminderPermissionRequest) return@LaunchedEffect
         viewModel.acknowledgeReminderPermissionRequest()
@@ -305,7 +263,6 @@ fun SettingsScreen(onBack: () -> Unit) {
         }
     }
 
-    // 导入模式选择 + 二次确认
     pendingImport?.let { pending ->
         ImportModeDialog(
             info = pending.info,
@@ -328,7 +285,6 @@ fun SettingsScreen(onBack: () -> Unit) {
                 },
             )
         },
-        // SnackbarHost 由 ShuajiApp 顶层持有。
         containerColor = MaterialTheme.colorScheme.background,
     ) { padding ->
         Box(
@@ -396,7 +352,6 @@ fun SettingsScreen(onBack: () -> Unit) {
                     )
                 }
 
-                // ────── 提醒 ──────
                 item {
                     Text(
                         text = stringResource(R.string.settings_section_reminders),
@@ -464,7 +419,6 @@ fun SettingsScreen(onBack: () -> Unit) {
                     )
                 }
 
-                // ────── 外观设置 ──────
                 item {
                     Text(
                         text = stringResource(R.string.settings_section_appearance),
@@ -473,7 +427,6 @@ fun SettingsScreen(onBack: () -> Unit) {
                         color = MaterialTheme.colorScheme.primary,
                     )
                 }
-                // 主题模式：跟随系统 / 浅色 / 深色
                 item {
                     val currentMode = themeSettings?.themeMode ?: ThemeMode.SYSTEM
                     ListItem(
@@ -510,7 +463,6 @@ fun SettingsScreen(onBack: () -> Unit) {
                             },
                     )
                 }
-                // 颜色来源：系统动态 / 自定义
                 item {
                     val currentSource = themeSettings?.colorSource ?: ColorSource.SYSTEM_DYNAMIC
                     ListItem(
@@ -547,7 +499,6 @@ fun SettingsScreen(onBack: () -> Unit) {
                             },
                     )
                 }
-                // 自定义取色器入口（CUSTOM 时显示）
                 item {
                     if (themeSettings?.colorSource == ColorSource.CUSTOM) {
                         ListItem(
@@ -571,7 +522,6 @@ fun SettingsScreen(onBack: () -> Unit) {
                         )
                     }
                 }
-                // 语言：应用内切换（AppCompat per-app language，列表由 AppLanguage.entries 驱动）
                 item {
                     val currentLanguage = AppLanguage.current()
                     ListItem(
@@ -593,7 +543,6 @@ fun SettingsScreen(onBack: () -> Unit) {
             }
 
             if (state is SettingsUiState.Working) {
-                // 全屏半透遮挡，按钮 disable（列表里已处理）+ 居中进度 + 可见的「取消」按钮
                 Box(
                     modifier =
                         Modifier
@@ -616,11 +565,7 @@ fun SettingsScreen(onBack: () -> Unit) {
         }
     }
 
-    // 自定义颜色取色器对话框
     if (showColorPicker) {
-        // 等设置加载完成再建取色器：themeSettings 首帧为 null，若此时就建 picker，
-        // initialColor 会被定成默认色且之后无法回填——必须拿到已保存的 seedColorHex 再建，
-        // 这样重新打开时取色器停在「当前已选颜色」而非默认色。
         themeSettings?.let { loaded ->
             val savedColor = parseSeedColor(loaded.seedColorHex) ?: DefaultBrandPrimary
             var pickedArgb by rememberSaveable(savedColor) { mutableIntStateOf(savedColor.toArgb()) }
@@ -660,17 +605,12 @@ fun SettingsScreen(onBack: () -> Unit) {
         }
     }
 
-    // 语言选择对话框：选项由 AppLanguage.entries 驱动，新增语言无需改这里
     if (showLanguageDialog) {
         val current = AppLanguage.current()
         AlertDialog(
             onDismissRequest = { showLanguageDialog = false },
             title = { Text(stringResource(R.string.settings_language_dialog_title)) },
             text = {
-                // 单选对话框用透明、带 selectable 语义的 Row（MD3 single-choice dialog 模式），
-                // 而不是 ListItem——ListItem 的容器色是 colorScheme.surface（深色主题下近黑），
-                // 嵌在 AlertDialog 的 surfaceContainerHigh 容器里会显示成一块更黑的卡片，不协调。
-                // Row 背景透明，继承对话框表面色；selectable 提供单选无障碍语义。
                 Column {
                     AppLanguage.entries.forEach { lang ->
                         Row(
@@ -682,7 +622,6 @@ fun SettingsScreen(onBack: () -> Unit) {
                                         role = Role.RadioButton,
                                         onClick = {
                                             showLanguageDialog = false
-                                            // AppCompat 会持久化并重建 Activity 以应用新语言
                                             if (lang != current) AppLanguage.apply(lang)
                                         },
                                     ).padding(vertical = 12.dp),
@@ -711,10 +650,6 @@ fun SettingsScreen(onBack: () -> Unit) {
     }
 }
 
-/**
- * 先选择覆盖或追加，再显示记录数量与备份时间；覆盖在提交前必须二次确认。
- * [step] 可保存，避免配置变化绕过确认步骤。
- */
 @Composable
 private fun ImportModeDialog(
     info: BackupPreview,
@@ -781,10 +716,6 @@ private fun ImportModeDialog(
 
 private enum class ImportModeStep { SELECT, CONFIRM_REPLACE, CONFIRM_MERGE }
 
-/**
- * 把记录数量与备份时间拼成确认文案。
- * 对话框只接收仓库完整校验后的摘要，不存在以 0 冒充解析失败的降级路径。
- */
 @Composable
 private fun confirmMessage(
     @androidx.annotation.StringRes templateRes: Int,

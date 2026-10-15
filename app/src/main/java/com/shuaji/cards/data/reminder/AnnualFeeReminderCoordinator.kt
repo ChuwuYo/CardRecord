@@ -15,21 +15,6 @@ import kotlinx.coroutines.launch
 import java.time.Clock
 import java.time.ZoneId
 
-/**
- * 订阅卡片派生快照与提醒开关，随时用最新计划替换 AlarmManager 条目。
- *
- * 主路径是后台非精确闹钟；打开 App / 改数据只是触发重排，不是「打开才提醒」。
- *
- * 闹钟「自动创建」时机（提醒开关已开 + 系统允许通知时）：
- * 1. 系统权限弹窗回调 / 从系统通知设置返回（设置页 refresh → requestRefresh）
- * 2. 进程回到前台（[processForegroundFlow] ON_START）
- * 3. 提醒开关或卡片数据变化
- * 4. 开机 / 时区或系统时间变化（BootReceiver）
- * 5. 某次闹钟触发后的收尾重排
- *
- * 用户在系统设置里开了权限但一直不回到本 App：要等到下次把进程带回前台或冷启动才会挂上。
- * 无法在未回到进程时侦测系统授权（Android 无此广播）。
- */
 class AnnualFeeReminderCoordinator(
     private val repository: CardRepository,
     private val store: AnnualFeeReminderStore,
@@ -40,20 +25,14 @@ class AnnualFeeReminderCoordinator(
     private val zoneIdProvider: () -> ZoneId = { ZoneId.systemDefault() },
     private val foreground: Flow<Boolean> = processForegroundFlow(),
 ) {
-    /** 递增即可踢一次重排（权限变化 / 时区 / 闹钟回调后）。 */
     private val refreshTick = MutableStateFlow(0L)
 
-    /**
-     * 串行化所有 [applyPlan] / 取消：Boot、闹钟回调与 Flow 重排可能并行触达，
-     * 否则两趟 [AnnualFeeReminderScheduler.replaceAll] 交错会留下未登记或过期闹钟。
-     */
     private val planLock = Any()
 
     fun requestRefresh() {
         refreshTick.value = refreshTick.value + 1L
     }
 
-    /** REPLACE 导入等场景：在清空 prefs 登记前同步取消 AlarmManager 条目。 */
     fun cancelAllTrackedAlarms() {
         synchronized(planLock) {
             scheduler.cancelAllTracked()
@@ -82,10 +61,6 @@ class AnnualFeeReminderCoordinator(
         }
     }
 
-    /**
-     * 无卡片流订阅时（例如仅 Receiver 回调）也可同步按当前快照重排。
-     * 测试与 [requestRefresh] 最终都落到同一套 plan 规则。
-     */
     internal fun applyPlan(
         cards: List<com.shuaji.cards.data.CardWithCount>,
         enabled: Boolean,
@@ -94,7 +69,6 @@ class AnnualFeeReminderCoordinator(
             try {
                 val canPost = notifier.canPostNotifications()
                 if (!enabled || !canPost) {
-                    // 无权限时不排闹钟，避免触发后无法投递又反复补排。
                     scheduler.cancelAllTracked()
                     return
                 }
@@ -124,7 +98,6 @@ class AnnualFeeReminderCoordinator(
         }
     }
 
-    /** 供 Receiver / Boot 在没有最新 Flow 排放时拉取快照重排。 */
     suspend fun rescheduleFromStore() {
         val cards = repository.observeCards().first()
         applyPlan(cards, store.isEnabled())

@@ -63,16 +63,6 @@ data object Folders
 @Serializable
 data object Settings
 
-/**
- * 顶层 app 容器：NavHost + 全局 SnackbarHost。
- *
- * SnackbarHost 放在最外层，这样不论用户在哪个 page 都能弹消息：
- * - `ShuajiApplication` 启动生命周期协调器，归一化结果通过
- *   `annualFeeCycleEvents` 推到 UI，**不论用户当前在 list / detail / edit
- *   都能看到「X 张卡已自动续期」提示**。
- * - `SettingsViewModel` 导出 / 导入完成时，**通过 `settingsEvents` 推到全局**——
- *   设置页离开组合树后，顶层收集器仍可在当前页面展示结果。
- */
 @Composable
 fun ShuajiApp() {
     val context = LocalContext.current
@@ -83,7 +73,6 @@ fun ShuajiApp() {
     val snackbarHostState = remember { SnackbarHostState() }
     val autoResetErrorMessage = stringResource(R.string.cycle_auto_reset_error_message)
 
-    // 订阅自动续期事件 → 弹 Snackbar
     ObserveAsEvents(cycleEvents) { event ->
         val message =
             when (event) {
@@ -101,10 +90,6 @@ fun ShuajiApp() {
         )
     }
 
-    // 订阅设置页结果事件 → 全局弹 Snackbar。
-    // 用 Long 持续时间——导出 / 导入这种"操作结果回执"用户多看一眼更稳
-    // （SnackbarDuration.Long = 10s，Short = 4s）。
-    // 错误事件加本地化前缀，便于与成功结果区分。
     val errorPrefix = stringResource(R.string.settings_snackbar_error_prefix)
     ObserveAsEvents(settingsEvents) { event: SettingsDoneEvent ->
         val message = if (event.isError) "$errorPrefix${event.message}" else event.message

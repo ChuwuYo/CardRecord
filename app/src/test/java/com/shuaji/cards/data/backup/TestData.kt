@@ -7,7 +7,6 @@ import com.shuaji.cards.data.local.CardType
 import com.shuaji.cards.data.local.ImageSourceType
 import com.shuaji.cards.data.local.TransactionEntity
 
-/** 测试数据工厂。固定时间用于保证测试结果可重复。 */
 object TestData {
     const val FIXED_TIME_MILLIS: Long = 1_700_000_000_000L
 

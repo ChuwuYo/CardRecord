@@ -990,7 +990,6 @@ private class FakeUserCardImageStore : UserCardImageStore by FailClosedTestUserC
     override suspend fun stageFromUri(uri: String): StagedUserImage {
         if (!stageSucceeds) error("stage failed")
         copyStarted?.complete(Unit)
-        // 模拟真实存储边界已经开始阻塞 I/O：调用方取消后，底层仍可能先完成复制再交回控制权。
         allowCopyToFinish?.let { gate -> withContext(NonCancellable) { gate.await() } }
         stagedSources += uri
         val index = staged.size + 1

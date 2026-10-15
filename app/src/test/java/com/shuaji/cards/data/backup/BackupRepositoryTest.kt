@@ -70,20 +70,6 @@ import java.util.Base64
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
-/**
- * [BackupRepository] 的核心场景测试。
- *
- * 测试策略：
- * - 用 **Robolectric** 跑 JVM 单元测试，模拟 Android Context / ContentResolver
- * - 用 `Room.inMemoryDatabaseBuilder` 拿一次性内存数据库，每个测试建一个
- * - 用 `file://` URI + [TemporaryFolder] 构造完整备份目录，生产 APK 仍只使用 SAF 文档树
- * - 用 `runTest`（kotlinx-coroutines-test）跑 suspend 函数
- *
- * 覆盖矩阵：
- * - REPLACE 的清空、校验和字段保留
- * - MERGE 的主键、外键重映射和字段保留
- * - 异常路径（version 不匹配 / JSON 烂 / 取消）
- */
 @OptIn(ExperimentalCoroutinesApi::class)
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34], manifest = Config.NONE)
@@ -103,7 +89,7 @@ class BackupRepositoryTest {
         db =
             Room
                 .inMemoryDatabaseBuilder(context, AppDatabase::class.java)
-                .allowMainThreadQueries() // 单元测试不需要跑在 IO 调度器上
+                .allowMainThreadQueries()
                 .build()
         cardRepository =
             CardRepository(
@@ -136,9 +122,6 @@ class BackupRepositoryTest {
         db.close()
     }
 
-    // ─── 工具 ────────────────────────────────────────────────────
-
-    /** 返回当前格式备份目录里的清单文件，便于测试直接构造或篡改 JSON。 */
     private fun tempManifestFile(name: String = "backup.json"): File {
         val directory = tempFolder.newFolder(name.removeSuffix(".json"))
         return directory.resolve(BACKUP_MANIFEST_FILE_NAME).apply { check(createNewFile()) }
@@ -146,7 +129,6 @@ class BackupRepositoryTest {
 
     private fun File.backupDirectory(): File = if (isDirectory) this else checkNotNull(parentFile)
 
-    /** 生产导入必须绑定用户刚确认过的同一份内容；测试也统一走这条不变量。 */
     private suspend fun importInspected(
         backup: File,
         mode: ImportMode,
@@ -262,7 +244,6 @@ class BackupRepositoryTest {
         val transactions: List<TransactionEntity>,
     )
 
-    /** REPLACE 可重分配内部主键；用户数据与文件内引用关系必须保持。 */
     private fun assertLogicalSnapshotEquals(
         expected: DatabaseSnapshot,
         actual: DatabaseSnapshot,
@@ -292,10 +273,6 @@ class BackupRepositoryTest {
                 .sortedWith(compareBy<Pair<String, Long>> { it.first }.thenBy { it.second }),
         )
     }
-
-    // ════════════════════════════════════════════════════════════
-    // 导出
-    // ════════════════════════════════════════════════════════════
 
     @Test
     fun export_withoutImages_writesJsonAndOmitsImageDirectory() =
@@ -342,7 +319,6 @@ class BackupRepositoryTest {
                     .single()
                     .jsonObject.keys,
             )
-            // 通知权限状态不得进入备份协议。
             assertFalse(exportedJson.getValue("settings").jsonObject.containsKey("notificationPermission"))
             assertFalse(exportedJson.getValue("settings").jsonObject.containsKey("askedNotificationPermission"))
             assertEquals(
@@ -1039,19 +1015,13 @@ class BackupRepositoryTest {
             )
         }
 
-    // ════════════════════════════════════════════════════════════
-    // 导入 — REPLACE 模式
-    // ════════════════════════════════════════════════════════════
-
     @Test
     fun replace_clears_existing_data_and_writes_bundle() =
         runTest {
-            // 1) 现库有数据
             val oldFolder = folder(id = 0L, name = "旧分组")
             val oldFolderId = db.cardFolderDao().insert(oldFolder)
             db.cardDao().upsert(card(id = 0L, name = "旧卡", folderId = oldFolderId))
 
-            // 2) 备份只有新数据
             val newBundle =
                 TestData.backupBundle(
                     folders = listOf(folder(id = 100L, name = "新分组")),
@@ -1061,14 +1031,12 @@ class BackupRepositoryTest {
             val file = tempManifestFile()
             file.writeText(json().encodeToString(newBundle), Charsets.UTF_8)
 
-            // 3) REPLACE 导入
             val result = importInspected(file, ImportMode.REPLACE)
 
             assertEquals(1, result.foldersAdded)
             assertEquals(1, result.cardsAdded)
             assertEquals(0, result.cardsSkippedInvalidFolder)
 
-            // 4) 验证：旧数据全没了，新数据写入
             val folders = db.cardFolderDao().listAll()
             val cards = db.cardDao().listAll()
             assertEquals(1, folders.size)
@@ -1080,14 +1048,13 @@ class BackupRepositoryTest {
     @Test
     fun replace_invalid_folderId_is_set_to_null() =
         runTest {
-            // 备份里 card 引用 folderId=9999，但 bundle.folders 里没有 id=9999 的 folder
             val broken =
                 TestData.backupBundle(
                     folders = listOf(folder(id = 10L, name = "A")),
                     cards =
                         listOf(
-                            card(id = 20L, name = "好卡", folderId = 10L), // OK
-                            card(id = 21L, name = "坏卡", folderId = 9999L), // 引用不存在
+                            card(id = 20L, name = "好卡", folderId = 10L),
+                            card(id = 21L, name = "坏卡", folderId = 9999L),
                         ),
                     transactions = emptyList(),
                 )
@@ -1096,7 +1063,6 @@ class BackupRepositoryTest {
 
             val result = importInspected(file, ImportMode.REPLACE)
 
-            // 1 张被改写为 null
             assertEquals(1, result.cardsSkippedInvalidFolder)
             val cards = db.cardDao().listAll()
             assertEquals(2, cards.size)
@@ -1110,7 +1076,7 @@ class BackupRepositoryTest {
                     .id,
                 ok.folderId,
             )
-            assertNull(bad.folderId) // 失效引用被置 null
+            assertNull(bad.folderId)
         }
 
     @Test
@@ -1192,19 +1158,16 @@ class BackupRepositoryTest {
     @Test
     fun replace_cascade_deletes_transactions() =
         runTest {
-            // 1) 现库：1 张卡 + 5 笔流水
             val folderId = db.cardFolderDao().insert(folder(id = 0L, name = "X"))
             val cardId = db.cardDao().upsert(card(id = 0L, name = "C", folderId = folderId))
             repeat(5) { i -> db.transactionDao().insert(transaction(cardId = cardId, occurredAtMillis = TestData.FIXED_TIME_MILLIS + i)) }
             assertEquals(5, db.transactionDao().listAll().size)
 
-            // 2) REPLACE 一个空 bundle → 期望所有表被清空
             val empty = TestData.backupBundle()
             val file = tempManifestFile()
             file.writeText(json().encodeToString(empty), Charsets.UTF_8)
             importInspected(file, ImportMode.REPLACE)
 
-            // 3) 验证
             assertTrue(db.cardDao().listAll().isEmpty())
             assertTrue(db.cardFolderDao().listAll().isEmpty())
             assertTrue(db.transactionDao().listAll().isEmpty())
@@ -1213,7 +1176,6 @@ class BackupRepositoryTest {
     @Test
     fun replace_roundtrip_preserves_data() =
         runTest {
-            // 1) 准备数据并 export
             val folderId = db.cardFolderDao().insert(folder(id = 0L, name = "F"))
             val originalCard =
                 card(
@@ -1229,13 +1191,10 @@ class BackupRepositoryTest {
 
             val (out, _) = exportBackup("replace-roundtrip-parent")
 
-            // 2) 现库塞点新数据
             db.cardDao().upsert(card(id = 0L, name = "杂质"))
 
-            // 3) REPLACE 导入
             importInspected(out, ImportMode.REPLACE)
 
-            // 4) 验证：跟导出前的快照一致
             val folders = db.cardFolderDao().listAll()
             val cards = db.cardDao().listAll()
             val transactions = db.transactionDao().listAll()
@@ -1551,14 +1510,9 @@ class BackupRepositoryTest {
             )
         }
 
-    // ════════════════════════════════════════════════════════════
-    // 导入 — MERGE 模式
-    // ════════════════════════════════════════════════════════════
-
     @Test
     fun merge_appends_folders_with_new_ids() =
         runTest {
-            // 1) 现库空 → merge 2 个 folder
             val bundle =
                 TestData.backupBundle(
                     folders =
@@ -1598,7 +1552,7 @@ class BackupRepositoryTest {
                                 cardOrientation = CardOrientation.PORTRAIT,
                                 folderId = 10L,
                             ),
-                            card(id = 21L, name = "C2", folderId = 9999L), // 指向不存在（应保留原值）
+                            card(id = 21L, name = "C2", folderId = 9999L),
                         ),
                     transactions = emptyList(),
                 )
@@ -1621,8 +1575,6 @@ class BackupRepositoryTest {
             assertEquals(CardOrientation.PORTRAIT, c1.cardOrientation)
 
             val c2 = cards.first { it.name == "C2" }
-            // 指向 backup 内不存在、现库也没有的 folder（9999）→ 置 null（避免悬空外键约束），
-            // 这同时会计入 cardsSkippedInvalidFolder。
             assertNull(c2.folderId)
             assertEquals("C2 的非法 folderId 应计入 cardsSkippedInvalidFolder", 1, result.cardsSkippedInvalidFolder)
         }
@@ -1630,7 +1582,6 @@ class BackupRepositoryTest {
     @Test
     fun merge_remaps_transaction_cardId() =
         runTest {
-            // 备份里：1 folder + 1 card + 2 transactions
             val bundle =
                 TestData.backupBundle(
                     folders = listOf(folder(id = 10L, name = "A")),
@@ -1646,7 +1597,6 @@ class BackupRepositoryTest {
 
             importInspected(file, ImportMode.MERGE)
 
-            // 验证：transactions.cardId 全是新分配的 card id（≠ 20L）
             val transactions = db.transactionDao().listAll()
             assertEquals(2, transactions.size)
             val newCardId =
@@ -1729,15 +1679,14 @@ class BackupRepositoryTest {
     @Test
     fun merge_skips_orphan_transactions() =
         runTest {
-            // 备份里：1 张 card（id=20）+ 1 笔孤立 transaction（cardId=9999，指向不存在的卡）
             val bundle =
                 TestData.backupBundle(
                     folders = emptyList(),
                     cards = listOf(card(id = 20L, name = "C")),
                     transactions =
                         listOf(
-                            transaction(id = 100L, cardId = 20L), // OK
-                            transaction(id = 101L, cardId = 9999L), // 孤儿：cardId 找不到映射
+                            transaction(id = 100L, cardId = 20L),
+                            transaction(id = 101L, cardId = 9999L),
                         ),
                 )
             val file = tempManifestFile()
@@ -1745,35 +1694,32 @@ class BackupRepositoryTest {
 
             val result = importInspected(file, ImportMode.MERGE)
 
-            // transactionsAdded 只算成功插入的；孤立 1 笔被跳过
             assertEquals(1, result.transactionsAdded)
             assertEquals(1, result.transactionsSkipped)
 
             val stored = db.transactionDao().listAll()
-            assertEquals(1, stored.size) // 真正写到 DB 的只有 1 笔
+            assertEquals(1, stored.size)
         }
 
     @Test
     fun merge_reports_duplicate_names() =
         runTest {
-            // 1) 现库已有 1 folder "A" + 1 card "C"（来自 seed）
             seed(
                 folders = listOf(folder(id = 0L, name = "A")),
                 cards = listOf(card(id = 0L, name = "C")),
             )
 
-            // 2) 备份里也有 "A" + "C"（重名）+ "B" + "D"（新）→ 期望各 1 个重名
             val bundle =
                 TestData.backupBundle(
                     folders =
                         listOf(
-                            folder(id = 10L, name = "A"), // 跟现库重名
-                            folder(id = 11L, name = "B"), // 不重名
+                            folder(id = 10L, name = "A"),
+                            folder(id = 11L, name = "B"),
                         ),
                     cards =
                         listOf(
-                            card(id = 20L, name = "C"), // 跟现库重名
-                            card(id = 21L, name = "D"), // 不重名
+                            card(id = 20L, name = "C"),
+                            card(id = 21L, name = "D"),
                         ),
                     transactions = emptyList(),
                 )
@@ -1782,18 +1728,12 @@ class BackupRepositoryTest {
 
             val result = importInspected(file, ImportMode.MERGE)
 
-            // 1 个 folder 重名、1 个 card 重名
             assertEquals(1, result.duplicateFolderNames)
             assertEquals(1, result.duplicateCardNames)
 
-            // 数据全部写入：现库 1 + 备份 2 = 3（重名 ≠ 跳过）
             assertEquals(3, db.cardFolderDao().listAll().size)
             assertEquals(3, db.cardDao().listAll().size)
         }
-
-    // ════════════════════════════════════════════════════════════
-    // 异常路径
-    // ════════════════════════════════════════════════════════════
 
     @Test
     fun import_rejectsEveryUnsupportedVersion_withoutChangingDatabase() =
@@ -1833,7 +1773,6 @@ class BackupRepositoryTest {
     @Test
     fun import_missing_version_field_throws_BackupException() =
         runTest {
-            // version 没有解码默认值，缺失时必须失败，不能静默当作当前格式。
             val file = tempManifestFile()
             file.writeText(
                 """{"cards": [], "folders": [], "transactions": []}""",
@@ -1889,7 +1828,6 @@ class BackupRepositoryTest {
     fun import_empty_file_throws_BackupException() =
         runTest {
             val file = tempManifestFile()
-            // 清单存在但内容为空（0 字节），应在解码前给出明确错误。
             val ex =
                 assertThrows(BackupException::class.java) {
                     runBlocking { importInspected(file, ImportMode.REPLACE) }
@@ -2278,14 +2216,9 @@ class BackupRepositoryTest {
             )
         }
 
-    // ════════════════════════════════════════════════════════════
-    // 事务原子性：中间失败时整段回滚
-    // ════════════════════════════════════════════════════════════
-
     @Test
     fun replace_rolls_back_when_orphan_transaction_fails_reference_validation() =
         runTest {
-            // 1) 现库：1 张卡 + 1 笔流水（用户的真实数据）
             val folderId = db.cardFolderDao().insert(folder(id = 0L, name = "F"))
             val cardId = db.cardDao().upsert(card(id = 0L, name = "C", folderId = folderId))
             db.transactionDao().insert(transaction(cardId = cardId))
@@ -2297,35 +2230,29 @@ class BackupRepositoryTest {
             assertEquals(1, snapshotCards)
             assertEquals(1, snapshotTransactions)
 
-            // 2) 备份里：1 folder + 1 card + 1 笔孤立 transaction
-            //    —— 第二笔 transaction 的 cardId 引用了备份里不存在的 card
-            //    ⇒ REPLACE 找不到文件内 cardId 映射时主动拒绝 ⇒ withTransaction 应该 ROLLBACK
             val broken =
                 TestData.backupBundle(
                     folders = listOf(folder(id = 10L, name = "备份分组")),
                     cards = listOf(card(id = 20L, name = "备份卡", folderId = 10L)),
                     transactions =
                         listOf(
-                            transaction(id = 100L, cardId = 20L), // OK
-                            transaction(id = 101L, cardId = 9999L), // 引用不存在的 card → 文件内映射失败
+                            transaction(id = 100L, cardId = 20L),
+                            transaction(id = 101L, cardId = 9999L),
                         ),
                 )
             val file = tempManifestFile()
             file.writeText(json().encodeToString(broken), Charsets.UTF_8)
 
-            // 3) import 应该抛异常
             assertThrows(BackupException::class.java) {
                 runBlocking { importInspected(file, ImportMode.REPLACE) }
             }
 
-            // 4) 关键：数据库状态应该等于 import 前——用户数据完好
             val foldersAfter = db.cardFolderDao().listAll()
             val cardsAfter = db.cardDao().listAll()
             val transactionsAfter = db.transactionDao().listAll()
             assertEquals("folders 应该没变", snapshotFolders, foldersAfter.size)
             assertEquals("cards 应该没变", snapshotCards, cardsAfter.size)
             assertEquals("transactions 应该没变", snapshotTransactions, transactionsAfter.size)
-            // 名字也对——确认还是用户原来的数据
             assertEquals("F", foldersAfter[0].name)
             assertEquals("C", cardsAfter[0].name)
         }

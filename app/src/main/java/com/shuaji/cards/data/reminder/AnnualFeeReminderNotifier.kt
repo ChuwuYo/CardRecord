@@ -15,7 +15,6 @@ import com.shuaji.cards.MainActivity
 import com.shuaji.cards.R
 import com.shuaji.cards.core.AppLocales
 
-/** 本地通知渠道与发送。 */
 class AnnualFeeReminderNotifier(
     private val context: Context,
 ) {
@@ -35,12 +34,8 @@ class AnnualFeeReminderNotifier(
         manager.createNotificationChannel(channel)
     }
 
-    /** 系统层面是否允许本应用发通知（含 Android 13+ 运行时权限与渠道总开关）。 */
     fun canPostNotifications(): Boolean = canPostNotifications(context)
 
-    /**
-     * @return true 表示已尝试投递（调用方才可写去重）；false 表示当前无法投递，勿 markNotified。
-     */
     fun notifyProgress(decision: AnnualFeeReminderPlanner.FireDecision): Boolean {
         if (!canPostNotifications()) return false
         val strings = AppLocales.localize(context)
@@ -89,7 +84,6 @@ class AnnualFeeReminderNotifier(
             )
             true
         } catch (error: SecurityException) {
-            // 权限竞态或 OEM 拒绝：不得 markNotified，留给下次重排重试。
             Log.w(TAG, "notify blocked", error)
             false
         }
@@ -104,7 +98,6 @@ class AnnualFeeReminderNotifier(
             thresholdDays: Int,
         ): Int = ((cardId * 31) + thresholdDays).toInt()
 
-        /** 设置页与 Notifier 共用，避免两处判断漂移。 */
         fun canPostNotifications(context: Context): Boolean {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
                 ContextCompat.checkSelfPermission(context, android.Manifest.permission.POST_NOTIFICATIONS) !=

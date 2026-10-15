@@ -33,7 +33,6 @@ import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicReference
 
-/** 内容寻址的用户卡面资源 ID；格式固定为小写 SHA-256，不把文件路径带入业务模型。 */
 @JvmInline
 value class ImageAssetId private constructor(
     val value: String,
@@ -47,14 +46,12 @@ value class ImageAssetId private constructor(
     }
 }
 
-/** 一次暂存租约。租约保护文件不被回收；保存或取消后必须显式释放。 */
 data class StagedUserImage(
     val assetId: ImageAssetId,
     val leaseToken: String,
     val displayUri: String,
 )
 
-/** 用户图片的深模块边界：外部 URI 只作为输入，调用方只持有稳定资产 ID。 */
 interface UserCardImageStore {
     suspend fun stageFromUri(uri: String): StagedUserImage
 
@@ -64,20 +61,16 @@ interface UserCardImageStore {
         maxBytes: Long,
     ): StagedUserImage
 
-    /** 与正式导入复用同一套字节、哈希和图片格式校验，但不提升为持久资产。 */
     suspend fun validateBackupImage(
         expectedAssetId: ImageAssetId,
         input: InputStream,
         maxBytes: Long,
     )
 
-    /** 同步结束租约；文件回收由随后或下次 [collectGarbage] 完成，供 ViewModel 清理时也能可靠调用。 */
     fun releaseLeases(images: Set<StagedUserImage>)
 
-    /** 只在启动和导出前尝试把历史外部 URI 转成私有资产。 */
     suspend fun migrateLegacyImages()
 
-    /** 只访问数据库与应用私有目录，不触碰外部 Provider。 */
     suspend fun collectGarbage()
 
     fun resolve(assetId: ImageAssetId): String
@@ -93,12 +86,6 @@ class UserImageImportException(
 
 class UserImageMissingException : IOException()
 
-/**
- * 把用户选择的图片复制到内部 `filesDir`，并以内容哈希作为不可变文件名。
- *
- * 文件系统和 SQLite 不能共享事务，因此先完整写入并原子提升文件，再让数据库引用它；
- * 数据库写入失败只会留下可回收孤儿，不会留下指向半文件的记录。
- */
 class ContentResolverUserCardImageStore(
     private val contentResolver: ContentResolver,
     private val cardDao: CardDao,
@@ -179,15 +166,12 @@ class ContentResolverUserCardImageStore(
     override suspend fun collectGarbage() {
         withContext(dispatcher) {
             assetMutex.withLock {
-                // 必须先快照租约再读数据库：租约只会在数据库提交后释放。反过来读取会让
-                // “旧 DB 快照 + 已释放租约”错误删除刚提交引用的文件。
                 val leasedAssets = pendingLeases.values.toSet()
                 reconcileFilesLocked(cardDao.listAll(), leasedAssets)
             }
         }
     }
 
-    /** 数据库只会引用已完整提升的文件；这里保持纯映射，避免在 UI Flow 中同步访问文件系统。 */
     override fun resolve(assetId: ImageAssetId): String = Uri.fromFile(assetFile(assetId)).toString()
 
     override fun openAsset(assetId: ImageAssetId): InputStream =
@@ -250,7 +234,6 @@ class ContentResolverUserCardImageStore(
                 try {
                     cancellationSignal.cancel()
                 } catch (_: Exception) {
-                    // 取消回调不得抛出；关闭来源流仍可打断大多数阻塞读取。
                 } finally {
                     closeBestEffort(sourceReference.getAndSet(null))
                 }
@@ -340,8 +323,6 @@ class ContentResolverUserCardImageStore(
 
     private fun promotePreparedLocked(prepared: PreparedAsset): StagedUserImage {
         val destination = assetFile(prepared.assetId)
-        // prepared 已按同一内容 ID 校验并落盘；直接原子替换既修复潜在损坏文件，
-        // 也避免在全局资产锁内再次读取整张图片。
         moveAtomically(prepared.file, destination)
         val token = UUID.randomUUID().toString()
         pendingLeases[token] = prepared.assetId
@@ -460,10 +441,8 @@ class ContentResolverUserCardImageStore(
     )
 
     private enum class TemporaryImageDurability {
-        /** 临时文件会原子提升为持久资产，提升前必须落盘。 */
         PROMOTABLE,
 
-        /** 文件仅用于本次格式校验并立即删除，无需强制闪存同步。 */
         VALIDATION_ONLY,
     }
 
@@ -496,6 +475,5 @@ private fun closeBestEffort(input: InputStream?) {
     try {
         input?.close()
     } catch (_: Exception) {
-        // 取消路径只负责打断读取；关闭错误不能覆盖原始取消或导入错误。
     }
 }

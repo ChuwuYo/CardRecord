@@ -47,16 +47,6 @@ import com.shuaji.cards.data.AnnualFeeCycle
 import com.shuaji.cards.data.local.CardOrientation
 import com.shuaji.cards.ui.screen.CardUi
 
-/**
- * 列表单卡项。
- *
- * 布局（自上而下）：
- *  1. 过期提示条（仅当 [CardUi.isExpired] = true 时显示）
- *  2. 卡面（由 [CardVisual] 绘制）
- *  3. 信息区：进度条 + 笔数 + 有效期 + 下次结算 + 操作行
- *
- * 整张卡片使用一个 [Surface] 容器，提供明确的层级区分。
- */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun CardListItem(
@@ -127,12 +117,10 @@ private fun CardListItemContent(
             modifier = Modifier.padding(12.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            // 0. 过期提示条 —— 设了 validUntil 就该有提示，否则字段白存在
             if (card.isExpired) {
                 ExpiredBanner()
             }
 
-            // 1. 卡面
             Box(
                 modifier = Modifier.fillMaxWidth(),
                 contentAlignment = Alignment.Center,
@@ -156,7 +144,6 @@ private fun CardListItemContent(
                 )
             }
 
-            // 2. 信息区
             when (variant) {
                 CardListItemVariant.Compact ->
                     CompactInfoArea(
@@ -183,11 +170,6 @@ internal fun resolveCardVisualWidthFraction(
         else -> 0.88f
     }
 
-/**
- * 已过期红色提示条。复用于 list / grid 两种模式。
- *
- * 红色背景 + 白字 + 感叹号 icon：层级高，眼睛一扫就看见。
- */
 @Composable
 private fun ExpiredBanner() {
     val expiredColor = MaterialTheme.colorScheme.errorContainer
@@ -254,7 +236,6 @@ private fun FullInfoArea(
 ) {
     val dates = LocalUiDateFormatter.current
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        // 进度块
         CycleProgressContent(
             cycle = card.cycle,
             currentCount = card.currentCount,
@@ -262,7 +243,6 @@ private fun FullInfoArea(
             variant = CycleProgressVariant.FULL,
         )
 
-        // 日期行
         if (card.card.validUntilMillis != null || card.card.nextDueDateMillis != null) {
             Spacer(Modifier.height(2.dp))
             if (card.card.validUntilMillis != null) {
@@ -283,7 +263,6 @@ private fun FullInfoArea(
             }
         }
 
-        // 操作行
         Spacer(Modifier.height(4.dp))
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
         Row(

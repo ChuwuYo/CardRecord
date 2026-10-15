@@ -7,9 +7,6 @@ import java.time.YearMonth
 import java.time.ZoneId
 import kotlin.math.max
 
-/**
- * 年费统计周期。不同状态只携带该状态确实存在的数据，调用方无需靠非空断言补偿非法组合。
- */
 sealed interface AnnualFeeCycle {
     val canRecord: Boolean
         get() = this is Unscheduled || this is Active

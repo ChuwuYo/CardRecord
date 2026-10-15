@@ -42,7 +42,6 @@ data class CardDetailsSnapshot(
     val swipes: List<TransactionEntity>,
 )
 
-/** 仓库层：封装 DAO 访问、周期派生和跨表事务规则。 */
 class CardRepository(
     private val database: AppDatabase,
     private val cardDao: CardDao,
@@ -54,10 +53,6 @@ class CardRepository(
     private val userImages: UserCardImageStore,
     private val defaultDispatcher: CoroutineDispatcher = Dispatchers.Default,
 ) {
-    /**
-     * 每个活跃收集者订阅固定的 cards 与 transactions 两条查询。
-     * 这里保持冷流即可；当前本地数据量不需要做应用级共享。
-     */
     private val derivedSnapshots: Flow<DerivedSnapshot> =
         combine(
             cardDao.observeAll(),
@@ -72,7 +67,6 @@ class CardRepository(
 
     fun observeCards(): Flow<List<CardWithCount>> = derivedSnapshots.map { it.cards }
 
-    /** 一次性读取单张持久化卡片；编辑路径不需要全表流水或周期计数。 */
     suspend fun getStoredCard(id: Long): StoredCardSnapshot? =
         cardDao.getById(id)?.let { card ->
             StoredCardSnapshot(
@@ -81,7 +75,6 @@ class CardRepository(
             )
         }
 
-    /** 详情卡片、有效计数与完整历史来自同一次派生快照。 */
     fun observeCardDetails(id: Long): Flow<CardDetailsSnapshot?> =
         derivedSnapshots
             .map { snapshot ->
@@ -103,18 +96,15 @@ class CardRepository(
         return id
     }
 
-    /** 编辑只允许更新仍存在的卡，返回 false 时调用方不得用 upsert 把已删除卡片复活。 */
     suspend fun updateCard(card: CardEntity): Boolean {
         val updated = cardDao.update(card.withNormalizedCreditDetails()) == 1
         if (updated) collectUserImageGarbageAfterWrite()
         return updated
     }
 
-    /** 图片未被用户改动时，让 DAO 在同一事务内保留数据库中的最新图片引用。 */
     suspend fun updateCardPreservingUserImage(card: CardEntity): Boolean =
         cardDao.updatePreservingUserImage(card.withNormalizedCreditDetails()) == 1
 
-    /** 只在确实删除一行时返回 true，防止调用方把陈旧状态误报为成功。 */
     suspend fun deleteCard(card: CardEntity): Boolean {
         val deleted = cardDao.delete(card) == 1
         if (deleted) collectUserImageGarbageAfterWrite()
@@ -123,12 +113,10 @@ class CardRepository(
 
     suspend fun stageUserImage(uri: String): StagedUserImage = userImages.stageFromUri(uri)
 
-    /** 数据库提交或表单放弃后同步结束租约；此操作不做磁盘扫描。 */
     fun endPendingUserImageLeases(images: Set<StagedUserImage>) {
         userImages.releaseLeases(images)
     }
 
-    /** 放弃图片后异步回收孤儿；维护失败不能改写已经确定的表单或数据库结果。 */
     suspend fun reclaimUnusedUserImages() = collectUserImageGarbageBestEffort()
 
     private fun resolveUserImage(
@@ -141,14 +129,12 @@ class CardRepository(
             ?.takeIf(String::isNotBlank)
             ?: legacyUri?.takeIf(String::isNotBlank)
 
-    /** 数据库写入已经提交后，文件回收失败只能延后重试，不能把已成功的业务写入误报为失败。 */
     private suspend fun collectUserImageGarbageAfterWrite() {
         withContext(NonCancellable) {
             collectUserImageGarbageBestEffort()
         }
     }
 
-    /** 启动时迁移旧 URI；迁移普通失败不阻止随后清理私有目录。 */
     internal suspend fun maintainUserImagesOnStartupBestEffort() {
         try {
             userImages.migrateLegacyImages()
@@ -170,7 +156,6 @@ class CardRepository(
         }
     }
 
-    /** 在同一 Room 写事务中校验卡片、归一化周期并记录流水。 */
     suspend fun recordSwipe(cardId: Long): SwipeRecordResult =
         database.withTransaction {
             val now = clock.instant()
@@ -189,10 +174,6 @@ class CardRepository(
             SwipeRecordResult.Recorded(transactionId)
         }
 
-    /**
-     * 手动重置只删除当前有效窗口；无日程卡保持兼容，全删该卡流水。
-     * 待开始或卡片不存在时不执行破坏性写入。
-     */
     suspend fun resetCardCycle(cardId: Long): Boolean =
         database.withTransaction {
             val now = clock.instant()
@@ -222,7 +203,6 @@ class CardRepository(
 
     suspend fun insertFolder(folder: CardFolderEntity): Long = folderDao.insert(folder)
 
-    /** 排序号分配与插入属于同一个写事务，避免首次加载或快速连点产生重复顺序。 */
     suspend fun createFolder(
         name: String,
         colorArgb: Int,
@@ -239,18 +219,13 @@ class CardRepository(
 
     suspend fun updateFolder(folder: CardFolderEntity): Boolean = folderDao.update(folder) == 1
 
-    suspend fun deleteFolder(folder: CardFolderEntity): Boolean {
-        // 外键 `ON DELETE SET NULL` 会把该文件夹下的卡片归入「未分类」。
-        return folderDao.delete(folder) == 1
-    }
+    suspend fun deleteFolder(folder: CardFolderEntity): Boolean = folderDao.delete(folder) == 1
 
-    /** 事务入口：只推进过期日期，绝不删除历史流水。 */
     suspend fun normalizeOverdueCycles(): Int =
         database.withTransaction {
             normalizeOverdueCyclesInTransaction()
         }
 
-    /** 调用方必须已经持有 Room 写事务，供导入流程复用且避免嵌套事务。 */
     internal suspend fun normalizeOverdueCyclesInTransaction(): Int {
         val now = clock.instant()
         val zone = zoneIdProvider()

@@ -25,15 +25,8 @@ import kotlinx.coroutines.launch
 import java.time.Instant
 import java.time.ZoneId
 
-/** 主页布局模式 */
 enum class ListLayoutMode { LIST, GRID }
 
-/**
- * 卡片筛选是与文件夹并列的视图条件，不会修改卡片归属。
- *
- * 借记卡和信用卡只匹配用户明确选择过的类型；历史卡片的“未选择”状态仍会出现在
- * [All]、[Folder] 和 [Unfiled] 中，避免升级后被错误归类。
- */
 sealed interface CardFilter {
     data object All : CardFilter
 
@@ -49,12 +42,6 @@ sealed interface CardFilter {
     ) : CardFilter
 }
 
-/**
- * 主页 UI 用的卡片视图：实体 + 实时笔数 + 是否过期。
- *
- * 把 [currentCount] 和 [isExpired] 提前算好，UI 拿到的就是「显示需要的全部」，
- * 不再需要从 ViewModel 外拿辅助数据。
- */
 data class CardUi(
     val card: CardEntity,
     val currentCount: Int,
@@ -86,7 +73,6 @@ sealed interface CardListEvent {
     data object WriteFailed : CardListEvent
 }
 
-/** 主页 List 中的"分组"：一组卡片 + 标题（文件夹名 / "全部"） */
 data class CardListGroup(
     val key: String,
     val title: String,
@@ -95,13 +81,6 @@ data class CardListGroup(
     val isUnfiledGroup: Boolean,
 )
 
-/**
- * 列表 UI 总状态。
- *
- * - [allCards] 永远包含所有卡片（不跟随 [filter] 变），用于顶部"总进度"
- * - [visibleCards] 跟随 [filter] 变
- * - [grouped] 始终按文件夹分组（filter=Unfiled 时只有一组"未分类"）
- */
 data class ListUiState(
     val allCards: List<CardUi> = emptyList(),
     val folders: List<CardFolderEntity> = emptyList(),
@@ -113,9 +92,6 @@ data class ListUiState(
     val overallProgress: OverallProgress = calculateOverallProgress(allCards)
 }
 
-/**
- * 列表页：聚合所有卡片 + 文件夹 + 整体进度统计 + 删除确认状态。
- */
 class CardListViewModel(
     private val repository: CardRepository,
 ) : ViewModel() {
@@ -135,7 +111,6 @@ class CardListViewModel(
     private val nowProvider: () -> Instant = { Instant.now() }
     private val zoneIdProvider: () -> ZoneId = { ZoneId.systemDefault() }
 
-    /** Repository 流 → UI 流：包成 [CardUi]，把过期判定提前算好。 */
     private fun observeCardUis() =
         repository.observeCards().map { list ->
             list.map { it.toCardUi(nowProvider(), zoneIdProvider()) }
@@ -172,7 +147,6 @@ class CardListViewModel(
             if (selectedLayoutMode.value == ListLayoutMode.LIST) ListLayoutMode.GRID else ListLayoutMode.LIST
     }
 
-    /** 长按只发起确认，不在用户确认前写数据库。 */
     fun requestDelete(card: CardUi) {
         _pendingDelete.value = card
     }
@@ -199,12 +173,6 @@ class CardListViewModel(
             }
     }
 
-    /**
-     * 主页快捷记一笔：写一条流水。currentCount 由 Repository 按周期实时派生，
-     * 写完 Flow 立刻把新的 CardUi 推给 UI 刷新。
-     *
-     * 达标后仍允许继续记录真实消费；展示进度会封顶，但流水事实不应被 UI 目标值截断。
-     */
     fun swipe(cardId: Long) {
         viewModelScope.launch {
             try {
@@ -223,10 +191,6 @@ class CardListViewModel(
     }
 }
 
-/**
- * 文件夹可在管理页被改名或删除，因此筛选项只把 id 当作身份真源。
- * 已删除的筛选目标回退到“全部”，仍存在的目标则刷新展示名称。
- */
 internal fun normalizeCardFilter(
     filter: CardFilter,
     folders: List<CardFolderEntity>,
@@ -244,11 +208,6 @@ internal fun normalizeCardFilter(
                 ?: CardFilter.All
     }
 
-/**
- * 把 [CardWithCount] 包装成 UI 用的 [CardUi]。
- *
- * - [isExpired] 按用户所在时区的自然日判断，有效期当天仍然有效
- */
 private fun CardWithCount.toCardUi(
     now: Instant,
     zoneId: ZoneId,
@@ -295,14 +254,6 @@ private fun cycleRank(cycle: AnnualFeeCycle): Int =
 private fun cappedProgressRatio(card: CardUi): Double =
     if (card.card.requiredCount <= 0) 0.0 else (card.currentCount.toDouble() / card.card.requiredCount).coerceAtMost(1.0)
 
-/**
- * 按当前 [filter] 把 [cards] 分成 [CardListGroup] 列表。
- *
- * 排序：
- * - filter=All/Debit/Credit 时：先按类型筛选，再按文件夹分组
- * - filter=Folder/Unfiled 时：单组，包含未选择卡类型的历史数据
- * - 组内：全局筛选按 progress 降序，文件夹筛选按创建时间倒序
- */
 internal fun groupCardsForList(
     cards: List<CardUi>,
     folders: List<CardFolderEntity>,

@@ -67,12 +67,6 @@ enum class CardEditLoadState {
     FAILED,
 }
 
-/**
- * 编辑表单对用户图片的唯一状态轴。
- *
- * [Unchanged] 不缓存持久化引用，保存时由 DAO 在事务内保留数据库最新值；[Cleared] 与
- * [Selected] 才表示用户明确改动，因而不会把后台刚迁移的图片覆盖回旧快照。
- */
 sealed interface UserImageDraft {
     val previewModel: String?
 
@@ -92,13 +86,6 @@ sealed interface UserImageDraft {
     }
 }
 
-/**
- * 表单状态：所有用户可控字段。
- *
- * 不再含 `currentCount`——它由 Repository 从 transactions 按周期派生，编辑表单
- * 也就没有"手动改笔数"这个 UI 入口了（用户唯一改笔数的方式就是
- * 详情页/主页"记一笔"按钮写一条流水）。
- */
 data class CardEditUiState(
     val name: String = "",
     val bank: String = "",
@@ -111,7 +98,6 @@ data class CardEditUiState(
     val nextDueDateMillis: Long? = null,
     val colorArgb: Int = DEFAULT_BRAND_PRIMARY_ARGB.toInt(),
     val note: String = "",
-    // 卡面三态
     val imageSourceType: ImageSourceType = ImageSourceType.PROVIDER,
     val imageProviderKey: String? = CardNetworkProvider.VISA.key,
     val userImage: UserImageDraft = UserImageDraft.Cleared,
@@ -168,7 +154,6 @@ class CardEditViewModel(
     @Volatile
     private var isCleared = false
 
-    /** 供编辑表单下拉选择使用 */
     val folders: StateFlow<List<CardFolderEntity>> =
         repository
             .observeFolders()
@@ -193,7 +178,6 @@ class CardEditViewModel(
         }
     }
 
-    /** 加载已有卡片数据；只做一次单卡查询，不启动列表所需的全表派生流。 */
     fun load(cardId: Long) {
         transitionToForm(CardEditUiState(loadState = CardEditLoadState.LOADING))
         loadJob =
@@ -236,7 +220,6 @@ class CardEditViewModel(
             }
     }
 
-    /** 所有表单切换共用同一套代际、取消和暂存图片清理规则。 */
     private fun transitionToForm(state: CardEditUiState) {
         val staleImage = _uiState.value.userImage.stagedOrNull()
         formGeneration++
@@ -303,7 +286,6 @@ class CardEditViewModel(
         }
     }
 
-    /** 用户后续动作优先于仍在复制的旧选择；存储层会负责回收已完成但未被表单接纳的租约。 */
     private fun invalidatePendingImageSelection() {
         imageSelectionGeneration++
         imageSelectionJob?.cancel()
@@ -325,7 +307,6 @@ class CardEditViewModel(
                 try {
                     previousSelection?.join()
                     imageCleanupJob?.join()
-                    // 存储边界负责“文件已落盘但租约尚未返回”这一取消竞态；表单层保持可取消。
                     staged = repository.stageUserImage(uri)
                     currentCoroutineContext().ensureActive()
                     accepted = acceptUserImage(checkNotNull(staged), requestGeneration, requestSelectionGeneration)
@@ -436,7 +417,6 @@ class CardEditViewModel(
                             }
                             existingId
                         }
-                    // 数据已提交后结束暂存租约；数据库引用已成为文件保留的唯一真源。
                     withContext(NonCancellable) {
                         repository.endPendingUserImageLeases(savingLeases)
                     }
@@ -466,13 +446,11 @@ class CardEditViewModel(
                     }
                 }
             }
-        // ViewModel 永久清除时，租约必须覆盖数据库操作的最终完成；不能在写入途中提前释放。
         job.invokeOnCompletion {
             if (isCleared) repository.endPendingUserImageLeases(savingLeases)
         }
     }
 
-    /** 保存和关闭竞争同一份原子状态；暂存文件收尾归 ViewModel 所有，配置变更不会冻结页面。 */
     fun closeWithoutSaving() {
         invalidatePendingImageSelection()
         val state = beginClosing() ?: return
@@ -494,11 +472,9 @@ class CardEditViewModel(
         }
     }
 
-    /** 串行结束旧表单的图片租约，避免重载表单与下一次选图互相回收文件。 */
     private fun enqueueImageCleanup(image: StagedUserImage?) {
         val leases = image.asLeaseSet()
         if (leases.isEmpty()) return
-        // 即使随后 ViewModelScope 被永久取消，租约也已同步结束；文件留给本次或下次维护回收。
         repository.endPendingUserImageLeases(leases)
         val previousCleanup = imageCleanupJob
         imageCleanupJob =

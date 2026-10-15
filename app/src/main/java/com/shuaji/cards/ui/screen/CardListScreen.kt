@@ -91,12 +91,6 @@ import com.shuaji.cards.ui.component.LocalUiDateFormatter
 import com.shuaji.cards.ui.component.ObserveAsEvents
 import com.shuaji.cards.ui.component.withoutBottom
 
-/**
- * 主页：卡类型/文件夹过滤 + 卡片列表/网格切换。
- *
- * 排序策略：全部/借记/信用筛选在每个文件夹内按进度排序，
- * 文件夹/未分类筛选按创建时间倒序。
- */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CardListScreen(
@@ -159,13 +153,11 @@ fun CardListScreen(
                     .consumeWindowInsets(padding),
         ) {
             OverallProgress(state = state)
-            // 过滤栏
             FilterBar(
                 state = state,
                 onSelectFilter = viewModel::selectFilter,
                 onManageFolders = onManageFolders,
             )
-            // 主体：列表 / 网格
             if (state.visibleCards.isEmpty()) {
                 EmptyState(
                     hasCardsOutsideCurrentFilter = state.allCards.isNotEmpty(),
@@ -235,10 +227,7 @@ private fun ListTopBar(
                         .toDp()
                 },
         )
-    // 用 MD3 TopAppBar 替代自定义 Surface：它会自动应用 WindowInsets.statusBars，
-    // 避免标题被状态栏遮挡（之前自定义 Surface 没读 inset，标题直接画到 (0,0)）。
     TopAppBar(
-        // expandedHeight 只约束内容区；状态栏 inset 由 TopAppBar 另加，刘海设备不会挤掉文字高度。
         expandedHeight = minimumHeight,
         title = {
             Column {
@@ -270,7 +259,6 @@ private fun ListTopBar(
                     )
                 }
             }
-            // 设置入口固定在最右侧，避免布局切换后位置跳动。
             IconButton(onClick = onOpenSettings) {
                 Icon(
                     Icons.Default.Settings,
@@ -304,7 +292,6 @@ internal fun cardFilterKey(filter: CardFilter): String =
         is CardFilter.Folder -> "folder-${filter.folderId}"
     }
 
-/** TopAppBar 的默认固定高度不足以容纳大字体下的标题与两行副标题。 */
 internal fun resolveListTopBarMinimumHeight(
     titleLineHeight: Dp,
     subtitleLineHeight: Dp,
@@ -684,12 +671,10 @@ private fun FilterScrollCue(
     )
 }
 
-// 文件夹前固定有快捷筛选和文件夹标题两个 Lazy item；深层选中项按此定位。
 private const val FILTER_SHEET_HEADER_ITEM_COUNT = 2
 private const val FILTER_SHORTCUT_COLUMN_COUNT = 2
 internal const val FILTER_OPTIONS_LIST_TAG = "card-filter-options"
 
-// 高屏也只露出约四个文件夹；紧凑高度则由同一 Lazy 列表自然收缩。
 private val FILTER_SHEET_MAX_HEIGHT = 460.dp
 private val FILTER_FOLDER_ROW_HEIGHT = 52.dp
 private val FILTER_SCROLL_CUE_HEIGHT = 22.dp
@@ -770,11 +755,6 @@ private fun FolderHeader(
     }
 }
 
-/**
- * grid 模式 cell 类型：把 grouped 摊平到一个 grid 流里。
- *
- * `GridCells.Adaptive(160.dp)` 在常见手机宽度显示两列，在大屏上自动增加列数。
- */
 internal sealed interface CardGridCell {
     val key: String
 
@@ -801,7 +781,6 @@ private fun CardsGrid(
     onLongPress: (CardUi) -> Unit,
     bottomInset: Dp,
 ) {
-    // 摊平 grouped → cell 流（header + cards）
     val cells =
         remember(state.grouped) {
             state.grouped.flatMap { group ->
@@ -822,7 +801,6 @@ private fun CardsGrid(
         horizontalArrangement = Arrangement.spacedBy(10.dp),
         modifier = Modifier.fillMaxSize(),
     ) {
-        // Header 跨满整行（不是 grid cell），Item 占 1 格
         items(
             items = cells,
             key = { it.key },

@@ -210,7 +210,6 @@ class AndroidBackupDirectoryAccessTest {
 
         override fun queryRoots(projection: Array<out String>?): Cursor = MatrixCursor(projection ?: ROOT_COLUMNS)
 
-        /** Robolectric 直接走旧式 ContentResolver 查询；真实 DocumentsProvider 会在框架层完成同一路由。 */
         override fun query(
             uri: Uri,
             projection: Array<out String>?,

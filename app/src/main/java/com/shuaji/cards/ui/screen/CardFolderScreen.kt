@@ -373,7 +373,6 @@ private fun FolderEditDialog(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Spacer(Modifier.height(8.dp))
-                // 复用卡片编辑页的 ModernColorPicker：和卡片主题色取色器视觉一致
                 ModernColorPicker(
                     initialColor = Color(color),
                     onColorSelected = { c -> color = c.toArgb() },

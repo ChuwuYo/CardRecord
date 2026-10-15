@@ -142,7 +142,6 @@ fun CardEditScreen(
     var showColorPicker by rememberSaveable { mutableStateOf(false) }
     val colorSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
-    // Photo Picker 只提供一次性输入 URI；选中后立即复制进应用私有目录。
     val imagePicker =
         rememberLauncherForActivityResult(
             contract = ActivityResultContracts.PickVisualMedia(),
@@ -152,7 +151,6 @@ fun CardEditScreen(
             }
         }
 
-    // 集中预解析字符串，避免在 Composable 子作用域里重复调用 stringResource
     val titleText =
         stringResource(if (cardId == null) R.string.edit_title_new else R.string.edit_title_edit)
     val backCd = stringResource(R.string.common_back)
@@ -274,7 +272,6 @@ fun CardEditScreen(
                 onSelect = { type -> viewModel.update { it.copy(cardType = type) } },
             )
 
-            // ── 卡面来源 ──
             Text(
                 imageSection,
                 style = MaterialTheme.typography.labelLarge,
@@ -301,7 +298,6 @@ fun CardEditScreen(
             }
 
             if (state.imageSourceType == ImageSourceType.USER) {
-                // 预览比例与卡片朝向一致，ContentScale.Fit 保留完整图片。
                 val cardAspect = state.cardOrientation.aspectRatio
                 Surface(
                     onClick = {
@@ -381,7 +377,6 @@ fun CardEditScreen(
                 }
             }
 
-            // ── 朝向选择 ──
             Text(
                 orientationSection,
                 style = MaterialTheme.typography.labelLarge,
@@ -394,7 +389,6 @@ fun CardEditScreen(
                 onSelect = { o -> viewModel.update { it.copy(cardOrientation = o) } },
             )
 
-            // ── 文件夹 ──
             if (folders.isNotEmpty()) {
                 Text(
                     folderSection,
@@ -409,7 +403,6 @@ fun CardEditScreen(
                 )
             }
 
-            // ── 主题色（自定义调色板） ──
             Text(
                 colorSection,
                 style = MaterialTheme.typography.labelLarge,
@@ -458,7 +451,6 @@ fun CardEditScreen(
                 }
             }
 
-            // ── 卡名 / 发卡行 / 卡号 ──
             OutlinedTextField(
                 value = state.name,
                 onValueChange = { v -> viewModel.update { it.copy(name = v) } },
@@ -578,7 +570,6 @@ fun CardEditScreen(
         }
     }
 
-    // ── 日期选择器 ──
     val selectedDateField = dateDialogTarget
     if (selectedDateField != null) {
         val target = selectedDateField
@@ -631,7 +622,6 @@ fun CardEditScreen(
         )
     }
 
-    // ── 颜色选择器 BottomSheet ──
     if (showColorPicker) {
         ModalBottomSheet(
             onDismissRequest = { showColorPicker = false },
@@ -799,8 +789,6 @@ internal fun resolveCardNetworkPickerPresentation(
         selectedKey = selectedKey,
     )
 
-// ── 子组件 ────────────────────────────────────────────────────────
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ImageSourceSelector(
@@ -874,7 +862,6 @@ private fun FolderPicker(
     unfiledLabel: String,
     onSelect: (Long?) -> Unit,
 ) {
-    // FilterChip 按文字自然宽度排列，选项较多时可横向滚动。
     val allOptions =
         remember(folders) {
             listOf<Pair<Long?, com.shuaji.cards.data.local.CardFolderEntity?>>(
@@ -946,7 +933,6 @@ private fun CardNetworkPicker(
                 network?.let { stringResource(it.displayNameRes) }
                     ?: stringResource(R.string.edit_network_none)
             Column(
-                // 名字统一居中（American Express 2 行；其余 1 行居中显示在 2 行区域中部）
                 horizontalAlignment = Alignment.CenterHorizontally,
                 modifier =
                     Modifier
@@ -973,7 +959,6 @@ private fun CardNetworkPicker(
                             role = Role.RadioButton,
                         ).padding(8.dp),
             ) {
-                // 白底 logo 框（确保 simple-icons 单色 logo 在白底上清晰可见）
                 Box(
                     modifier =
                         Modifier
