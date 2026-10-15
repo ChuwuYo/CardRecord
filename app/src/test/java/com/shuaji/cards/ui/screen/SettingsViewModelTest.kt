@@ -44,21 +44,6 @@ import java.io.IOException
 
 private const val TEST_CONTENT_SHA256 = "test-content-sha256"
 
-/**
- * [SettingsViewModel] 的核心行为测试。
- *
- * 测试策略：
- * - 用 Robolectric 拿真实 [Application]，让 `getString(R.string.xxx, args...)` 走真实
- *   Android 资源系统（验证国际化字符串拼装正确）。
- * - 用 mockito-kotlin mock 掉 [BackupRepository] / [SettingsRepository]，聚焦 ViewModel
- *   自身的状态机与「是否发布了正确的 [SettingsDoneEvent]」。
- * - 关键：[runTest] 复用 [MainDispatcherRule] 的 scheduler，`advanceUntilIdle()` 才能驱动
- *   ViewModel `viewModelScope.launch` 里的协程跑完。
- *
- * 状态机约定：export / import 成功 → `Working → Done`，并 emit 一条事件；`Done` 由 UI
- * （SettingsScreen）看到后调 [SettingsViewModel.acknowledge] 回 `Idle`。协程被取消
- * （CancellationException）→ 静默回 `Idle`，不 emit。
- */
 @OptIn(ExperimentalCoroutinesApi::class)
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34], manifest = Config.NONE)
@@ -70,14 +55,11 @@ class SettingsViewModelTest {
     private lateinit var backup: BackupRepository
     private lateinit var reminderStore: AnnualFeeReminderStore
 
-    /** 产线 SettingsViewModel 构造即读取 themeSettings；测试只需 stub 出一个非空流。 */
     private val settingsRepo: SettingsRepository =
         mock { on { themeSettings } doReturn flowOf(ThemeSettings()) }
 
-    /** fakeContainer 把 ViewModel emit 的事件直接记到这里，断言时读取即可。 */
     private val emittedEvents = mutableListOf<SettingsDoneEvent>()
 
-    /** 可选钩子：emitSettings 被调用的「那一刻」同步触发，用于断言 emit 时点的状态。 */
     private var onEmitSettings: ((SettingsDoneEvent) -> Unit)? = null
     private val emitSettingsEvent: suspend (SettingsDoneEvent) -> Unit = { event ->
         onEmitSettings?.invoke(event)
@@ -94,7 +76,6 @@ class SettingsViewModelTest {
 
     private fun newVm() = SettingsViewModel(application, backup, emitSettingsEvent, settingsRepo, reminderStore)
 
-    /** 跑一段触发 ViewModel 的动作，推进到协程空闲，返回这期间新 emit 的事件快照。 */
     private fun TestScope.runAndCollect(action: () -> Unit): List<SettingsDoneEvent> {
         val before = emittedEvents.size
         action()
@@ -203,15 +184,10 @@ class SettingsViewModelTest {
             assertTrue("消息应含「3 张卡」，实际：$msg", msg.contains("3 张卡"))
         }
 
-    // ════════════════════════════════════════════════════════════
-    // 状态机
-    // ════════════════════════════════════════════════════════════
-
     @Test
     fun state_transitions_Idle_Working_Done_then_acknowledge_to_Idle() =
         runTest(mainDispatcherRule.testDispatcher.scheduler) {
             val vm = newVm()
-            // 用 doAnswer 在 export 真正执行期间断言已进入 Working——仅看最终态无法证明中间态。
             whenever(backup.export(any())).doAnswer {
                 assertEquals("export 执行期间应为 Working", SettingsUiState.Working, vm.state.value)
                 ExportSummary(cardCount = 1, folderCount = 0, transactionCount = 0, directoryName = "test-backup")
@@ -220,8 +196,6 @@ class SettingsViewModelTest {
 
             val collected = runAndCollect { vm.export(android.net.Uri.EMPTY) }
 
-            // export 完成：Working → Done，并 emit 一条事件。产线下由 SettingsScreen 看到 Done
-            // 后调 acknowledge() 回 Idle；测试里没有 UI，故手动 acknowledge() 验证完整流转。
             assertEquals("export 完成后应为 Done", SettingsUiState.Done, vm.state.value)
             assertEquals(1, collected.size)
 
@@ -244,7 +218,6 @@ class SettingsViewModelTest {
             vm.acknowledge()
             assertEquals(SettingsUiState.Idle, vm.state.value)
 
-            // 再 ack 一次（幂等），且不重新 emit
             vm.acknowledge()
             advanceUntilIdle()
             assertEquals(SettingsUiState.Idle, vm.state.value)
@@ -375,14 +348,9 @@ class SettingsViewModelTest {
             verify(backup).import(uri, ImportMode.REPLACE, info.manifestSha256)
         }
 
-    // ════════════════════════════════════════════════════════════
-    // Cancel
-    // ════════════════════════════════════════════════════════════
-
     @Test
     fun cancel_active_export_does_not_emit_done_event() =
         runTest(mainDispatcherRule.testDispatcher.scheduler) {
-            // 模拟 export 协程被 cancel 打断：直接让 mock 抛 CancellationException。
             whenever(backup.export(any())).doAnswer {
                 throw kotlinx.coroutines.CancellationException("cancelled by user")
             }
@@ -390,8 +358,6 @@ class SettingsViewModelTest {
             val vm = newVm()
             val collected = runAndCollect { vm.export(android.net.Uri.EMPTY) }
 
-            // cancel 路径**不**发 Done 事件（SettingsViewModel.export 内 catch
-            // CancellationException 直接 _state.value = Idle，不走 finalize）。
             assertTrue("cancel 不应 emit Done 事件，实际：$collected", collected.isEmpty())
             assertEquals(SettingsUiState.Idle, vm.state.value)
         }
@@ -450,7 +416,6 @@ class SettingsViewModelTest {
                 try {
                     awaitCancellation()
                 } catch (_: kotlinx.coroutines.CancellationException) {
-                    // 模拟 Provider 吞掉取消并返回普通结果。
                 }
                 ExportSummary(1, 0, 0, "test-backup")
             }
@@ -520,10 +485,6 @@ class SettingsViewModelTest {
             assertEquals(1, emittedEvents.size)
         }
 
-    // ════════════════════════════════════════════════════════════
-    // REPLACE 模式结果文案
-    // ════════════════════════════════════════════════════════════
-
     @Test
     fun replace_import_success_formats_counts() =
         runTest(mainDispatcherRule.testDispatcher.scheduler) {
@@ -549,14 +510,9 @@ class SettingsViewModelTest {
             assertTrue("消息应含「10 笔流水」，实际：$msg", msg.contains("10 笔流水"))
         }
 
-    // ════════════════════════════════════════════════════════════
-    // Extras 全触发
-    // ════════════════════════════════════════════════════════════
-
     @Test
     fun merge_import_with_all_extras_triggers_all_submessages() =
         runTest(mainDispatcherRule.testDispatcher.scheduler) {
-            // 触发全部附加结果：跳过流水、无效文件夹、文件夹重名、卡片重名。
             whenever(backup.import(any(), any(), any())).doReturn(
                 ImportResult(
                     cardsAdded = 8,
@@ -599,10 +555,6 @@ class SettingsViewModelTest {
             )
         }
 
-    // ════════════════════════════════════════════════════════════
-    // 边界：finalize 先写 state 再 emit
-    // ════════════════════════════════════════════════════════════
-
     @Test
     fun finalize_writes_done_state_and_emits_exactly_once() =
         runTest(mainDispatcherRule.testDispatcher.scheduler) {
@@ -611,13 +563,11 @@ class SettingsViewModelTest {
             )
 
             val vm = newVm()
-            // 验证 finalize 的顺序保证：emitSettings 被调用的那一刻，state 必须已经写成 Done。
             onEmitSettings = {
                 assertEquals("emitSettings 时 state 应已是 Done", SettingsUiState.Done, vm.state.value)
             }
             val collected = runAndCollect { vm.export(android.net.Uri.EMPTY) }
 
-            // finalize 顺序 = _state.value = Done → emitSettings：state 写到 Done，事件发出 1 条。
             assertEquals(1, collected.size)
             assertEquals(SettingsUiState.Done, vm.state.value)
         }
