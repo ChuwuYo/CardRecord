@@ -148,7 +148,7 @@ class CardDetailViewModelTest {
         val credit =
             detail(
                 card().copy(
-                    cardType = CardType.CREDIT.key,
+                    cardType = CardType.CREDIT,
                     statementDay = 8,
                     repaymentDay = 26,
                 ),
@@ -156,7 +156,7 @@ class CardDetailViewModelTest {
         val debitWithStaleValues =
             detail(
                 card().copy(
-                    cardType = CardType.DEBIT.key,
+                    cardType = CardType.DEBIT,
                     statementDay = 8,
                     repaymentDay = 26,
                 ),
@@ -164,7 +164,7 @@ class CardDetailViewModelTest {
         val creditWithInvalidValues =
             detail(
                 card().copy(
-                    cardType = CardType.CREDIT.key,
+                    cardType = CardType.CREDIT,
                     statementDay = 0,
                     repaymentDay = 32,
                 ),
