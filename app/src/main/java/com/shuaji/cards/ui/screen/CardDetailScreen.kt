@@ -68,8 +68,8 @@ import com.shuaji.cards.ui.ViewModelFactories
 import com.shuaji.cards.ui.component.CardVisual
 import com.shuaji.cards.ui.component.CycleProgressContent
 import com.shuaji.cards.ui.component.CycleProgressVariant
+import com.shuaji.cards.ui.component.LocalUiDateFormatter
 import com.shuaji.cards.ui.component.ObserveAsEvents
-import com.shuaji.cards.ui.component.rememberUiDateFormatter
 
 /** 卡片元数据、当前周期进度与完整流水的详情页。 */
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
@@ -78,7 +78,7 @@ fun CardDetailScreen(
     onBack: () -> Unit,
     onEdit: () -> Unit,
 ) {
-    val dates = rememberUiDateFormatter()
+    val dates = LocalUiDateFormatter.current
     val resources = LocalResources.current
     val viewModel: CardDetailViewModel = viewModel(factory = ViewModelFactories.Detail)
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -377,7 +377,7 @@ private fun SwipeListRow(
     isCurrentPeriod: Boolean,
     onRequestDelete: (TransactionEntity) -> Unit,
 ) {
-    val dates = rememberUiDateFormatter()
+    val dates = LocalUiDateFormatter.current
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.medium,
@@ -490,7 +490,7 @@ private fun ProgressBlock(
  */
 @Composable
 private fun CardInfoSection(detail: CardDetailUi) {
-    val dates = rememberUiDateFormatter()
+    val dates = LocalUiDateFormatter.current
     val c = detail.card
     val rows =
         listOfNotNull(
