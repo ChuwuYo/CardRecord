@@ -276,7 +276,7 @@ class CardEditViewModelTest {
             viewModel.uiState.first { it.saveResult is CardEditSaveResult.Saved }
             val stored = db.cardDao().listAll().single()
 
-            assertEquals(CardType.DEBIT.key, stored.cardType)
+            assertEquals(CardType.DEBIT, stored.cardType)
             assertNull(stored.statementDay)
             assertNull(stored.repaymentDay)
         }
@@ -321,7 +321,7 @@ class CardEditViewModelTest {
                         requiredCount = 6,
                         colorArgb = 0,
                         imageAssetId = assetId,
-                        imageSourceType = ImageSourceType.USER.key,
+                        imageSourceType = ImageSourceType.USER,
                     ),
                 )
             val viewModel = CardEditViewModel(repository)
@@ -333,7 +333,7 @@ class CardEditViewModelTest {
             viewModel.uiState.first { it.saveResult is CardEditSaveResult.Saved }
 
             val saved = requireNotNull(db.cardDao().getById(id))
-            assertEquals(ImageSourceType.NONE.key, saved.imageSourceType)
+            assertEquals(ImageSourceType.NONE, saved.imageSourceType)
             assertEquals(assetId, saved.imageAssetId)
         }
 
@@ -351,7 +351,7 @@ class CardEditViewModelTest {
             viewModel.uiState.first { it.saveResult is CardEditSaveResult.Saved }
 
             val saved = db.cardDao().listAll().single()
-            assertEquals(ImageSourceType.PROVIDER.key, saved.imageSourceType)
+            assertEquals(ImageSourceType.PROVIDER, saved.imageSourceType)
             assertEquals(selected.assetId.value, saved.imageAssetId)
         }
 
@@ -372,7 +372,7 @@ class CardEditViewModelTest {
                             cardNumberMasked = "",
                             requiredCount = 6,
                             colorArgb = 0xFF0061A4.toInt(),
-                            imageSourceType = source.key,
+                            imageSourceType = source,
                             imageProviderKey = networkKey,
                             imageUri = imageUri,
                         ),
@@ -390,7 +390,7 @@ class CardEditViewModelTest {
                 viewModel.uiState.first { it.saveResult is CardEditSaveResult.Saved }
 
                 val saved = db.cardDao().listAll().single { it.id == id }
-                assertEquals(source.key, saved.imageSourceType)
+                assertEquals(source, saved.imageSourceType)
                 assertEquals(networkKey, saved.imageProviderKey)
                 assertEquals(imageUri, saved.imageUri)
             }
@@ -428,7 +428,7 @@ class CardEditViewModelTest {
                         cardNumberMasked = "",
                         requiredCount = 6,
                         colorArgb = 0,
-                        imageSourceType = ImageSourceType.USER.key,
+                        imageSourceType = ImageSourceType.USER,
                         imageUri = legacyUri,
                     ),
                 )
@@ -460,7 +460,7 @@ class CardEditViewModelTest {
                         cardNumberMasked = "",
                         requiredCount = 6,
                         colorArgb = 0,
-                        imageSourceType = ImageSourceType.USER.key,
+                        imageSourceType = ImageSourceType.USER,
                         imageUri = legacyUri,
                     ),
                 )
@@ -689,7 +689,7 @@ class CardEditViewModelTest {
                         cardNumberMasked = "",
                         requiredCount = 6,
                         colorArgb = 0,
-                        imageSourceType = ImageSourceType.USER.key,
+                        imageSourceType = ImageSourceType.USER,
                         imageUri = "content://gallery/stored",
                     ),
                 )
@@ -716,7 +716,7 @@ class CardEditViewModelTest {
                         cardNumberMasked = "",
                         requiredCount = 6,
                         colorArgb = 0,
-                        imageSourceType = ImageSourceType.PROVIDER.key,
+                        imageSourceType = ImageSourceType.PROVIDER,
                         imageProviderKey = CardNetworkProvider.VISA.key,
                     ),
                 )
