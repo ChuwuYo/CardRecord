@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -85,8 +86,10 @@ import com.shuaji.cards.R
 import com.shuaji.cards.ui.ViewModelFactories
 import com.shuaji.cards.ui.component.CardListItem
 import com.shuaji.cards.ui.component.CompactCardListItem
+import com.shuaji.cards.ui.component.FabClearance
 import com.shuaji.cards.ui.component.LocalUiDateFormatter
 import com.shuaji.cards.ui.component.ObserveAsEvents
+import com.shuaji.cards.ui.component.withoutBottom
 
 /**
  * 主页：卡类型/文件夹过滤 + 卡片列表/网格切换。
@@ -152,7 +155,8 @@ fun CardListScreen(
             modifier =
                 Modifier
                     .fillMaxSize()
-                    .padding(padding),
+                    .padding(padding.withoutBottom())
+                    .consumeWindowInsets(padding),
         ) {
             OverallProgress(state = state)
             // 过滤栏
@@ -165,7 +169,7 @@ fun CardListScreen(
             if (state.visibleCards.isEmpty()) {
                 EmptyState(
                     hasCardsOutsideCurrentFilter = state.allCards.isNotEmpty(),
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier.fillMaxSize().padding(bottom = padding.calculateBottomPadding()),
                 )
             } else {
                 when (state.layoutMode) {
@@ -175,12 +179,14 @@ fun CardListScreen(
                             onCardClick = onCardClick,
                             onLongPress = viewModel::requestDelete,
                             onSwipe = viewModel::swipe,
+                            bottomInset = padding.calculateBottomPadding(),
                         )
                     ListLayoutMode.GRID ->
                         CardsGrid(
                             state = state,
                             onCardClick = onCardClick,
                             onLongPress = viewModel::requestDelete,
+                            bottomInset = padding.calculateBottomPadding(),
                         )
                 }
             }
@@ -704,9 +710,10 @@ private fun CardsList(
     onCardClick: (Long) -> Unit,
     onLongPress: (CardUi) -> Unit,
     onSwipe: (Long) -> Unit,
+    bottomInset: Dp,
 ) {
     LazyColumn(
-        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 96.dp),
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = FabClearance + bottomInset),
         verticalArrangement = Arrangement.spacedBy(10.dp),
         modifier = Modifier.fillMaxSize(),
     ) {
@@ -792,6 +799,7 @@ private fun CardsGrid(
     state: ListUiState,
     onCardClick: (Long) -> Unit,
     onLongPress: (CardUi) -> Unit,
+    bottomInset: Dp,
 ) {
     // 摊平 grouped → cell 流（header + cards）
     val cells =
@@ -809,7 +817,7 @@ private fun CardsGrid(
         }
     LazyVerticalGrid(
         columns = GridCells.Adaptive(minSize = 160.dp),
-        contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 96.dp),
+        contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 8.dp, bottom = FabClearance + bottomInset),
         verticalArrangement = Arrangement.spacedBy(10.dp),
         horizontalArrangement = Arrangement.spacedBy(10.dp),
         modifier = Modifier.fillMaxSize(),
