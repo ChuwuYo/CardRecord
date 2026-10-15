@@ -45,7 +45,6 @@ import androidx.compose.ui.unit.dp
 import com.shuaji.cards.R
 import com.shuaji.cards.data.AnnualFeeCycle
 import com.shuaji.cards.data.local.CardOrientation
-import com.shuaji.cards.data.local.cardOrientationEnum
 import com.shuaji.cards.ui.screen.CardUi
 
 /**
@@ -107,7 +106,7 @@ private fun CardListItemContent(
     variant: CardListItemVariant,
     modifier: Modifier = Modifier,
 ) {
-    val isPortrait = card.card.cardOrientationEnum == CardOrientation.PORTRAIT
+    val isPortrait = card.card.cardOrientation == CardOrientation.PORTRAIT
     val deleteLabel = stringResource(R.string.common_delete)
 
     Surface(
