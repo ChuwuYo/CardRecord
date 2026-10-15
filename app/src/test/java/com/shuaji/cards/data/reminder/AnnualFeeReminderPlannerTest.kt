@@ -73,7 +73,7 @@ class AnnualFeeReminderPlannerTest {
     @Test
     fun pastThreshold_clampsTriggerToNow_prefersTenDay() {
         val due = LocalDate.of(2027, 6, 1)
-        val now = instant("2027-05-25T12:00:00Z") // 距结算约 7 天，30/10 阈值均已过
+        val now = instant("2027-05-25T12:00:00Z")
         val cards = listOf(activeUnmet(due = due, now = "2027-05-25T12:00:00Z"))
         val plan =
             AnnualFeeReminderPlanner.plan(
@@ -228,7 +228,7 @@ class AnnualFeeReminderPlannerTest {
     fun decideFire_skipsWhenStillOutsideThreshold() {
         val due = LocalDate.of(2027, 6, 1)
         val token = DateToken.fromAnnualDate(due)
-        val card = activeUnmet(due = due, now = "2027-04-01T12:00:00Z") // ~61 days left
+        val card = activeUnmet(due = due, now = "2027-04-01T12:00:00Z")
         val decision =
             AnnualFeeReminderPlanner.decideFire(
                 card = card,
@@ -257,7 +257,6 @@ class AnnualFeeReminderPlannerTest {
 
     @Test
     fun preExistingActiveCards_allIncludedWhenRemindersEnabled() {
-        // 模拟升级前库里已有的多张 Active 未刷满卡：开启提醒后应全部进入计划。
         val now = "2027-03-01T12:00:00Z"
         val cards =
             listOf(
@@ -267,7 +266,6 @@ class AnnualFeeReminderPlannerTest {
                 activeUnmet(due = LocalDate.of(2027, 8, 15), now = now).let {
                     it.copy(card = it.card.copy(id = 22L, name = "旧卡乙"))
                 },
-                // 升级前未设结算日的卡：不得进入提醒计划
                 CardWithCount(
                     card =
                         baseCard(LocalDate.of(2027, 6, 1)).copy(
@@ -288,14 +286,13 @@ class AnnualFeeReminderPlannerTest {
                 now = instant(now),
                 zoneId = utc,
             )
-        assertEquals(2, plan.size) // 两张 Active × 各一档（下一档）
+        assertEquals(2, plan.size)
         assertEquals(setOf(11L, 22L), plan.map { it.cardId }.toSet())
         assertFalse(plan.any { it.cardId == 33L })
     }
 
     @Test
     fun preExistingCardAlreadyInsideWindow_clampsToNowForCatchUp() {
-        // 升级时卡已进入 10 天窗口：开启提醒后应立刻可补发，而不是丢弃。
         val due = LocalDate.of(2027, 6, 1)
         val now = instant("2027-05-25T12:00:00Z")
         val plan =
