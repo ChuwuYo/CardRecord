@@ -2,6 +2,7 @@ package com.shuaji.cards.ui.screen
 
 import android.content.Context
 import androidx.compose.ui.graphics.toArgb
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModelStore
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
@@ -640,6 +641,112 @@ class CardEditViewModelTest {
             assertEquals("路由卡", state.name)
             assertEquals(id, state.editingId)
         }
+
+    @Test
+    fun recreatedAfterProcessDeath_restoresTypedFieldsInsteadOfReloading() =
+        runTest {
+            val id = repository.upsertCard(CardEntity(name = "原名", bank = "", cardNumberMasked = "", requiredCount = 6, colorArgb = 0))
+            val handle = SavedStateHandle()
+            val before = CardEditViewModel(repository, cardId = id, savedStateHandle = handle)
+            before.uiState.first { it.loadState == CardEditLoadState.READY }
+            before.update { it.copy(name = "未保存名称", note = "未保存备注") }
+
+            val after = CardEditViewModel(repository, cardId = id, savedStateHandle = handle.afterProcessDeath())
+
+            val state = after.uiState.value
+            assertEquals(CardEditLoadState.READY, state.loadState)
+            assertEquals(id, state.editingId)
+            assertEquals("未保存名称", state.name)
+            assertEquals("未保存备注", state.note)
+        }
+
+    @Test
+    fun recreatedAfterProcessDeath_newCardDropsStagedImage() =
+        runTest {
+            val handle = SavedStateHandle()
+            val before = CardEditViewModel(repository, savedStateHandle = handle)
+            before.update { it.copy(name = "新卡") }
+            before.selectUserImage("content://card/staged-before-death")
+            advanceUntilIdle()
+
+            val after = CardEditViewModel(repository, savedStateHandle = handle.afterProcessDeath())
+
+            assertEquals(CardEditLoadState.NEW, after.uiState.value.loadState)
+            assertEquals("新卡", after.uiState.value.name)
+            assertEquals(UserImageDraft.Cleared, after.uiState.value.userImage)
+        }
+
+    @Test
+    fun recreatedAfterProcessDeath_existingCardKeepsStoredImage() =
+        runTest {
+            val id =
+                repository.upsertCard(
+                    CardEntity(
+                        name = "有图卡",
+                        bank = "",
+                        cardNumberMasked = "",
+                        requiredCount = 6,
+                        colorArgb = 0,
+                        imageSourceType = ImageSourceType.USER.key,
+                        imageUri = "content://gallery/stored",
+                    ),
+                )
+            val handle = SavedStateHandle()
+            val before = CardEditViewModel(repository, cardId = id, savedStateHandle = handle)
+            before.uiState.first { it.loadState == CardEditLoadState.READY }
+            before.selectUserImage("content://card/replacement-before-death")
+            advanceUntilIdle()
+
+            val after = CardEditViewModel(repository, cardId = id, savedStateHandle = handle.afterProcessDeath())
+
+            assertEquals(UserImageDraft.Unchanged("content://gallery/stored"), after.uiState.value.userImage)
+            assertEquals(ImageSourceType.USER, after.uiState.value.imageSourceType)
+        }
+
+    @Test
+    fun recreatedAfterProcessDeath_droppedImageRestoresPreviousSourceType() =
+        runTest {
+            val id =
+                repository.upsertCard(
+                    CardEntity(
+                        name = "卡组织卡",
+                        bank = "",
+                        cardNumberMasked = "",
+                        requiredCount = 6,
+                        colorArgb = 0,
+                        imageSourceType = ImageSourceType.PROVIDER.key,
+                        imageProviderKey = CardNetworkProvider.VISA.key,
+                    ),
+                )
+            val handle = SavedStateHandle()
+            val before = CardEditViewModel(repository, cardId = id, savedStateHandle = handle)
+            before.uiState.first { it.loadState == CardEditLoadState.READY }
+            before.selectUserImage("content://card/first-pick")
+            advanceUntilIdle()
+            before.selectUserImage("content://card/second-pick")
+            advanceUntilIdle()
+
+            val after = CardEditViewModel(repository, cardId = id, savedStateHandle = handle.afterProcessDeath())
+
+            assertEquals(ImageSourceType.PROVIDER, after.uiState.value.imageSourceType)
+        }
+
+    @Test
+    fun recreatedAfterProcessDeath_afterSuccessfulSaveStartsFresh() =
+        runTest {
+            val handle = SavedStateHandle()
+            val before = CardEditViewModel(repository, savedStateHandle = handle)
+            before.update { it.copy(name = "已保存") }
+            before.save()
+            before.uiState.first { it.saveResult is CardEditSaveResult.Saved }
+
+            val after = CardEditViewModel(repository, savedStateHandle = handle.afterProcessDeath())
+
+            assertEquals("", after.uiState.value.name)
+            assertEquals(CardEditSaveResult.Idle, after.uiState.value.saveResult)
+        }
+
+    private fun SavedStateHandle.afterProcessDeath() = SavedStateHandle(keys().associateWith { get<Any>(it) })
 
     @Test
     fun selectingAnotherImage_releasesReplacedLeaseImmediately() =

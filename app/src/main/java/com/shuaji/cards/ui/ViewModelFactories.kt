@@ -26,9 +26,11 @@ object ViewModelFactories {
     val Edit =
         viewModelFactory {
             initializer {
+                val savedStateHandle = createSavedStateHandle()
                 CardEditViewModel(
                     repository = app().container.repository,
-                    cardId = createSavedStateHandle().toRoute<CardEdit>().cardId,
+                    cardId = savedStateHandle.toRoute<CardEdit>().cardId,
+                    savedStateHandle = savedStateHandle,
                 )
             }
         }

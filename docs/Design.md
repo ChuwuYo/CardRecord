@@ -86,6 +86,7 @@ Room v9 有三张表：
 - 列表的卡类型与文件夹筛选共享一个明确的筛选模型；文件夹删除后不会保留幽灵筛选。筛选底部面板用单一 Lazy 列表承载任意数量的文件夹，并把管理入口固定在滚动区外；Lazy 项使用稳定 ID/key，不用可重复标题作 key。
 - 详情页区分 `Loading / Loaded / Missing`。删除成功事件发出后才导航返回；失败保留当前页面。
 - 编辑页区分 `New / Loading / Ready / Missing / Failed`。加载失败可重试，目标不存在时不显示空白“新建卡”表单。
+- 编辑页表单（New / Ready 时）以 `CardEditDraft` JSON 写入 `SavedStateHandle`；进程被系统回收后恢复草稿，不再从数据库重载。暂存图片的租约只在当前进程有效，所以草稿不保存它：恢复后新卡回到无图片，已有卡回到数据库里的图片。
 - 流水历史是 LazyColumn 的真实 item，不把全部历史一次性组合在单个 item 中。
 - 主题加载完成后再建立 Compose 主题；同一深浅色决策同时驱动内容、系统栏与 AppCompat 资源限定符。DataStore 是设置真源，同步启动缓存只负责在 Activity 创建前恢复明暗方向。
 
