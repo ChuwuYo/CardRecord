@@ -37,6 +37,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
@@ -368,18 +370,25 @@ private fun ActiveProgressContent(
         horizontalArrangement = Arrangement.SpaceBetween,
         modifier = Modifier.fillMaxWidth(),
     ) {
-        Text(
-            text = stringResource(R.string.card_count_format, currentCount, requiredCount),
-            style =
-                if (variant ==
-                    CycleProgressVariant.COMPACT
-                ) {
-                    MaterialTheme.typography.titleSmall
-                } else {
-                    MaterialTheme.typography.headlineSmall
-                },
-            fontWeight = FontWeight.ExtraBold,
-        )
+        val countStyle =
+            if (variant == CycleProgressVariant.COMPACT) {
+                MaterialTheme.typography.titleSmall
+            } else {
+                MaterialTheme.typography.headlineSmall
+            }
+        val countDescription = stringResource(R.string.card_count_format, currentCount, requiredCount)
+        Row(modifier = Modifier.clearAndSetSemantics { contentDescription = countDescription }) {
+            RollingNumber(
+                value = currentCount,
+                style = countStyle,
+                fontWeight = FontWeight.ExtraBold,
+            )
+            Text(
+                text = stringResource(R.string.card_count_required_suffix, requiredCount),
+                style = countStyle,
+                fontWeight = FontWeight.ExtraBold,
+            )
+        }
         Text(
             text =
                 if (variant == CycleProgressVariant.COMPACT) {
