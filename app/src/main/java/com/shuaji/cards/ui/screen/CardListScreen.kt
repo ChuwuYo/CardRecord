@@ -68,8 +68,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
@@ -106,23 +106,23 @@ fun CardListScreen(
     val pendingDelete by viewModel.pendingDelete.collectAsStateWithLifecycle()
     val defaultName = stringResource(R.string.card_default_name)
     val snackbarHostState = remember { SnackbarHostState() }
-    val context = LocalContext.current
+    val resources = LocalResources.current
 
     ObserveAsEvents(viewModel.swipeFeedback) { feedback ->
         val message =
             when (feedback) {
                 is SwipeFeedback.CountingNotStarted ->
-                    context.getString(R.string.card_record_not_started_feedback, feedback.startDate.toString())
-                SwipeFeedback.CardMissing -> context.getString(R.string.card_missing)
+                    resources.getString(R.string.card_record_not_started_feedback, feedback.startDate.toString())
+                SwipeFeedback.CardMissing -> resources.getString(R.string.card_missing)
             }
         snackbarHostState.showSnackbar(message)
     }
     ObserveAsEvents(viewModel.events) { event ->
         when (event) {
             CardListEvent.DeleteFailed ->
-                snackbarHostState.showSnackbar(context.getString(R.string.card_delete_failed))
+                snackbarHostState.showSnackbar(resources.getString(R.string.card_delete_failed))
             CardListEvent.WriteFailed ->
-                snackbarHostState.showSnackbar(context.getString(R.string.common_operation_failed))
+                snackbarHostState.showSnackbar(resources.getString(R.string.common_operation_failed))
         }
     }
 

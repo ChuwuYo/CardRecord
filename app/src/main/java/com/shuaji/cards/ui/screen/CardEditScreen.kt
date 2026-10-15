@@ -80,7 +80,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -110,7 +110,7 @@ fun CardEditScreen(
     val viewModel: CardEditViewModel = viewModel(factory = ViewModelFactories.Edit)
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val folders by viewModel.folders.collectAsStateWithLifecycle()
-    val context = LocalContext.current
+    val resources = LocalResources.current
     val snackbarHostState = remember { SnackbarHostState() }
     var showImageImportError by remember { mutableStateOf(false) }
     val networkPickerPresentation =
@@ -134,7 +134,7 @@ fun CardEditScreen(
         when (event) {
             CardEditEvent.ImageImportFailed -> showImageImportError = true
             CardEditEvent.CloseReady -> onBack()
-            CardEditEvent.SaveFailed -> snackbarHostState.showSnackbar(context.getString(R.string.edit_save_failed))
+            CardEditEvent.SaveFailed -> snackbarHostState.showSnackbar(resources.getString(R.string.edit_save_failed))
         }
     }
     BackHandler(onBack = closeWithoutSaving)

@@ -20,6 +20,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavBackStackEntry
@@ -67,6 +68,7 @@ object Routes {
 @Composable
 fun ShuajiApp() {
     val context = LocalContext.current
+    val resources = LocalResources.current
     val app = context.requireShuajiApplication()
     val cycleEvents = app.container.annualFeeCycleEvents
     val settingsEvents = app.container.settingsEvents
@@ -78,7 +80,7 @@ fun ShuajiApp() {
         val message =
             when (event) {
                 is AnnualFeeCycleEvent.Normalized ->
-                    context.resources.getQuantityString(
+                    resources.getQuantityString(
                         R.plurals.cycle_auto_reset_message,
                         event.count,
                         event.count,

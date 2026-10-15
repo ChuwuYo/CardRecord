@@ -48,6 +48,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.disabled
@@ -80,7 +82,8 @@ fun CardDetailScreen(
     onBack: () -> Unit,
     onEdit: () -> Unit,
 ) {
-    val context = androidx.compose.ui.platform.LocalContext.current
+    val context = LocalContext.current
+    val resources = LocalResources.current
     val app = context.requireShuajiApplication()
     val viewModel: CardDetailViewModel =
         viewModel(
@@ -114,8 +117,8 @@ fun CardDetailScreen(
         val message =
             when (feedback) {
                 is SwipeFeedback.CountingNotStarted ->
-                    context.getString(R.string.card_record_not_started_feedback, feedback.startDate.toString())
-                SwipeFeedback.CardMissing -> context.getString(R.string.card_missing)
+                    resources.getString(R.string.card_record_not_started_feedback, feedback.startDate.toString())
+                SwipeFeedback.CardMissing -> resources.getString(R.string.card_missing)
             }
         snackbarHostState.showSnackbar(message)
     }
@@ -123,9 +126,9 @@ fun CardDetailScreen(
         when (event) {
             CardDetailEvent.Deleted -> onBack()
             CardDetailEvent.DeleteFailed ->
-                snackbarHostState.showSnackbar(context.getString(R.string.card_delete_failed))
+                snackbarHostState.showSnackbar(resources.getString(R.string.card_delete_failed))
             CardDetailEvent.WriteFailed ->
-                snackbarHostState.showSnackbar(context.getString(R.string.common_operation_failed))
+                snackbarHostState.showSnackbar(resources.getString(R.string.common_operation_failed))
         }
     }
     LaunchedEffect(card?.cycle) {
