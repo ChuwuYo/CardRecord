@@ -7,15 +7,6 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 
-/**
- * AlarmManager 非精确调度。官方「用户指定某时刻之后做事」路径：
- * [AlarmManager.setAndAllowWhileIdle]（非 setExact*）。
- *
- * 每张卡只挂下一档，闹钟数量 ≈ 卡片数，直接 while-idle 即可，
- * 避免远未来 `set` 后无手递、Doze 下拖到维护窗口才到的问题。
- *
- * minSdk 26，可直接使用 while-idle 与 IMMUTABLE PendingIntent。
- */
 class AnnualFeeReminderScheduler(
     private val context: Context,
     private val store: AnnualFeeReminderStore,
@@ -31,7 +22,6 @@ class AnnualFeeReminderScheduler(
             val parsed = AnnualFeeReminderStore.parseScheduleKey(key) ?: continue
             cancel(appContext, parsed.first, parsed.second, parsed.third)
         }
-        // 先落空集，再每挂成功一只就写入，避免中途失败后 prefs 仍指向未挂上的闹钟。
         val nextKeys = linkedSetOf<String>()
         store.writeScheduledKeys(nextKeys)
         for (alarm in alarms) {
