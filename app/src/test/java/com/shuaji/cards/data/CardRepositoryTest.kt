@@ -120,7 +120,7 @@ class CardRepositoryTest {
                         name = "借记卡",
                         bank = "某银行",
                         cardNumberMasked = "**** 1234",
-                        cardType = CardType.DEBIT.key,
+                        cardType = CardType.DEBIT,
                         statementDay = 8,
                         repaymentDay = 26,
                         requiredCount = 6,
@@ -134,7 +134,7 @@ class CardRepositoryTest {
             assertTrue(
                 repo.updateCard(
                     debit.copy(
-                        cardType = CardType.CREDIT.key,
+                        cardType = CardType.CREDIT,
                         statementDay = 8,
                         repaymentDay = 26,
                     ),
@@ -155,7 +155,7 @@ class CardRepositoryTest {
                             name = "异常信用卡",
                             bank = "某银行",
                             cardNumberMasked = "**** 1234",
-                            cardType = CardType.CREDIT.key,
+                            cardType = CardType.CREDIT,
                             statementDay = 32,
                             requiredCount = 6,
                             colorArgb = 0,
