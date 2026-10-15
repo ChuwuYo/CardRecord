@@ -8,6 +8,7 @@ import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
@@ -15,6 +16,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.shuaji.cards.core.AppLocales
 import com.shuaji.cards.ui.ShuajiApp
 import com.shuaji.cards.ui.ViewModelFactories
+import com.shuaji.cards.ui.component.LocalUiDateFormatter
+import com.shuaji.cards.ui.component.rememberUiDateFormatter
 import com.shuaji.cards.ui.theme.AppThemeViewModel
 import com.shuaji.cards.ui.theme.ShuajiTheme
 import com.shuaji.cards.ui.theme.resolveAppCompatNightMode
@@ -60,7 +63,9 @@ class MainActivity : AppCompatActivity() {
                     enableEdgeToEdge(statusBarStyle = style, navigationBarStyle = style)
                 }
                 ShuajiTheme(settings = loadedSettings, darkTheme = darkTheme) {
-                    ShuajiApp()
+                    CompositionLocalProvider(LocalUiDateFormatter provides rememberUiDateFormatter()) {
+                        ShuajiApp()
+                    }
                 }
             }
         }
