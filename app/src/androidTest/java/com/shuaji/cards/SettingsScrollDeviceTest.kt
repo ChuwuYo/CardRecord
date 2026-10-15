@@ -9,10 +9,8 @@ import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
-import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToNode
-import androidx.compose.ui.test.printToString
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import org.junit.Assert.fail
 import org.junit.Rule
@@ -28,8 +26,13 @@ class SettingsScrollDeviceTest {
     private fun s(id: Int) = composeRule.activity.getString(id)
 
     private fun dump(): String =
-        runCatching { composeRule.onRoot(useUnmergedTree = true).printToString(maxDepth = 6) }
-            .getOrElse { "no root: $it" }
+        runCatching {
+            composeRule
+                .onAllNodes(SemanticsMatcher.keyIsDefined(SemanticsProperties.Text), useUnmergedTree = true)
+                .fetchSemanticsNodes()
+                .sortedBy { it.boundsInRoot.top }
+                .joinToString(" | ") { "${it.boundsInRoot.top.toInt()}:${it.config[SemanticsProperties.Text].joinToString().take(24)}" }
+        }.getOrElse { "no root: $it" }
 
     private fun waitFor(
         matcher: SemanticsMatcher,
@@ -49,12 +52,15 @@ class SettingsScrollDeviceTest {
             .config[SemanticsProperties.VerticalScrollAxisRange]
             .value()
 
+    private var beforeDump = ""
+
     private fun openSettingsScrolledToBottom(): Float {
         waitFor(hasContentDescription(s(R.string.settings_title)), "card list")
         composeRule.onAllNodesWithContentDescription(s(R.string.settings_title))[0].performClick()
         waitFor(hasText(s(R.string.settings_section_data)), "settings")
         composeRule.onNode(hasScrollAction()).performScrollToNode(hasText(s(R.string.settings_language)))
         composeRule.waitForIdle()
+        beforeDump = dump()
         return scrollValue()
     }
 
@@ -66,7 +72,9 @@ class SettingsScrollDeviceTest {
         Thread.sleep(300)
         composeRule.waitForIdle()
         val after = scrollValue()
-        fail("DIAG RESULT ${if (after == before && before > 0f) "KEPT" else "LOST"} $label before=$before after=$after\n${dump()}")
+        fail(
+            "DIAG RESULT ${if (after == before && before > 0f) "KEPT" else "LOST"} $label before=$before after=$after\nBEFORE $beforeDump\nAFTER ${dump()}\n",
+        )
     }
 
     @Test
@@ -80,7 +88,10 @@ class SettingsScrollDeviceTest {
     fun themeModeSwitch() {
         val before = openSettingsScrolledToBottom()
         composeRule.onNodeWithText(s(R.string.settings_theme_mode)).performClick()
-        Thread.sleep(500)
+        Thread.sleep(1500)
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText(s(R.string.settings_theme_mode)).performClick()
+        Thread.sleep(1500)
         check("theme mode", before)
     }
 
