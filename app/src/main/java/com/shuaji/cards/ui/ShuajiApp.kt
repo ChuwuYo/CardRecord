@@ -23,6 +23,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.navigation.NavBackStackEntry
+import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -123,49 +125,49 @@ fun ShuajiApp() {
             navController = navController,
             startDestination = Routes.LIST,
         ) {
-            composable(Routes.LIST) {
+            composable(Routes.LIST) { entry ->
                 CardListScreen(
-                    onAddCard = { navController.navigate(Routes.CREATE) },
-                    onCardClick = { id -> navController.navigate(Routes.detail(id)) },
-                    onManageFolders = { navController.navigate(Routes.FOLDERS) },
-                    onOpenSettings = { navController.navigate(Routes.SETTINGS) },
+                    onAddCard = { navController.fromCurrent(entry) { navigate(Routes.CREATE) } },
+                    onCardClick = { id -> navController.fromCurrent(entry) { navigate(Routes.detail(id)) } },
+                    onManageFolders = { navController.fromCurrent(entry) { navigate(Routes.FOLDERS) } },
+                    onOpenSettings = { navController.fromCurrent(entry) { navigate(Routes.SETTINGS) } },
                 )
             }
-            composable(Routes.CREATE) {
+            composable(Routes.CREATE) { entry ->
                 CardEditScreen(
                     cardId = null,
-                    onBack = { navController.popBackStack() },
+                    onBack = { navController.fromCurrent(entry) { popBackStack() } },
                 )
             }
             composable(
                 route = Routes.EDIT,
                 arguments = listOf(navArgument("cardId") { type = NavType.LongType }),
-            ) { backStack ->
-                val id = backStack.arguments?.getLong("cardId")
+            ) { entry ->
+                val id = entry.arguments?.getLong("cardId")
                 CardEditScreen(
                     cardId = id,
-                    onBack = { navController.popBackStack() },
+                    onBack = { navController.fromCurrent(entry) { popBackStack() } },
                 )
             }
             composable(
                 route = Routes.DETAIL,
                 arguments = listOf(navArgument("cardId") { type = NavType.LongType }),
-            ) { backStack ->
-                val id = backStack.arguments?.getLong("cardId") ?: return@composable
+            ) { entry ->
+                val id = entry.arguments?.getLong("cardId") ?: return@composable
                 CardDetailScreen(
                     cardId = id,
-                    onBack = { navController.popBackStack() },
-                    onEdit = { navController.navigate(Routes.edit(id)) },
+                    onBack = { navController.fromCurrent(entry) { popBackStack() } },
+                    onEdit = { navController.fromCurrent(entry) { navigate(Routes.edit(id)) } },
                 )
             }
-            composable(Routes.FOLDERS) {
+            composable(Routes.FOLDERS) { entry ->
                 CardFolderScreen(
-                    onBack = { navController.popBackStack() },
+                    onBack = { navController.fromCurrent(entry) { popBackStack() } },
                 )
             }
-            composable(Routes.SETTINGS) {
+            composable(Routes.SETTINGS) { entry ->
                 SettingsScreen(
-                    onBack = { navController.popBackStack() },
+                    onBack = { navController.fromCurrent(entry) { popBackStack() } },
                 )
             }
         }
@@ -182,6 +184,13 @@ fun ShuajiApp() {
                     .padding(bottom = globalSnackbarBottomPadding(currentRoute)),
         )
     }
+}
+
+private inline fun NavHostController.fromCurrent(
+    entry: NavBackStackEntry,
+    block: NavHostController.() -> Unit,
+) {
+    if (currentBackStackEntry?.id == entry.id) block()
 }
 
 /** 顶层浮层必须主动避让当前页面的 FAB；内层 Scaffold 无法反向通知外层 SnackbarHost。 */
