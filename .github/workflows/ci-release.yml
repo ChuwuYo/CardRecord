@@ -167,6 +167,8 @@ jobs:
               "https://uploads.github.com/$repo/releases/$release_id/assets?name=app-release-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT.apk" \
               --input "$apk" --jq '.id'
           )"
+          gh api -H 'Accept: application/octet-stream' "$repo/releases/assets/$staged_id" > "$RUNNER_TEMP/published.apk"
+          test "$(sha256sum "$RUNNER_TEMP/published.apk" | awk '{print $1}')" = "$digest"
 
           require_main_tip
           gh api "$repo/releases/$release_id/assets" --paginate \
@@ -183,9 +185,8 @@ jobs:
             "- 分支：$GITHUB_REF_NAME" > "$RUNNER_TEMP/notes.md"
           gh release edit apk-latest --repo "$GITHUB_REPOSITORY" \
             --title "最新测试包 v$VERSION_NAME" --notes-file "$RUNNER_TEMP/notes.md" --prerelease
+          require_main_tip
           gh api --method PATCH "$repo/git/refs/tags/apk-latest" -f sha="$GITHUB_SHA" -F force=true > /dev/null
 
           test "$(gh api "$repo/git/ref/tags/apk-latest" --jq '.object.sha')" = "$GITHUB_SHA"
           test "$(gh api "$repo/releases/$release_id/assets" --paginate --jq '.[] | select(.name | endswith(".apk")) | .name')" = 'app-release.apk'
-          gh api -H 'Accept: application/octet-stream' "$repo/releases/assets/$staged_id" > "$RUNNER_TEMP/published.apk"
-          test "$(sha256sum "$RUNNER_TEMP/published.apk" | awk '{print $1}')" = "$digest"
