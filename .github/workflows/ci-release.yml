@@ -177,8 +177,12 @@ jobs:
               "https://uploads.github.com/$repo/releases/$release_id/assets?name=app-release-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT.apk" \
               --input "$apk" --jq '.id'
           )"
-          gh api -H 'Accept: application/octet-stream' "$repo/releases/assets/$staged_id" > "$RUNNER_TEMP/published.apk"
-          test "$(sha256sum "$RUNNER_TEMP/published.apk" | awk '{print $1}')" = "$digest"
+          gh api -H 'Accept: application/octet-stream' "$repo/releases/assets/$staged_id" > "$RUNNER_TEMP/published.apk" || true
+          if [ "$(sha256sum "$RUNNER_TEMP/published.apk" | awk '{print $1}')" != "$digest" ]; then
+            gh api --method DELETE "$repo/releases/assets/$staged_id"
+            echo "::error::上传的 APK 与构建产物 SHA-256 不一致，已删除临时资产。"
+            exit 1
+          fi
 
           require_main_tip
           gh api "$repo/releases/$release_id/assets" --paginate \
