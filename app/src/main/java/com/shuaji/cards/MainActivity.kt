@@ -12,6 +12,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.shuaji.cards.core.AppLocales
 import com.shuaji.cards.ui.ShuajiApp
 import com.shuaji.cards.ui.ViewModelFactories
 import com.shuaji.cards.ui.theme.AppThemeViewModel
@@ -27,6 +28,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        AppLocales.record(this, AppCompatDelegate.getApplicationLocales())
         val settingsRepo = requireShuajiApplication().container.settings
         // 先建立 edge-to-edge 布局；Compose 首帧随后只更新图标明暗，避免 Insets 跳动。
         enableEdgeToEdge()
