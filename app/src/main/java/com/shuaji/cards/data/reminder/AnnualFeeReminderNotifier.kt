@@ -14,7 +14,6 @@ import androidx.core.content.ContextCompat
 import com.shuaji.cards.MainActivity
 import com.shuaji.cards.R
 import com.shuaji.cards.core.AppLocales
-import kotlinx.coroutines.CancellationException
 
 /** 本地通知渠道与发送。 */
 class AnnualFeeReminderNotifier(
@@ -107,35 +106,16 @@ class AnnualFeeReminderNotifier(
 
         /** 设置页与 Notifier 共用，避免两处判断漂移。 */
         fun canPostNotifications(context: Context): Boolean {
-            return try {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                    val granted =
-                        ContextCompat.checkSelfPermission(
-                            context,
-                            android.Manifest.permission.POST_NOTIFICATIONS,
-                        ) == PackageManager.PERMISSION_GRANTED
-                    if (!granted) return false
-                }
-                val manager = NotificationManagerCompat.from(context)
-                if (!manager.areNotificationsEnabled()) return false
-                // 应用总开关开着但本渠道被用户调到「关闭」时，notify 仍成功却不可见；
-                // 若仍 markNotified 会吃掉该档提醒。
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    val channel = manager.getNotificationChannel(CHANNEL_ID)
-                    if (channel != null &&
-                        channel.importance == NotificationManager.IMPORTANCE_NONE
-                    ) {
-                        return false
-                    }
-                }
-                true
-            } catch (error: CancellationException) {
-                throw error
-            } catch (_: RuntimeException) {
-                // Robolectric 用例拆卸时 ActivityThread 可能已空；生产路径不应落到这里。
-                // 视为不可投递，避免 IO 协程把未捕获异常泄漏到下一条单测。
-                false
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                ContextCompat.checkSelfPermission(context, android.Manifest.permission.POST_NOTIFICATIONS) !=
+                PackageManager.PERMISSION_GRANTED
+            ) {
+                return false
             }
+            val manager = NotificationManagerCompat.from(context)
+            if (!manager.areNotificationsEnabled()) return false
+            val channel = manager.getNotificationChannel(CHANNEL_ID)
+            return channel == null || channel.importance != NotificationManager.IMPORTANCE_NONE
         }
     }
 }

@@ -116,8 +116,9 @@ class AnnualFeeReminderCoordinator(
                 scheduler.replaceAll(plan)
             } catch (error: CancellationException) {
                 throw error
-            } catch (error: RuntimeException) {
-                // 测试拆卸或 OEM 异常不得打崩后台协程；下次 refresh / 前台再试。
+            } catch (error: IllegalStateException) {
+                Log.w("AnnualFeeReminder", "applyPlan failed", error)
+            } catch (error: SecurityException) {
                 Log.w("AnnualFeeReminder", "applyPlan failed", error)
             }
         }
