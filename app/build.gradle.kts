@@ -31,6 +31,7 @@ android {
         targetSdk = 36
         versionCode = 26
         versionName = "1.7.0"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         vectorDrawables { useSupportLibrary = true }
     }
@@ -146,6 +147,10 @@ dependencies {
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test")
     testImplementation("org.mockito.kotlin:mockito-kotlin:5.4.0")
     testImplementation("androidx.compose.ui:ui-test-junit4")
+    androidTestImplementation(platform("androidx.compose:compose-bom:2026.06.01"))
+    androidTestImplementation("androidx.compose.ui:ui-test-junit4")
+    androidTestImplementation("androidx.test:runner:1.7.0")
+    androidTestImplementation("androidx.test.ext:junit-ktx:1.3.0")
 }
 
 ktlint {
