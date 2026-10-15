@@ -15,9 +15,6 @@ import com.shuaji.cards.ui.screen.CardListViewModel
 import com.shuaji.cards.ui.screen.SettingsViewModel
 import com.shuaji.cards.ui.theme.AppThemeViewModel
 
-/**
- * 轻量级 ViewModel 工厂：把 [AppContainer] 注入到 ViewModel。
- */
 object ViewModelFactories {
     val List =
         viewModelFactory {
