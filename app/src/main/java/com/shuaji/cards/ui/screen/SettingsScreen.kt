@@ -29,6 +29,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -57,15 +58,15 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
@@ -419,14 +420,17 @@ fun SettingsScreen(onBack: () -> Unit) {
                         trailingContent = {
                             Switch(
                                 checked = notificationsAllowed,
-                                onCheckedChange = { setNotificationPermissionEnabled(it) },
+                                onCheckedChange = null,
                                 enabled = enabled,
                             )
                         },
                         modifier =
-                            Modifier.clickable(enabled = enabled) {
-                                setNotificationPermissionEnabled(!notificationsAllowed)
-                            },
+                            Modifier.toggleable(
+                                value = notificationsAllowed,
+                                enabled = enabled,
+                                role = Role.Switch,
+                                onValueChange = { setNotificationPermissionEnabled(it) },
+                            ),
                     )
                 }
                 item {
@@ -445,14 +449,17 @@ fun SettingsScreen(onBack: () -> Unit) {
                         trailingContent = {
                             Switch(
                                 checked = remindersEnabled,
-                                onCheckedChange = { setRemindersEnabled(it) },
+                                onCheckedChange = null,
                                 enabled = enabled,
                             )
                         },
                         modifier =
-                            Modifier.clickable(enabled = enabled) {
-                                setRemindersEnabled(!remindersEnabled)
-                            },
+                            Modifier.toggleable(
+                                value = remindersEnabled,
+                                enabled = enabled,
+                                role = Role.Switch,
+                                onValueChange = { setRemindersEnabled(it) },
+                            ),
                     )
                 }
 
@@ -491,8 +498,7 @@ fun SettingsScreen(onBack: () -> Unit) {
                             }
                         },
                         modifier =
-                            Modifier.clickable(enabled = enabled && themeSettings != null) {
-                                // 循环切换：SYSTEM → LIGHT → DARK → SYSTEM
+                            Modifier.clickable(enabled = enabled && themeSettings != null, role = Role.Button) {
                                 val next =
                                     when (currentMode) {
                                         ThemeMode.SYSTEM -> ThemeMode.LIGHT
@@ -530,8 +536,7 @@ fun SettingsScreen(onBack: () -> Unit) {
                             }
                         },
                         modifier =
-                            Modifier.clickable(enabled = enabled && themeSettings != null) {
-                                // 二选一切换：SYSTEM_DYNAMIC ↔ CUSTOM
+                            Modifier.clickable(enabled = enabled && themeSettings != null, role = Role.Button) {
                                 val next =
                                     when (currentSource) {
                                         ColorSource.SYSTEM_DYNAMIC -> ColorSource.CUSTOM
@@ -617,7 +622,8 @@ fun SettingsScreen(onBack: () -> Unit) {
         // 这样重新打开时取色器停在「当前已选颜色」而非默认色。
         themeSettings?.let { loaded ->
             val savedColor = parseSeedColor(loaded.seedColorHex) ?: DefaultBrandPrimary
-            var pickedColor by remember(savedColor) { mutableStateOf(savedColor) }
+            var pickedArgb by rememberSaveable(savedColor) { mutableIntStateOf(savedColor.toArgb()) }
+            val pickerInitialColor = remember(savedColor) { Color(pickedArgb) }
             AlertDialog(
                 onDismissRequest = { showColorPicker = false },
                 title = { Text(stringResource(R.string.settings_custom_color)) },
@@ -629,15 +635,15 @@ fun SettingsScreen(onBack: () -> Unit) {
                                 .verticalScroll(rememberScrollState()),
                     ) {
                         ModernColorPicker(
-                            initialColor = savedColor,
-                            onColorSelected = { pickedColor = it },
+                            initialColor = pickerInitialColor,
+                            onColorSelected = { pickedArgb = it.toArgb() },
                         )
                     }
                 },
                 confirmButton = {
                     TextButton(
                         onClick = {
-                            viewModel.setSeedColorHex("#%06X".format(0xFFFFFF and pickedColor.toArgb()))
+                            viewModel.setSeedColorHex("#%06X".format(0xFFFFFF and pickedArgb))
                             showColorPicker = false
                         },
                     ) {
@@ -714,9 +720,7 @@ private fun ImportModeDialog(
     onDismiss: () -> Unit,
     onConfirm: (ImportMode) -> Unit,
 ) {
-    var step by rememberSaveable(saver = ImportModeStepStateSaver) {
-        mutableStateOf(ImportModeStep.SELECT)
-    }
+    var step by rememberSaveable { mutableStateOf(ImportModeStep.SELECT) }
 
     when (step) {
         ImportModeStep.SELECT ->
@@ -775,14 +779,6 @@ private fun ImportModeDialog(
 }
 
 private enum class ImportModeStep { SELECT, CONFIRM_REPLACE, CONFIRM_MERGE }
-
-private val ImportModeStepStateSaver: Saver<MutableState<ImportModeStep>, Int> =
-    Saver(
-        save = { it.value.ordinal },
-        restore = { ordinal ->
-            mutableStateOf(ImportModeStep.entries.getOrNull(ordinal) ?: ImportModeStep.SELECT)
-        },
-    )
 
 /**
  * 把记录数量与备份时间拼成确认文案。
