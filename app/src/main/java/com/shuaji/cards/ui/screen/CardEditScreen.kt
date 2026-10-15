@@ -550,8 +550,7 @@ fun CardEditScreen(
                 value = state.note,
                 onValueChange = { v -> viewModel.update { it.copy(note = v) } },
                 label = { Text(noteLabel) },
-                modifier = Modifier.fillMaxWidth(),
-                minLines = 3,
+                modifier = Modifier.fillMaxWidth().heightIn(min = 120.dp),
                 maxLines = 4,
             )
 
@@ -1015,7 +1014,6 @@ private fun CardNetworkPicker(
                                 MaterialTheme.colorScheme.onSurfaceVariant
                             },
                         textAlign = TextAlign.Center,
-                        maxLines = 2,
                     )
                 }
             }
