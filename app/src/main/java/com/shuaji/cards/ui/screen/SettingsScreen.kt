@@ -61,7 +61,6 @@ import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -93,7 +92,6 @@ import com.shuaji.cards.ui.ViewModelFactories
 import com.shuaji.cards.ui.component.ModernColorPicker
 import com.shuaji.cards.ui.theme.DefaultBrandPrimary
 import com.shuaji.cards.ui.theme.parseSeedColor
-import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -135,7 +133,6 @@ fun SettingsScreen(onBack: () -> Unit) {
     val remindersEnabled by viewModel.annualFeeRemindersEnabled.collectAsStateWithLifecycle()
     val pendingReminderPermissionRequest by
         viewModel.pendingReminderPermissionRequest.collectAsStateWithLifecycle()
-    val coroutineScope = rememberCoroutineScope()
     val isWorking = state is SettingsUiState.Working
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -277,7 +274,7 @@ fun SettingsScreen(onBack: () -> Unit) {
     fun inspectSelection(uri: android.net.Uri?) {
         if (uri == null) return
         viewModel.dismissPendingImport()
-        coroutineScope.launch { viewModel.inspectBackup(uri) }
+        viewModel.inspectBackup(uri)
     }
 
     // 导出：选择父目录后，由仓库新建备份目录；仅有图片引用时才创建 card_images。
