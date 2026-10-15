@@ -106,44 +106,44 @@ android {
 }
 
 dependencies {
-    implementation("androidx.core:core-ktx:1.15.0")
+    implementation("androidx.core:core-ktx:1.18.0")
     // 应用内语言切换依赖 AppCompatDelegate.setApplicationLocales。
-    implementation("androidx.appcompat:appcompat:1.7.0")
-    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.9.0")
-    implementation("androidx.lifecycle:lifecycle-process:2.9.0")
-    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.9.0")
-    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.9.0")
-    implementation("androidx.activity:activity-compose:1.10.0")
-    implementation(platform("androidx.compose:compose-bom:2025.05.00"))
+    implementation("androidx.appcompat:appcompat:1.8.0")
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.11.0")
+    implementation("androidx.lifecycle:lifecycle-process:2.11.0")
+    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.11.0")
+    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.11.0")
+    implementation("androidx.activity:activity-compose:1.13.0")
+    implementation(platform("org.jetbrains.kotlinx:kotlinx-coroutines-bom:1.11.0"))
+    implementation(platform("androidx.compose:compose-bom:2026.06.01"))
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-graphics")
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.compose.material3:material3")
-    implementation("androidx.compose.material:material-icons-extended:1.7.6")
-    implementation("androidx.navigation:navigation-compose:2.9.0")
-    implementation("androidx.room:room-runtime:2.7.2")
-    implementation("androidx.room:room-ktx:2.7.2")
-    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
-    implementation("androidx.datastore:datastore-preferences:1.1.1")
-    // 3.2.0 与项目 Kotlin 2.1.20 同版本编译；仅加载用户选择的本地 URI，不引入网络模块。
-    implementation("io.coil-kt.coil3:coil-compose:3.2.0")
+    implementation("androidx.compose.material:material-icons-extended:1.7.8")
+    implementation("androidx.navigation:navigation-compose:2.10.2")
+    implementation("androidx.room:room-runtime:2.8.5")
+    implementation("androidx.room:room-ktx:2.8.5")
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0")
+    implementation("androidx.datastore:datastore-preferences:1.2.1")
+    implementation("io.coil-kt.coil3:coil-compose:3.5.0")
     // HSV 取色器。
-    implementation("com.github.skydoves:colorpicker-compose:1.1.2")
+    implementation("com.github.skydoves:colorpicker-compose:1.2.0")
     // 种子色生成 Material 3 HCT 色板。
     implementation("com.materialkolor:material-kolor:2.1.1")
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
-    ksp("androidx.room:room-compiler:2.7.2")
+    ksp("androidx.room:room-compiler:2.8.5")
 
     // ── 单测 ────────────────────────────────────────────────────────
     // JUnit 4 + Robolectric / Compose UI（Android 资源与界面回归）
     // + Room in-memory + kotlinx-coroutines-test（runTest / TestScope）
     testImplementation("junit:junit:4.13.2")
-    testImplementation("org.robolectric:robolectric:4.13")
-    testImplementation("androidx.test:core-ktx:1.6.1")
-    testImplementation("androidx.test.ext:junit-ktx:1.2.1")
-    testImplementation("androidx.room:room-testing:2.7.2")
-    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.1")
+    testImplementation("org.robolectric:robolectric:4.16.1")
+    testImplementation("androidx.test:core-ktx:1.7.0")
+    testImplementation("androidx.test.ext:junit-ktx:1.3.0")
+    testImplementation("androidx.room:room-testing:2.8.5")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test")
     testImplementation("org.mockito.kotlin:mockito-kotlin:5.4.0")
     testImplementation("androidx.compose.ui:ui-test-junit4")
 }
