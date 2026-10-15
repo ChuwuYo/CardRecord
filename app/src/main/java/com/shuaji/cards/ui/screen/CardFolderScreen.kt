@@ -158,6 +158,7 @@ fun CardFolderScreen(onBack: () -> Unit) {
                                 deleteCd = deleteCd,
                                 onClick = { dialogTarget = DialogTarget.Edit(item.folder.id) },
                                 onDelete = { folderToDeleteId = item.folder.id },
+                                modifier = Modifier.animateItem(),
                             )
                         }
                     }
@@ -239,10 +240,11 @@ private fun FolderRow(
     deleteCd: String,
     onClick: () -> Unit,
     onDelete: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     Surface(
         onClick = onClick,
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.medium,
         color = MaterialTheme.colorScheme.surfaceVariant,
     ) {
