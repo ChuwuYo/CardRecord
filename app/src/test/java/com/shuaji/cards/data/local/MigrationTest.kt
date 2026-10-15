@@ -137,7 +137,7 @@ class MigrationTest {
         val db = openMigratedDatabase()
         try {
             val card = runBlocking { db.cardDao().listAll().single() }
-            assertEquals("历史卡不能被猜成信用卡", CardType.UNSPECIFIED.key, card.cardType)
+            assertEquals("历史卡不能被猜成信用卡", CardType.UNSPECIFIED, card.cardType)
             assertNull(card.statementDay)
             assertNull(card.repaymentDay)
             assertEquals(1, runBlocking { db.transactionDao().listAll() }.size)
