@@ -1,0 +1,40 @@
+name: Diag emulator
+
+on:
+  push:
+    branches: [diag/theme-scroll]
+
+permissions:
+  contents: read
+
+jobs:
+  emulator:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-android-build
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Build test APKs
+        run: ./gradlew :app:assembleDebug :app:assembleDebugAndroidTest
+      - name: Run on emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          disable-animations: true
+          script: ./gradlew :app:connectedDebugAndroidTest || true
+      - name: Report
+        if: always()
+        run: |
+          out=$(python3 -c "import glob,re,html;[print(html.unescape(m)[:2500]) for f in glob.glob('app/build/outputs/androidTest-results/connected/**/*.xml',recursive=True) for m in re.findall(r'<failure message=\"(.*?)\"',open(f).read(),re.S)]" || true)
+          [ -z "$out" ] && out="no results: $(find app/build/outputs -name '*.xml' | head)"
+          summary=$(printf '%s' "$out" | sed -e 's/%/%25/g' | sed -e ':a' -e 'N' -e '$!ba' -e 's/\r/%0D/g' -e 's/\n/%0A/g')
+          echo "::error title=Diag result::${summary}"
