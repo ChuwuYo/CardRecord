@@ -110,7 +110,6 @@ class UserCardImageStoreTest {
             val collection = scope.async { store.collectGarbage() }
             assertTrue(databaseReadStarted.await(5, TimeUnit.SECONDS))
 
-            // 模拟保存先提交数据库、再结束租约；DAO 已经捕获旧快照，只有更早的租约快照能保护文件。
             currentCards.set(listOf(card(staged.assetId.value)))
             store.releaseLeases(setOf(staged))
             allowDatabaseReadToReturn.countDown()
