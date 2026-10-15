@@ -766,6 +766,22 @@ class CardEditViewModelTest {
         }
 
     @Test
+    fun everyFailedSave_emitsSaveFailedAndUnlocksForm() =
+        runTest {
+            val viewModel = CardEditViewModel(repository)
+            viewModel.update { it.copy(name = "写入失败卡", requiredCount = "6", folderId = 999L) }
+
+            viewModel.save()
+            assertEquals(CardEditEvent.SaveFailed, viewModel.events.first())
+            assertFalse(viewModel.uiState.value.isSaving)
+
+            viewModel.save()
+            assertEquals(CardEditEvent.SaveFailed, viewModel.events.first())
+            assertFalse(viewModel.uiState.value.isSaving)
+            assertEquals(0, db.cardDao().listAll().size)
+        }
+
+    @Test
     fun closingFirst_preventsSaveFromStarting() =
         runTest {
             val viewModel = CardEditViewModel(repository)
