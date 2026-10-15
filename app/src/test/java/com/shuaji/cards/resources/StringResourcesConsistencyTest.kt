@@ -86,7 +86,6 @@ class StringResourcesConsistencyTest {
                 setFeature("http://apache.org/xml/features/disallow-doctype-decl", true)
                 setFeature("http://xml.org/sax/features/external-general-entities", false)
                 setFeature("http://xml.org/sax/features/external-parameter-entities", false)
-                // Android 编译桩未暴露 Java 7 的 XMLConstants 静态字段，使用其标准 URI 值。
                 setAttribute("http://javax.xml.XMLConstants/property/accessExternalDTD", "")
                 setAttribute("http://javax.xml.XMLConstants/property/accessExternalSchema", "")
             }
