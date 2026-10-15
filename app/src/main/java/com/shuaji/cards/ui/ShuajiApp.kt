@@ -24,13 +24,14 @@ import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavBackStackEntry
+import androidx.navigation.NavDestination
+import androidx.navigation.NavDestination.Companion.hasRoute
 import androidx.navigation.NavHostController
-import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
-import androidx.navigation.navArgument
+import androidx.navigation.toRoute
 import com.shuaji.cards.R
 import com.shuaji.cards.data.AnnualFeeCycleEvent
 import com.shuaji.cards.data.SettingsDoneEvent
@@ -41,19 +42,26 @@ import com.shuaji.cards.ui.screen.CardEditScreen
 import com.shuaji.cards.ui.screen.CardFolderScreen
 import com.shuaji.cards.ui.screen.CardListScreen
 import com.shuaji.cards.ui.screen.SettingsScreen
+import kotlinx.serialization.Serializable
 
-object Routes {
-    const val LIST = "list"
-    const val CREATE = "create"
-    const val EDIT = "edit/{cardId}"
-    const val DETAIL = "detail/{cardId}"
-    const val FOLDERS = "folders"
-    const val SETTINGS = "settings"
+@Serializable
+data object CardList
 
-    fun edit(cardId: Long?) = if (cardId == null) CREATE else "edit/$cardId"
+@Serializable
+data class CardEdit(
+    val cardId: Long? = null,
+)
 
-    fun detail(cardId: Long) = "detail/$cardId"
-}
+@Serializable
+data class CardDetail(
+    val cardId: Long,
+)
+
+@Serializable
+data object Folders
+
+@Serializable
+data object Settings
 
 /**
  * 顶层 app 容器：NavHost + 全局 SnackbarHost。
@@ -107,12 +115,11 @@ fun ShuajiApp() {
     }
 
     val navController = rememberNavController()
-    val currentRoute =
+    val currentDestination =
         navController
             .currentBackStackEntryAsState()
             .value
             ?.destination
-            ?.route
     Box(
         modifier =
             Modifier
@@ -121,49 +128,35 @@ fun ShuajiApp() {
     ) {
         NavHost(
             navController = navController,
-            startDestination = Routes.LIST,
+            startDestination = CardList,
         ) {
-            composable(Routes.LIST) { entry ->
+            composable<CardList> { entry ->
                 CardListScreen(
-                    onAddCard = { navController.fromCurrent(entry) { navigate(Routes.CREATE) } },
-                    onCardClick = { id -> navController.fromCurrent(entry) { navigate(Routes.detail(id)) } },
-                    onManageFolders = { navController.fromCurrent(entry) { navigate(Routes.FOLDERS) } },
-                    onOpenSettings = { navController.fromCurrent(entry) { navigate(Routes.SETTINGS) } },
+                    onAddCard = { navController.fromCurrent(entry) { navigate(CardEdit()) } },
+                    onCardClick = { id -> navController.fromCurrent(entry) { navigate(CardDetail(id)) } },
+                    onManageFolders = { navController.fromCurrent(entry) { navigate(Folders) } },
+                    onOpenSettings = { navController.fromCurrent(entry) { navigate(Settings) } },
                 )
             }
-            composable(Routes.CREATE) { entry ->
+            composable<CardEdit> { entry ->
                 CardEditScreen(
-                    cardId = null,
+                    cardId = entry.toRoute<CardEdit>().cardId,
                     onBack = { navController.fromCurrent(entry) { popBackStack() } },
                 )
             }
-            composable(
-                route = Routes.EDIT,
-                arguments = listOf(navArgument("cardId") { type = NavType.LongType }),
-            ) { entry ->
-                val id = entry.arguments?.getLong("cardId")
-                CardEditScreen(
-                    cardId = id,
-                    onBack = { navController.fromCurrent(entry) { popBackStack() } },
-                )
-            }
-            composable(
-                route = Routes.DETAIL,
-                arguments = listOf(navArgument("cardId") { type = NavType.LongType }),
-            ) { entry ->
-                val id = entry.arguments?.getLong("cardId") ?: return@composable
+            composable<CardDetail> { entry ->
+                val id = entry.toRoute<CardDetail>().cardId
                 CardDetailScreen(
-                    cardId = id,
                     onBack = { navController.fromCurrent(entry) { popBackStack() } },
-                    onEdit = { navController.fromCurrent(entry) { navigate(Routes.edit(id)) } },
+                    onEdit = { navController.fromCurrent(entry) { navigate(CardEdit(id)) } },
                 )
             }
-            composable(Routes.FOLDERS) { entry ->
+            composable<Folders> { entry ->
                 CardFolderScreen(
                     onBack = { navController.fromCurrent(entry) { popBackStack() } },
                 )
             }
-            composable(Routes.SETTINGS) { entry ->
+            composable<Settings> { entry ->
                 SettingsScreen(
                     onBack = { navController.fromCurrent(entry) { popBackStack() } },
                 )
@@ -179,7 +172,7 @@ fun ShuajiApp() {
                             .union(WindowInsets.ime)
                             .only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom),
                     ).padding(horizontal = 16.dp)
-                    .padding(bottom = globalSnackbarBottomPadding(currentRoute)),
+                    .padding(bottom = currentDestination.globalSnackbarBottomPadding()),
         )
     }
 }
@@ -191,5 +184,5 @@ private inline fun NavHostController.fromCurrent(
     if (currentBackStackEntry?.id == entry.id) block()
 }
 
-/** 顶层浮层必须主动避让当前页面的 FAB；内层 Scaffold 无法反向通知外层 SnackbarHost。 */
-internal fun globalSnackbarBottomPadding(route: String?) = if (route == Routes.LIST || route == Routes.DETAIL) 88.dp else 16.dp
+private fun NavDestination?.globalSnackbarBottomPadding() =
+    if (this != null && (hasRoute<CardList>() || hasRoute<CardDetail>())) 88.dp else 16.dp
