@@ -33,17 +33,12 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         AppLocales.record(this, AppCompatDelegate.getApplicationLocales())
         val settingsRepo = requireShuajiApplication().container.settings
-        // 先建立 edge-to-edge 布局；Compose 首帧随后只更新图标明暗，避免 Insets 跳动。
         enableEdgeToEdge()
         setContent {
-            // 不用默认主题猜首帧：DataStore 返回真实快照后，再以同一个亮暗判定
-            // 同时驱动 Compose 与系统栏，避免两套判断短暂相反。
             val settings by themeViewModel.themeSettings.collectAsStateWithLifecycle()
             settings?.let { loadedSettings ->
                 val appCompatNightMode = resolveAppCompatNightMode(loadedSettings.themeMode)
                 LaunchedEffect(loadedSettings.themeMode) {
-                    // DataStore 是真源；同步缓存兼容升级前已有设置，并让后续窗口重建
-                    // 在创建前就拿到正确的 values / values-night 资源。
                     settingsRepo.syncStartupThemeMode(loadedSettings.themeMode)
                     if (AppCompatDelegate.getDefaultNightMode() != appCompatNightMode) {
                         AppCompatDelegate.setDefaultNightMode(appCompatNightMode)
