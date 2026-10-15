@@ -16,7 +16,6 @@ import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -35,6 +34,7 @@ import com.shuaji.cards.R
 import com.shuaji.cards.data.AnnualFeeCycleEvent
 import com.shuaji.cards.data.SettingsDoneEvent
 import com.shuaji.cards.requireShuajiApplication
+import com.shuaji.cards.ui.component.ObserveAsEvents
 import com.shuaji.cards.ui.screen.CardDetailScreen
 import com.shuaji.cards.ui.screen.CardEditScreen
 import com.shuaji.cards.ui.screen.CardFolderScreen
@@ -74,23 +74,21 @@ fun ShuajiApp() {
     val autoResetErrorMessage = stringResource(R.string.cycle_auto_reset_error_message)
 
     // 订阅自动续期事件 → 弹 Snackbar
-    LaunchedEffect(cycleEvents) {
-        cycleEvents.collect { event ->
-            val message =
-                when (event) {
-                    is AnnualFeeCycleEvent.Normalized ->
-                        context.resources.getQuantityString(
-                            R.plurals.cycle_auto_reset_message,
-                            event.count,
-                            event.count,
-                        )
-                    is AnnualFeeCycleEvent.Failed -> autoResetErrorMessage
-                }
-            snackbarHostState.showSnackbar(
-                message = message,
-                duration = SnackbarDuration.Short,
-            )
-        }
+    ObserveAsEvents(cycleEvents) { event ->
+        val message =
+            when (event) {
+                is AnnualFeeCycleEvent.Normalized ->
+                    context.resources.getQuantityString(
+                        R.plurals.cycle_auto_reset_message,
+                        event.count,
+                        event.count,
+                    )
+                is AnnualFeeCycleEvent.Failed -> autoResetErrorMessage
+            }
+        snackbarHostState.showSnackbar(
+            message = message,
+            duration = SnackbarDuration.Short,
+        )
     }
 
     // 订阅设置页结果事件 → 全局弹 Snackbar。
@@ -98,14 +96,12 @@ fun ShuajiApp() {
     // （SnackbarDuration.Long = 10s，Short = 4s）。
     // 错误事件加本地化前缀，便于与成功结果区分。
     val errorPrefix = stringResource(R.string.settings_snackbar_error_prefix)
-    LaunchedEffect(settingsEvents) {
-        settingsEvents.collect { event: SettingsDoneEvent ->
-            val message = if (event.isError) "$errorPrefix${event.message}" else event.message
-            snackbarHostState.showSnackbar(
-                message = message,
-                duration = SnackbarDuration.Long,
-            )
-        }
+    ObserveAsEvents(settingsEvents) { event: SettingsDoneEvent ->
+        val message = if (event.isError) "$errorPrefix${event.message}" else event.message
+        snackbarHostState.showSnackbar(
+            message = message,
+            duration = SnackbarDuration.Long,
+        )
     }
 
     val navController = rememberNavController()
