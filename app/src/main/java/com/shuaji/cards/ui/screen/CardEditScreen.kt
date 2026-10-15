@@ -97,9 +97,9 @@ import com.shuaji.cards.data.local.CardOrientation
 import com.shuaji.cards.data.local.CardType
 import com.shuaji.cards.data.local.ImageSourceType
 import com.shuaji.cards.ui.ViewModelFactories
+import com.shuaji.cards.ui.component.LocalUiDateFormatter
 import com.shuaji.cards.ui.component.ModernColorPicker
 import com.shuaji.cards.ui.component.ObserveAsEvents
-import com.shuaji.cards.ui.component.rememberUiDateFormatter
 import java.time.LocalDate
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -108,7 +108,7 @@ fun CardEditScreen(
     cardId: Long?,
     onBack: () -> Unit,
 ) {
-    val dates = rememberUiDateFormatter()
+    val dates = LocalUiDateFormatter.current
     val viewModel: CardEditViewModel = viewModel(factory = ViewModelFactories.Edit)
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val folders by viewModel.folders.collectAsStateWithLifecycle()
