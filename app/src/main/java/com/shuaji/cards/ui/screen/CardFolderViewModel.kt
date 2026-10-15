@@ -26,7 +26,6 @@ sealed interface CardFolderEvent {
     data object WriteFailed : CardFolderEvent
 }
 
-/** 文件夹管理：增、删、改、查。 */
 class CardFolderViewModel(
     private val repository: CardRepository,
 ) : ViewModel() {
@@ -50,10 +49,6 @@ class CardFolderViewModel(
         }
     }
 
-    /**
-     * 一次性更新文件夹的名称和颜色（单条 UPDATE），避免拆成两次写
-     * 在快速连点保存时产生两条中间状态、把 Flow 触发两次重组。
-     */
     fun update(
         folder: CardFolderEntity,
         newName: String,
