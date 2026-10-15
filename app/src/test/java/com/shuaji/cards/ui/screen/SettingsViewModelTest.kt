@@ -40,6 +40,7 @@ import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import java.io.IOException
 
 private const val TEST_CONTENT_SHA256 = "test-content-sha256"
 
@@ -307,18 +308,44 @@ class SettingsViewModelTest {
         }
 
     @Test
-    fun inspect_success_returnsTrustedInfo_andRestoresIdle() =
+    fun inspect_success_storesTrustedPreview_andRestoresIdle() =
         runTest(mainDispatcherRule.testDispatcher.scheduler) {
             val uri = android.net.Uri.parse("content://test/backup")
             val expected = BackupPreview(2, 1, 3, 123L, "preview-sha256")
             whenever(backup.inspect(uri)).doReturn(expected)
             val vm = newVm()
 
-            val actual = vm.inspectBackup(uri)
+            val events = runAndCollect { vm.inspectBackup(uri) }
 
-            assertEquals(expected, actual)
+            assertTrue(events.isEmpty())
             assertEquals(SettingsUiState.Idle, vm.state.value)
             assertEquals(PendingImport(uri, expected), vm.pendingImport.value)
+        }
+
+    @Test
+    fun appearanceWriteIOException_emitsErrorReceiptInsteadOfCrashing() =
+        runTest(mainDispatcherRule.testDispatcher.scheduler) {
+            whenever(settingsRepo.setThemeMode(any())).doSuspendableAnswer { throw IOException("disk full") }
+            val vm = newVm()
+
+            val events = runAndCollect { vm.setThemeMode(com.shuaji.cards.data.ThemeMode.DARK) }
+
+            assertEquals(1, events.size)
+            assertTrue(events.single().isError)
+        }
+
+    @Test
+    fun inspect_failure_emitsErrorReceipt_withoutPendingImport() =
+        runTest(mainDispatcherRule.testDispatcher.scheduler) {
+            val uri = android.net.Uri.parse("content://test/broken")
+            whenever(backup.inspect(uri)).doThrow(IllegalStateException("broken"))
+            val vm = newVm()
+
+            val events = runAndCollect { vm.inspectBackup(uri) }
+
+            assertEquals(1, events.size)
+            assertTrue(events.single().isError)
+            assertEquals(null, vm.pendingImport.value)
         }
 
     @Test
@@ -340,7 +367,7 @@ class SettingsViewModelTest {
             whenever(backup.inspect(uri)).doReturn(info)
             whenever(backup.import(uri, ImportMode.REPLACE, info.manifestSha256)).doReturn(ImportResult(2, 1, 3))
             val vm = newVm()
-            vm.inspectBackup(uri)
+            runAndCollect { vm.inspectBackup(uri) }
 
             runAndCollect { vm.importPending(ImportMode.REPLACE) }
 
