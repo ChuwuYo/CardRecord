@@ -11,19 +11,26 @@ runs:
 
     - name: Set up Android SDK
       uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4.0.4
+      with:
+        packages: ''
+
+    - name: Locate Android SDK
+      id: sdk
+      shell: bash
+      run: echo "home=$ANDROID_HOME" >> "$GITHUB_OUTPUT"
 
     - name: Cache Android SDK packages
       uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: |
-          ${{ env.ANDROID_HOME }}/platforms
-          ${{ env.ANDROID_HOME }}/build-tools
-          ${{ env.ANDROID_HOME }}/platform-tools
+          ${{ steps.sdk.outputs.home }}/platforms
+          ${{ steps.sdk.outputs.home }}/build-tools
+          ${{ steps.sdk.outputs.home }}/platform-tools
         key: android-sdk-api36-buildtools36.0.0-${{ runner.os }}
 
     - name: Install SDK packages
       shell: bash
-      run: yes | sdkmanager "platforms;android-36" "build-tools;36.0.0" "platform-tools" > /dev/null
+      run: sdkmanager "platforms;android-36" "build-tools;36.0.0" "platform-tools" > /dev/null
 
     - name: Set up Gradle cache
       uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
