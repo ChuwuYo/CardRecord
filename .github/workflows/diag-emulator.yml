@@ -11,6 +11,10 @@ jobs:
   emulator:
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        api: [35, 36]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -26,7 +30,7 @@ jobs:
       - name: Run on emulator
         uses: reactivecircus/android-emulator-runner@v2
         with:
-          api-level: 34
+          api-level: ${{ matrix.api }}
           target: google_apis
           arch: x86_64
           disable-animations: true
@@ -37,4 +41,4 @@ jobs:
           out=$(python3 -c "import glob,re,html;fs=glob.glob('app/build/outputs/androidTest-results/connected/**/*.xml',recursive=True);[print(re.findall(r'<testsuite[^>]*>',t)[:1],*[html.unescape(m)[:2500] for m in re.findall(r'<failure[^>]*>(.*?)</failure>',t,re.S)]) for t in (open(f).read() for f in fs)]" || true)
           [ -z "$out" ] && out="no results: $(find app/build/outputs -name '*.xml' | head)"
           summary=$(printf '%s' "$out" | sed -e 's/%/%25/g' | sed -e ':a' -e 'N' -e '$!ba' -e 's/\r/%0D/g' -e 's/\n/%0A/g')
-          echo "::error title=Diag result::${summary}"
+          echo "::error title=Diag result ${{ matrix.api }}::${summary}"
