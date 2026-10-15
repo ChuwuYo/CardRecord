@@ -7,6 +7,7 @@ import android.os.OperationCanceledException
 import android.util.Log
 import androidx.room.withTransaction
 import com.shuaji.cards.R
+import com.shuaji.cards.core.AppLocales
 import com.shuaji.cards.data.ImageAssetId
 import com.shuaji.cards.data.StagedUserImage
 import com.shuaji.cards.data.UserCardImageStore
@@ -103,6 +104,8 @@ class BackupRepository internal constructor(
     private val directoryAccess: BackupDirectoryAccess = AndroidBackupDirectoryAccess(context),
     private val backupDirectoryName: () -> String = ::defaultBackupDirectoryName,
 ) {
+    private val strings: Context get() = AppLocales.localize(context)
+
     init {
         require(maxBackupBytes > 0L) { "maxBackupBytes 必须大于 0" }
         require(maxImageBytes > 0L) { "maxImageBytes 必须大于 0" }
@@ -190,7 +193,7 @@ class BackupRepository internal constructor(
                 cancellationSignal.throwIfCanceled()
                 val manifestOutput =
                     createdTarget.openManifestOutput(cancellationSignal)
-                        ?: throw BackupException(context.getString(R.string.backup_error_open_target_uri))
+                        ?: throw BackupException(strings.getString(R.string.backup_error_open_target_uri))
                 useTracked(manifestOutput) { out ->
                     @OptIn(ExperimentalSerializationApi::class)
                     json.encodeToStream(BackupBundle.serializer(), bundle, out)
@@ -209,28 +212,28 @@ class BackupRepository internal constructor(
                 throw e
             } catch (e: BackupSizeLimitExceededException) {
                 throw BackupException(
-                    context.getString(
+                    strings.getString(
                         R.string.backup_error_file_too_large,
                         e.maxBytes.toMebibytesRoundedUp(),
                     ),
                     e,
                 )
             } catch (e: UserImageMissingException) {
-                throw BackupException(context.getString(R.string.backup_error_unowned_image), e)
+                throw BackupException(strings.getString(R.string.backup_error_unowned_image), e)
             } catch (e: UserImageImportException) {
-                throw BackupException(context.getString(R.string.backup_error_image_restore_failed), e)
+                throw BackupException(strings.getString(R.string.backup_error_image_restore_failed), e)
             } catch (e: OperationCanceledException) {
                 throw BackupException(
-                    context.getString(R.string.backup_error_write_failed),
+                    strings.getString(R.string.backup_error_write_failed),
                     e,
                 )
             } catch (e: IOException) {
                 throw BackupException(
-                    context.getString(R.string.backup_error_write_failed),
+                    strings.getString(R.string.backup_error_write_failed),
                     e,
                 )
             } catch (e: Exception) {
-                throw BackupException(context.getString(R.string.backup_error_write_failed), e)
+                throw BackupException(strings.getString(R.string.backup_error_write_failed), e)
             } finally {
                 if (!completed) {
                     withContext(NonCancellable) { deleteIncompleteBackup(target) }
@@ -254,7 +257,7 @@ class BackupRepository internal constructor(
         runExclusive {
             val decoded = readAndValidateManifest(directoryUri)
             if (decoded.manifestSha256 != expectedManifestSha256) {
-                throw BackupException(context.getString(R.string.backup_error_file_changed))
+                throw BackupException(strings.getString(R.string.backup_error_file_changed))
             }
             // 先拒绝确认后变化的 JSON，再复制图片；失败得越早，越不制造无效 I/O 与待回收文件。
             val stagedImages = stageDirectoryImages(decoded.bundle, decoded.directory)
@@ -291,7 +294,7 @@ class BackupRepository internal constructor(
                     throw e
                 } catch (e: Exception) {
                     throw BackupException(
-                        context.getString(R.string.backup_error_db_write_failed),
+                        strings.getString(R.string.backup_error_db_write_failed),
                         e,
                     )
                 }
@@ -339,11 +342,11 @@ class BackupRepository internal constructor(
         currentCoroutineContext().ensureActive()
         if (bundle.version != BackupBundle.SCHEMA_VERSION) {
             throw BackupException(
-                context.getString(R.string.backup_error_version_mismatch),
+                strings.getString(R.string.backup_error_version_mismatch),
             )
         }
         if (!bundle.hasValidStructure()) {
-            throw BackupException(context.getString(R.string.backup_error_invalid_structure))
+            throw BackupException(strings.getString(R.string.backup_error_invalid_structure))
         }
         return decoded
     }
@@ -355,7 +358,7 @@ class BackupRepository internal constructor(
             val directory = directoryAccess.openBackup(directoryUri, cancellationSignal)
             val raw =
                 directory.openManifestInput(cancellationSignal)
-                    ?: throw BackupException(context.getString(R.string.backup_error_open_source_uri))
+                    ?: throw BackupException(strings.getString(R.string.backup_error_open_source_uri))
             val bounded = SizeLimitedInputStream(raw, maxBackupBytes)
             val digest = MessageDigest.getInstance(SHA_256)
             val input = PushbackInputStream(BufferedInputStream(DigestInputStream(bounded, digest)), 1)
@@ -376,7 +379,7 @@ class BackupRepository internal constructor(
             throw e
         } catch (e: BackupSizeLimitExceededException) {
             throw BackupException(
-                context.getString(
+                strings.getString(
                     R.string.backup_error_file_too_large,
                     e.maxBytes.toMebibytesRoundedUp(),
                 ),
@@ -384,23 +387,23 @@ class BackupRepository internal constructor(
             )
         } catch (e: FileNotFoundException) {
             throw BackupException(
-                context.getString(R.string.backup_error_source_missing),
+                strings.getString(R.string.backup_error_source_missing),
                 e,
             )
         } catch (e: SerializationException) {
-            throw BackupException(context.getString(R.string.backup_error_malformed_json), e)
+            throw BackupException(strings.getString(R.string.backup_error_malformed_json), e)
         } catch (e: UserImageImportException) {
-            throw BackupException(context.getString(R.string.backup_error_image_restore_failed), e)
+            throw BackupException(strings.getString(R.string.backup_error_image_restore_failed), e)
         } catch (e: OperationCanceledException) {
             throw BackupException(
-                context.getString(R.string.backup_error_read_failed),
+                strings.getString(R.string.backup_error_read_failed),
                 e,
             )
         } catch (e: IllegalArgumentException) {
-            throw BackupException(context.getString(R.string.backup_error_malformed_json), e)
+            throw BackupException(strings.getString(R.string.backup_error_malformed_json), e)
         } catch (e: IOException) {
             throw BackupException(
-                context.getString(R.string.backup_error_read_failed),
+                strings.getString(R.string.backup_error_read_failed),
                 e,
             )
         }
@@ -413,7 +416,7 @@ class BackupRepository internal constructor(
                     !card.imageUri.isNullOrBlank()
             }
         if (hasUnownedLegacyImage) {
-            throw BackupException(context.getString(R.string.backup_error_unowned_image))
+            throw BackupException(strings.getString(R.string.backup_error_unowned_image))
         }
     }
 
@@ -422,7 +425,7 @@ class BackupRepository internal constructor(
             .mapNotNull { card ->
                 val raw = card.imageAssetId ?: return@mapNotNull null
                 ImageAssetId.parse(raw)
-                    ?: throw BackupException(context.getString(R.string.backup_error_invalid_structure))
+                    ?: throw BackupException(strings.getString(R.string.backup_error_invalid_structure))
             }.toSet()
 
     @OptIn(ExperimentalSerializationApi::class)
@@ -459,7 +462,7 @@ class BackupRepository internal constructor(
     ) {
         val output =
             directory.openImageOutput(assetId.fileName, cancellationSignal)
-                ?: throw BackupException(context.getString(R.string.backup_error_open_target_uri))
+                ?: throw BackupException(strings.getString(R.string.backup_error_open_target_uri))
         useTracked(output) { trackedOutput ->
             userImages.openAsset(assetId).use { input ->
                 copyAndVerifyAsset(
@@ -490,7 +493,7 @@ class BackupRepository internal constructor(
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (error: Exception) {
-            throw BackupException(context.getString(R.string.backup_error_image_restore_failed), error)
+            throw BackupException(strings.getString(R.string.backup_error_image_restore_failed), error)
         } finally {
             if (!completed) {
                 withContext(NonCancellable) { releasePendingImagesBestEffort(staged) }
@@ -509,7 +512,7 @@ class BackupRepository internal constructor(
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (error: Exception) {
-            throw BackupException(context.getString(R.string.backup_error_image_restore_failed), error)
+            throw BackupException(strings.getString(R.string.backup_error_image_restore_failed), error)
         }
     }
 
@@ -589,7 +592,7 @@ class BackupRepository internal constructor(
 
     private suspend fun <T> runExclusive(block: suspend () -> T): T {
         if (!operationMutex.tryLock()) {
-            throw BackupException(context.getString(R.string.backup_error_operation_busy))
+            throw BackupException(strings.getString(R.string.backup_error_operation_busy))
         }
         // 在第一次切到 IO 线程前登记当前 Job，确保 UI 刚显示“处理中”就点取消也不会漏掉。
         val operation = ActiveOperation(checkNotNull(currentCoroutineContext()[Job]))
@@ -665,7 +668,7 @@ class BackupRepository internal constructor(
         while (true) {
             val byte = input.read()
             if (byte == -1) {
-                throw BackupException(context.getString(R.string.backup_error_empty_file))
+                throw BackupException(strings.getString(R.string.backup_error_empty_file))
             }
             if (byte !in JSON_WHITESPACE_BYTES) {
                 input.unread(byte)

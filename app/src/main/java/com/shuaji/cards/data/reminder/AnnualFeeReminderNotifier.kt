@@ -13,22 +13,25 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import com.shuaji.cards.MainActivity
 import com.shuaji.cards.R
+import com.shuaji.cards.core.AppLocales
 import kotlinx.coroutines.CancellationException
 
 /** 本地通知渠道与发送。 */
 class AnnualFeeReminderNotifier(
     private val context: Context,
 ) {
-    fun ensureChannel() {
+    fun ensureChannel() = ensureChannel(AppLocales.localize(context))
+
+    private fun ensureChannel(strings: Context) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         val channel =
             NotificationChannel(
                 CHANNEL_ID,
-                context.getString(R.string.reminder_channel_name),
+                strings.getString(R.string.reminder_channel_name),
                 NotificationManager.IMPORTANCE_DEFAULT,
             ).apply {
-                description = context.getString(R.string.reminder_channel_description)
+                description = strings.getString(R.string.reminder_channel_description)
             }
         manager.createNotificationChannel(channel)
     }
@@ -41,11 +44,12 @@ class AnnualFeeReminderNotifier(
      */
     fun notifyProgress(decision: AnnualFeeReminderPlanner.FireDecision): Boolean {
         if (!canPostNotifications()) return false
-        ensureChannel()
-        val title = context.getString(R.string.reminder_notification_title)
+        val strings = AppLocales.localize(context)
+        ensureChannel(strings)
+        val title = strings.getString(R.string.reminder_notification_title)
         val remaining = decision.remainingDays.toInt().coerceAtLeast(0)
         val text =
-            context.resources.getQuantityString(
+            strings.resources.getQuantityString(
                 R.plurals.reminder_notification_body,
                 remaining,
                 decision.bank,
