@@ -2,8 +2,10 @@ package com.shuaji.cards.data.reminder
 
 import android.app.AlarmManager
 import android.app.PendingIntent
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 
 /**
  * AlarmManager 非精确调度。官方「用户指定某时刻之后做事」路径：
@@ -23,6 +25,7 @@ class AnnualFeeReminderScheduler(
 
     fun replaceAll(alarms: List<AnnualFeeReminderPlanner.PlannedAlarm>) {
         val appContext = context.applicationContext
+        setRescheduleReceiverEnabled(appContext, alarms.isNotEmpty())
         val previous = store.readScheduledKeys()
         for (key in previous) {
             val parsed = AnnualFeeReminderStore.parseScheduleKey(key) ?: continue
@@ -46,6 +49,23 @@ class AnnualFeeReminderScheduler(
 
     fun cancelAllTracked() {
         replaceAll(emptyList())
+    }
+
+    private fun setRescheduleReceiverEnabled(
+        appContext: Context,
+        enabled: Boolean,
+    ) {
+        val receiver = ComponentName(appContext, AnnualFeeReminderBootReceiver::class.java)
+        val target =
+            if (enabled) {
+                PackageManager.COMPONENT_ENABLED_STATE_ENABLED
+            } else {
+                PackageManager.COMPONENT_ENABLED_STATE_DISABLED
+            }
+        val packageManager = appContext.packageManager
+        if (packageManager.getComponentEnabledSetting(receiver) != target) {
+            packageManager.setComponentEnabledSetting(receiver, target, PackageManager.DONT_KILL_APP)
+        }
     }
 
     private fun schedule(
