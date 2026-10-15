@@ -57,7 +57,7 @@ fun ModernColorPicker(
             initialColor = initialColor,
             onColorChanged = { envelope: ColorEnvelope ->
                 currentColor = envelope.color
-                onColorSelected(envelope.color)
+                if (envelope.fromUser) onColorSelected(envelope.color)
             },
         )
 
@@ -108,6 +108,7 @@ fun ModernColorPicker(
                     .height(28.dp)
                     .padding(horizontal = 4.dp),
             controller = controller,
+            initialColor = initialColor,
         )
     }
 }
