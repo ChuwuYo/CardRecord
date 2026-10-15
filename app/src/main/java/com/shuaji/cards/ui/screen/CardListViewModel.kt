@@ -10,7 +10,6 @@ import com.shuaji.cards.data.SwipeRecordResult
 import com.shuaji.cards.data.local.CardEntity
 import com.shuaji.cards.data.local.CardFolderEntity
 import com.shuaji.cards.data.local.CardType
-import com.shuaji.cards.data.local.cardTypeEnum
 import com.shuaji.cards.data.local.isExpiredAt
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -313,12 +312,12 @@ internal fun groupCardsForList(
         CardFilter.All -> groupCardsAcrossFolders(cards, folders)
         CardFilter.Debit ->
             groupCardsAcrossFolders(
-                cards = cards.filter { it.card.cardTypeEnum == CardType.DEBIT },
+                cards = cards.filter { it.card.cardType == CardType.DEBIT },
                 folders = folders,
             )
         CardFilter.Credit ->
             groupCardsAcrossFolders(
-                cards = cards.filter { it.card.cardTypeEnum == CardType.CREDIT },
+                cards = cards.filter { it.card.cardType == CardType.CREDIT },
                 folders = folders,
             )
         is CardFilter.Folder -> {
