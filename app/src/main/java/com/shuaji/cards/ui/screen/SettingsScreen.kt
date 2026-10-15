@@ -91,11 +91,9 @@ import com.shuaji.cards.data.reminder.AnnualFeeReminderNotifier
 import com.shuaji.cards.ui.AppLanguage
 import com.shuaji.cards.ui.ViewModelFactories
 import com.shuaji.cards.ui.component.ModernColorPicker
+import com.shuaji.cards.ui.component.rememberUiDateFormatter
 import com.shuaji.cards.ui.theme.DefaultBrandPrimary
 import com.shuaji.cards.ui.theme.parseSeedColor
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
 /**
  * 设置页。
@@ -789,6 +787,7 @@ private fun confirmMessage(
     @androidx.annotation.StringRes templateRes: Int,
     info: BackupPreview,
 ): String {
+    val dates = rememberUiDateFormatter()
     val template =
         stringResource(
             templateRes,
@@ -802,8 +801,7 @@ private fun confirmMessage(
         )
     val timeLine =
         info.lastModifiedMillis?.let {
-            val fmt = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
-            stringResource(R.string.settings_backup_time_label, fmt.format(Date(it)))
+            stringResource(R.string.settings_backup_time_label, dates.dateTime(it))
         } ?: ""
     return listOf(template, timeLine)
         .filter { it.isNotEmpty() }
