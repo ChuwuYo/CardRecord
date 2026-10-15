@@ -34,9 +34,12 @@ class ThemeSwitchTransitionTest {
         }
         composeRule.onNodeWithText("shown 1").assertExists()
 
-        composeRule.runOnIdle { target = 2 }
-        composeRule.runOnIdle { target = 3 }
+        composeRule.mainClock.autoAdvance = false
+        composeRule.runOnUiThread { target = 2 }
+        composeRule.mainClock.advanceTimeBy(THEME_REVEAL_DURATION_MILLIS / 4L)
+        composeRule.runOnUiThread { target = 3 }
         composeRule.mainClock.advanceTimeBy(THEME_REVEAL_DURATION_MILLIS * 3L)
+        composeRule.mainClock.autoAdvance = true
         composeRule.waitForIdle()
 
         composeRule.onNodeWithText("shown 3").assertExists()
