@@ -34,7 +34,7 @@ jobs:
       - name: Report
         if: always()
         run: |
-          out=$(python3 -c "import glob,re,html;[print(html.unescape(m)[:2500]) for f in glob.glob('app/build/outputs/androidTest-results/connected/**/*.xml',recursive=True) for m in re.findall(r'<failure message=\"(.*?)\"',open(f).read(),re.S)]" || true)
+          out=$(python3 -c "import glob,re,html;fs=glob.glob('app/build/outputs/androidTest-results/connected/**/*.xml',recursive=True);[print(re.findall(r'<testsuite[^>]*>',t)[:1],*[html.unescape(m)[:2500] for m in re.findall(r'<failure[^>]*>(.*?)</failure>',t,re.S)]) for t in (open(f).read() for f in fs)]" || true)
           [ -z "$out" ] && out="no results: $(find app/build/outputs -name '*.xml' | head)"
           summary=$(printf '%s' "$out" | sed -e 's/%/%25/g' | sed -e ':a' -e 'N' -e '$!ba' -e 's/\r/%0D/g' -e 's/\n/%0A/g')
           echo "::error title=Diag result::${summary}"
