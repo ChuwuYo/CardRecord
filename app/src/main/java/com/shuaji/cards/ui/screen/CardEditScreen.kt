@@ -15,10 +15,12 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -69,6 +71,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -94,6 +97,7 @@ import com.shuaji.cards.data.local.CardType
 import com.shuaji.cards.data.local.ImageSourceType
 import com.shuaji.cards.ui.ViewModelFactories
 import com.shuaji.cards.ui.component.ModernColorPicker
+import kotlinx.coroutines.launch
 import java.time.LocalDate
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -107,6 +111,7 @@ fun CardEditScreen(
     val folders by viewModel.folders.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
+    val snackbarScope = rememberCoroutineScope()
     var showImageImportError by remember { mutableStateOf(false) }
     val networkPickerPresentation =
         resolveCardNetworkPickerPresentation(state.imageSourceType, state.imageProviderKey)
@@ -119,7 +124,6 @@ fun CardEditScreen(
     LaunchedEffect(state.saveResult) {
         when (state.saveResult) {
             is CardEditSaveResult.Saved -> onBack()
-            CardEditSaveResult.Failed -> snackbarHostState.showSnackbar(context.getString(R.string.edit_save_failed))
             else -> Unit
         }
     }
@@ -128,6 +132,10 @@ fun CardEditScreen(
             when (event) {
                 CardEditEvent.ImageImportFailed -> showImageImportError = true
                 CardEditEvent.CloseReady -> onBack()
+                CardEditEvent.SaveFailed ->
+                    snackbarScope.launch {
+                        snackbarHostState.showSnackbar(context.getString(R.string.edit_save_failed))
+                    }
             }
         }
     }
@@ -251,6 +259,8 @@ fun CardEditScreen(
                 Modifier
                     .fillMaxSize()
                     .padding(padding)
+                    .consumeWindowInsets(padding)
+                    .imePadding()
                     .verticalScroll(rememberScrollState())
                     .padding(horizontal = 20.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
