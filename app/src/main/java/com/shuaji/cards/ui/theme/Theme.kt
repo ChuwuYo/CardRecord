@@ -33,6 +33,11 @@ fun ShuajiTheme(
     )
 }
 
+data class ResolvedAppearance(
+    val settings: ThemeSettings,
+    val darkTheme: Boolean,
+)
+
 internal fun resolveDarkTheme(
     themeMode: ThemeMode,
     isSystemDark: Boolean,

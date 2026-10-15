@@ -19,7 +19,9 @@ import com.shuaji.cards.ui.ViewModelFactories
 import com.shuaji.cards.ui.component.LocalUiDateFormatter
 import com.shuaji.cards.ui.component.rememberUiDateFormatter
 import com.shuaji.cards.ui.theme.AppThemeViewModel
+import com.shuaji.cards.ui.theme.ResolvedAppearance
 import com.shuaji.cards.ui.theme.ShuajiTheme
+import com.shuaji.cards.ui.theme.ThemeSwitchTransition
 import com.shuaji.cards.ui.theme.resolveAppCompatNightMode
 import com.shuaji.cards.ui.theme.resolveDarkTheme
 
@@ -36,30 +38,34 @@ class MainActivity : AppCompatActivity() {
         enableEdgeToEdge()
         setContent {
             val settings by themeViewModel.themeSettings.collectAsStateWithLifecycle()
-            settings?.let { loadedSettings ->
-                val appCompatNightMode = resolveAppCompatNightMode(loadedSettings.themeMode)
-                LaunchedEffect(loadedSettings.themeMode) {
-                    settingsRepo.syncStartupThemeMode(loadedSettings.themeMode)
-                    if (AppCompatDelegate.getDefaultNightMode() != appCompatNightMode) {
-                        AppCompatDelegate.setDefaultNightMode(appCompatNightMode)
-                    }
-                }
-                val darkTheme = resolveDarkTheme(loadedSettings.themeMode, isSystemInDarkTheme())
-                SideEffect {
-                    val style =
-                        if (darkTheme) {
-                            SystemBarStyle.dark(android.graphics.Color.TRANSPARENT)
-                        } else {
-                            SystemBarStyle.light(
-                                android.graphics.Color.TRANSPARENT,
-                                android.graphics.Color.TRANSPARENT,
-                            )
+            val systemDark = isSystemInDarkTheme()
+            settings?.let { latestSettings ->
+                val latestAppearance =
+                    ResolvedAppearance(latestSettings, resolveDarkTheme(latestSettings.themeMode, systemDark))
+                ThemeSwitchTransition(latestAppearance) { (loadedSettings, darkTheme) ->
+                    val appCompatNightMode = resolveAppCompatNightMode(loadedSettings.themeMode)
+                    LaunchedEffect(loadedSettings.themeMode) {
+                        settingsRepo.syncStartupThemeMode(loadedSettings.themeMode)
+                        if (AppCompatDelegate.getDefaultNightMode() != appCompatNightMode) {
+                            AppCompatDelegate.setDefaultNightMode(appCompatNightMode)
                         }
-                    enableEdgeToEdge(statusBarStyle = style, navigationBarStyle = style)
-                }
-                ShuajiTheme(settings = loadedSettings, darkTheme = darkTheme) {
-                    CompositionLocalProvider(LocalUiDateFormatter provides rememberUiDateFormatter()) {
-                        ShuajiApp()
+                    }
+                    SideEffect {
+                        val style =
+                            if (darkTheme) {
+                                SystemBarStyle.dark(android.graphics.Color.TRANSPARENT)
+                            } else {
+                                SystemBarStyle.light(
+                                    android.graphics.Color.TRANSPARENT,
+                                    android.graphics.Color.TRANSPARENT,
+                                )
+                            }
+                        enableEdgeToEdge(statusBarStyle = style, navigationBarStyle = style)
+                    }
+                    ShuajiTheme(settings = loadedSettings, darkTheme = darkTheme) {
+                        CompositionLocalProvider(LocalUiDateFormatter provides rememberUiDateFormatter()) {
+                            ShuajiApp()
+                        }
                     }
                 }
             }
