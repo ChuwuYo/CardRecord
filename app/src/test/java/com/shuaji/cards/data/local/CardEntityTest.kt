@@ -11,11 +11,20 @@ import java.time.ZoneId
 class CardEntityTest {
     @Test
     fun enumConverters_roundTripStableKeysAndFallBackForUnknownKeys() {
+        CardType.entries.forEach {
+            assertEquals(it, CardEnumConverters.keyToCardType(CardEnumConverters.cardTypeToKey(it)))
+        }
+        ImageSourceType.entries.forEach {
+            assertEquals(it, CardEnumConverters.keyToImageSourceType(CardEnumConverters.imageSourceTypeToKey(it)))
+        }
+        CardOrientation.entries.forEach {
+            assertEquals(it, CardEnumConverters.keyToCardOrientation(CardEnumConverters.cardOrientationToKey(it)))
+        }
         assertEquals("PROVIDER", CardEnumConverters.imageSourceTypeToKey(ImageSourceType.PROVIDER))
-        assertEquals(ImageSourceType.NONE, CardEnumConverters.keyToImageSourceType("FUTURE_TYPE"))
         assertEquals("PORTRAIT", CardEnumConverters.cardOrientationToKey(CardOrientation.PORTRAIT))
-        assertEquals(CardOrientation.LANDSCAPE, CardEnumConverters.keyToCardOrientation("FUTURE_ORIENTATION"))
         assertEquals("CREDIT", CardEnumConverters.cardTypeToKey(CardType.CREDIT))
+        assertEquals(ImageSourceType.NONE, CardEnumConverters.keyToImageSourceType("FUTURE_TYPE"))
+        assertEquals(CardOrientation.LANDSCAPE, CardEnumConverters.keyToCardOrientation("FUTURE_ORIENTATION"))
         assertEquals(CardType.UNSPECIFIED, CardEnumConverters.keyToCardType("FUTURE_CARD_TYPE"))
     }
 
