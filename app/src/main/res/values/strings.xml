@@ -129,6 +129,7 @@
 
     <!-- ────── 卡片项 ────── -->
     <string name="card_count_format">%1$d / %2$d</string>
+    <string name="card_count_required_suffix">" / %1$d"</string>
     <string name="card_invalid_required_count">请编辑卡片并设置有效的目标笔数</string>
     <string name="card_percent_format">%1$d%%</string>
     <string name="card_date_next_due">下次结算 %1$s</string>
