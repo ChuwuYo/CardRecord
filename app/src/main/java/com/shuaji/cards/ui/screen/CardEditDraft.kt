@@ -70,7 +70,8 @@ internal data class CardEditDraft(
                 nextDueDateMillis = state.nextDueDateMillis,
                 colorArgb = state.colorArgb,
                 note = state.note,
-                imageSourceTypeKey = state.imageSourceType.key,
+                imageSourceTypeKey =
+                    ((state.userImage as? UserImageDraft.Selected)?.sourceTypeBeforeSelection ?: state.imageSourceType).key,
                 imageProviderKey = state.imageProviderKey,
                 userImage =
                     when (state.userImage) {
