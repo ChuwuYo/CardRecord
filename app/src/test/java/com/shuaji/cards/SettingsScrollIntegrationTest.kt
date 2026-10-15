@@ -2,15 +2,18 @@ package com.shuaji.cards
 
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.ExperimentalTestApi
-import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
-import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToNode
-import org.junit.Assert.assertTrue
+import androidx.compose.ui.test.printToString
+import org.junit.Assert.fail
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -24,19 +27,19 @@ class SettingsScrollIntegrationTest {
     @get:Rule
     val composeRule = createAndroidComposeRule<MainActivity>()
 
-    private fun openSettingsScrolledToBottom() {
-        composeRule.waitUntilAtLeastOneExists(
-            hasText("设置").or(
-                androidx.compose.ui.test
-                    .hasContentDescription("设置"),
-            ),
-            10_000,
-        )
-        composeRule.onNodeWithContentDescription("设置").performClick()
-        composeRule.waitUntilAtLeastOneExists(hasText("颜色来源"), 10_000)
-        composeRule.onNode(hasScrollAction()).performScrollToNode(hasText("语言"))
-        composeRule.waitForIdle()
-        composeRule.onNodeWithText("语言").assertIsDisplayed()
+    private fun dump(): String =
+        runCatching { composeRule.onRoot(useUnmergedTree = true).printToString(maxDepth = 6) }
+            .getOrElse { "no root: $it" }
+
+    private fun waitFor(
+        matcher: SemanticsMatcher,
+        label: String,
+    ) {
+        try {
+            composeRule.waitUntilAtLeastOneExists(matcher, 15_000)
+        } catch (e: Throwable) {
+            fail("DIAG wait $label failed: $e\n${dump()}")
+        }
     }
 
     private fun scrollValue(): Float =
@@ -46,53 +49,45 @@ class SettingsScrollIntegrationTest {
             .config[SemanticsProperties.VerticalScrollAxisRange]
             .value()
 
-    private fun report(
+    private fun openSettingsScrolledToBottom(): Float {
+        waitFor(hasContentDescription("设置"), "card list")
+        composeRule.onAllNodesWithContentDescription("设置")[0].performClick()
+        waitFor(hasText("颜色来源"), "settings")
+        composeRule.onNode(hasScrollAction()).performScrollToNode(hasText("语言"))
+        composeRule.waitForIdle()
+        return scrollValue()
+    }
+
+    private fun check(
         label: String,
         before: Float,
     ) {
+        waitFor(hasText("颜色来源"), "settings after $label")
+        Thread.sleep(300)
         composeRule.waitForIdle()
         val after = scrollValue()
-        assertTrue("DIAG $label before=$before after=$after", after > 0f)
+        if (after != before) fail("DIAG $label before=$before after=$after\n${dump()}")
     }
 
     @Test
-    fun colorSourceSwitch_keepsSettingsScroll() {
-        openSettingsScrolledToBottom()
-        val before = scrollValue()
+    fun colorSourceSwitch() {
+        val before = openSettingsScrolledToBottom()
         composeRule.onNodeWithText("颜色来源").performClick()
-        Thread.sleep(500)
-        report("after color source", before)
+        check("color source", before)
     }
 
     @Test
-    fun themeModeSwitch_keepsSettingsScroll() {
-        openSettingsScrolledToBottom()
-        val before = scrollValue()
+    fun themeModeSwitch() {
+        val before = openSettingsScrolledToBottom()
         composeRule.onNodeWithText("主题模式").performClick()
         Thread.sleep(500)
-        composeRule.waitUntilAtLeastOneExists(hasText("颜色来源"), 10_000)
-        report("after theme mode", before)
+        check("theme mode", before)
     }
 
     @Test
-    fun plainRecreate_keepsSettingsScroll() {
-        openSettingsScrolledToBottom()
-        val before = scrollValue()
+    fun plainRecreate() {
+        val before = openSettingsScrolledToBottom()
         composeRule.activityRule.scenario.recreate()
-        composeRule.waitUntilAtLeastOneExists(hasText("颜色来源"), 10_000)
-        report("after plain recreate", before)
-    }
-
-    @Test
-    fun plainRecreate_keepsCardListDestination() {
-        openSettingsScrolledToBottom()
-        composeRule.activityRule.scenario.recreate()
-        composeRule.waitForIdle()
-        Thread.sleep(500)
-        composeRule.waitForIdle()
-        assertTrue(
-            "DIAG settings destination lost after recreate",
-            composeRule.onAllNodes(hasText("颜色来源")).fetchSemanticsNodes().isNotEmpty(),
-        )
+        check("recreate", before)
     }
 }
