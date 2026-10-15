@@ -6,10 +6,6 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 
-/**
- * 字体策略：使用系统默认无衬线字体但加粗对比度，
- * 让标题更"锋利"。
- */
 private val Display = FontFamily.Default
 private val Body = FontFamily.Default
 
