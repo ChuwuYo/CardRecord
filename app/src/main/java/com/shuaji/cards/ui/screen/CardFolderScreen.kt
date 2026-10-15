@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -67,6 +68,7 @@ import com.shuaji.cards.data.local.CardFolderEntity
 import com.shuaji.cards.ui.ViewModelFactories
 import com.shuaji.cards.ui.component.ModernColorPicker
 import com.shuaji.cards.ui.component.ObserveAsEvents
+import com.shuaji.cards.ui.component.plus
 import com.shuaji.cards.ui.theme.DEFAULT_BRAND_PRIMARY_ARGB
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -144,8 +146,8 @@ fun CardFolderScreen(onBack: () -> Unit) {
                         modifier =
                             Modifier
                                 .fillMaxSize()
-                                .padding(padding),
-                        contentPadding = PaddingValues(16.dp),
+                                .consumeWindowInsets(padding),
+                        contentPadding = padding + PaddingValues(16.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
                         items(state.folders, key = { it.folder.id }) { item ->
