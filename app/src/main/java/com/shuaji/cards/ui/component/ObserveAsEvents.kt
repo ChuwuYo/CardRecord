@@ -19,10 +19,23 @@ fun <T> ObserveAsEvents(
     val lifecycleOwner = LocalLifecycleOwner.current
     val currentOnEvent by rememberUpdatedState(onEvent)
     LaunchedEffect(events, lifecycleOwner) {
+        var interrupted: InterruptedEvent<T>? = null
         lifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
             withContext(Dispatchers.Main.immediate) {
-                events.collect { currentOnEvent(it) }
+                interrupted?.let { event ->
+                    currentOnEvent(event.value)
+                    interrupted = null
+                }
+                events.collect { event ->
+                    interrupted = InterruptedEvent(event)
+                    currentOnEvent(event)
+                    interrupted = null
+                }
             }
         }
     }
 }
+
+private class InterruptedEvent<T>(
+    val value: T,
+)
