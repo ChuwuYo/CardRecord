@@ -129,6 +129,7 @@ Room v9 有三张表：
 - ThemeMode / ColorSource 等持久化值使用显式 key 和集中未知值回退。
 - 用户可见文本全部来自简中/英文资源；数量文案使用 plurals，自动测试校验 string/plurals 的 key、quantity 与格式化占位符一致。
 - 全局主题种子色与单张卡 `colorArgb` 是不同概念，不能互相覆盖。
+- `MainActivity` 自行处理 `uiMode` 变更：切换明暗只重组 Compose，不重建 Activity，滚动位置与页面状态原样保留。界面不得依赖 `values-night` 之类需要重建才刷新的资源（`window_background` 只是启动占位）。
 
 ## 10. 年费进度本地提醒
 
