@@ -12,9 +12,12 @@ import com.shuaji.cards.data.local.TransactionDao
 import com.shuaji.cards.data.local.TransactionEntity
 import com.shuaji.cards.data.local.withNormalizedCreditDetails
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 import java.time.Clock
@@ -49,6 +52,7 @@ class CardRepository(
     private val zoneIdProvider: () -> ZoneId,
     boundaryTicks: Flow<Unit>,
     private val userImages: UserCardImageStore,
+    private val defaultDispatcher: CoroutineDispatcher = Dispatchers.Default,
 ) {
     /**
      * 每个活跃收集者订阅固定的 cards 与 transactions 两条查询。
@@ -64,7 +68,7 @@ class CardRepository(
                 cards = deriveCards(cards, transactions),
                 transactions = transactions,
             )
-        }
+        }.flowOn(defaultDispatcher)
 
     fun observeCards(): Flow<List<CardWithCount>> = derivedSnapshots.map { it.cards }
 
@@ -79,18 +83,19 @@ class CardRepository(
 
     /** 详情卡片、有效计数与完整历史来自同一次派生快照。 */
     fun observeCardDetails(id: Long): Flow<CardDetailsSnapshot?> =
-        derivedSnapshots.map { snapshot ->
-            val card = snapshot.cards.firstOrNull { it.card.id == id } ?: return@map null
-            CardDetailsSnapshot(
-                card = card,
-                swipes =
-                    snapshot.transactions
-                        .asSequence()
-                        .filter { it.cardId == id }
-                        .sortedByDescending { it.occurredAtMillis }
-                        .toList(),
-            )
-        }
+        derivedSnapshots
+            .map { snapshot ->
+                val card = snapshot.cards.firstOrNull { it.card.id == id } ?: return@map null
+                CardDetailsSnapshot(
+                    card = card,
+                    swipes =
+                        snapshot.transactions
+                            .asSequence()
+                            .filter { it.cardId == id }
+                            .sortedByDescending { it.occurredAtMillis }
+                            .toList(),
+                )
+            }.flowOn(defaultDispatcher)
 
     suspend fun upsertCard(card: CardEntity): Long {
         val id = cardDao.upsert(card.withNormalizedCreditDetails())
