@@ -35,7 +35,7 @@ class MainActivity : AppCompatActivity() {
         val settingsRepo = requireShuajiApplication().container.settings
         enableEdgeToEdge()
         setContent {
-            val settings by settingsRepo.themeSettings.collectAsStateWithLifecycle(initialValue = null)
+            val settings by themeViewModel.themeSettings.collectAsStateWithLifecycle()
             settings?.let { loadedSettings ->
                 val appCompatNightMode = resolveAppCompatNightMode(loadedSettings.themeMode)
                 LaunchedEffect(loadedSettings.themeMode) {
