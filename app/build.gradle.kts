@@ -148,11 +148,6 @@ dependencies {
     testImplementation("androidx.compose.ui:ui-test-junit4")
 }
 
-// ── ktlint ────────────────────────────────────────────────────────
 ktlint {
-    // 只看 src 下的 Kotlin 文件
-    filter {
-        include("**/kotlin/**")
-        exclude("**/build/**")
-    }
+    version.set("1.5.0")
 }
