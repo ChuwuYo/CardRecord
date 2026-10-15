@@ -13,7 +13,7 @@
 ## 环境与构建
 
 - 始终使用仓库的 `./gradlew`；Java 17，compile/target SDK 36。
-- 仓库 `gradle.properties` 不含代理等本机配置。需要代理的环境把 `systemProp.http.proxyHost`、`systemProp.http.proxyPort`、`systemProp.https.proxyHost`、`systemProp.https.proxyPort`（以及需要时的 `nonProxyHosts`）写进 `~/.gradle/gradle.properties`（Gradle 用户目录的属性优先于项目属性），不为适配单台机器提交环境专属改动。
+- 仓库 `gradle.properties` 不含代理等本机配置。需要代理的环境把 `systemProp.http.proxyHost`、`systemProp.http.proxyPort`、`systemProp.https.proxyHost`、`systemProp.https.proxyPort`（以及需要时的 `systemProp.http.nonProxyHosts`、`systemProp.https.nonProxyHosts`）写进 `~/.gradle/gradle.properties`（Gradle 用户目录的属性优先于项目属性），不为适配单台机器提交环境专属改动。
 - 正式签名只通过 `CARDRECORD_RELEASE_*` 环境变量或 GitHub Secrets 注入；密钥、密码和本机路径不得进入 Git。变量缺失时 Release 必须失败，禁止回退到 debug 签名。
 - 常用验证：
 
