@@ -3,7 +3,6 @@ package com.shuaji.cards.data.reminder
 import android.util.Log
 import com.shuaji.cards.data.CardRepository
 import com.shuaji.cards.data.processForegroundFlow
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -114,10 +113,9 @@ class AnnualFeeReminderCoordinator(
                         alreadyNotified = store::wasNotified,
                     )
                 scheduler.replaceAll(plan)
-            } catch (error: CancellationException) {
-                throw error
-            } catch (error: RuntimeException) {
-                // 测试拆卸或 OEM 异常不得打崩后台协程；下次 refresh / 前台再试。
+            } catch (error: IllegalStateException) {
+                Log.w("AnnualFeeReminder", "applyPlan failed", error)
+            } catch (error: SecurityException) {
                 Log.w("AnnualFeeReminder", "applyPlan failed", error)
             }
         }
