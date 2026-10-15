@@ -105,8 +105,7 @@ class CardDetailViewModelTest {
             val id = repository.upsertCard(card())
             val viewModel = CardDetailViewModel(repository, id)
             viewModel.uiState.first { it is CardDetailUiState.Loaded }
-            val stored = requireNotNull(db.cardDao().getById(id))
-            db.cardDao().delete(stored)
+            db.openHelper.writableDatabase.execSQL("DELETE FROM cards WHERE id = ?", arrayOf(id))
             val event = async(start = CoroutineStart.UNDISPATCHED) { viewModel.events.first() }
 
             viewModel.deleteCard()
