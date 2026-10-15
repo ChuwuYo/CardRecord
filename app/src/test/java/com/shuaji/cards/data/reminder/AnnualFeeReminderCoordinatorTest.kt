@@ -24,9 +24,6 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
 
-/**
- * 协调器对「无权限取消 / 有权限重排」的契约；不启动真实前台 Flow。
- */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34], manifest = Config.NONE)
 class AnnualFeeReminderCoordinatorTest {
