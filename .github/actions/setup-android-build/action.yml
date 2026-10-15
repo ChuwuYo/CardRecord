@@ -1,0 +1,25 @@
+name: Set up Android build
+description: JDK 17, Android SDK 36 and Gradle cache shared by the verify and build-sign jobs.
+runs:
+  using: composite
+  steps:
+    - name: Set up JDK 17
+      uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+      with:
+        distribution: temurin
+        java-version: '17'
+
+    - name: Set up Android SDK
+      uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4.0.4
+      with:
+        packages: ''
+
+    - name: Install SDK packages
+      shell: bash
+      run: sdkmanager "platforms;android-36" "build-tools;36.0.0" "platform-tools" > /dev/null
+
+    - name: Set up Gradle cache
+      uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+      with:
+        cache-provider: basic
+        dependency-graph: disabled
