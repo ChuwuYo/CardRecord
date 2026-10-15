@@ -54,7 +54,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -73,7 +73,7 @@ import com.shuaji.cards.ui.theme.DEFAULT_BRAND_PRIMARY_ARGB
 fun CardFolderScreen(onBack: () -> Unit) {
     val viewModel: CardFolderViewModel = viewModel(factory = ViewModelFactories.Folders)
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-    val context = LocalContext.current
+    val resources = LocalResources.current
     val snackbarHostState = remember { SnackbarHostState() }
 
     var dialogTarget by remember { mutableStateOf<DialogTarget?>(null) }
@@ -88,7 +88,7 @@ fun CardFolderScreen(onBack: () -> Unit) {
 
     ObserveAsEvents(viewModel.events) { event ->
         if (event is CardFolderEvent.WriteFailed) {
-            snackbarHostState.showSnackbar(context.getString(R.string.common_operation_failed))
+            snackbarHostState.showSnackbar(resources.getString(R.string.common_operation_failed))
         }
     }
 
