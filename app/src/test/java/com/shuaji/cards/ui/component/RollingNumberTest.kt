@@ -42,4 +42,23 @@ class RollingNumberTest {
         assertEquals(0, composeRule.onAllNodesWithText("0").fetchSemanticsNodes().size)
         assertEquals(0, composeRule.onAllNodesWithText("9").fetchSemanticsNodes().size)
     }
+
+    @Test
+    fun aDroppedLeadingDigitStaysVisibleWhileItRollsOut() {
+        var value by mutableIntStateOf(10)
+        composeRule.setContent {
+            RollingNumber(value = value, style = TextStyle())
+        }
+
+        composeRule.mainClock.autoAdvance = false
+        composeRule.runOnUiThread { value = 9 }
+        composeRule.mainClock.advanceTimeBy(ROLLING_DIGIT_DURATION_MILLIS / 3L)
+        assertEquals(1, composeRule.onAllNodesWithText("1").fetchSemanticsNodes().size)
+
+        composeRule.mainClock.advanceTimeBy(ROLLING_DIGIT_DURATION_MILLIS * 4L)
+        composeRule.mainClock.autoAdvance = true
+        composeRule.waitForIdle()
+        assertEquals(0, composeRule.onAllNodesWithText("1").fetchSemanticsNodes().size)
+        assertEquals(1, composeRule.onAllNodesWithText("9").fetchSemanticsNodes().size)
+    }
 }
