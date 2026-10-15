@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -92,6 +93,7 @@ import com.shuaji.cards.ui.AppLanguage
 import com.shuaji.cards.ui.ViewModelFactories
 import com.shuaji.cards.ui.component.LocalUiDateFormatter
 import com.shuaji.cards.ui.component.ModernColorPicker
+import com.shuaji.cards.ui.component.withoutBottom
 import com.shuaji.cards.ui.theme.DefaultBrandPrimary
 import com.shuaji.cards.ui.theme.parseSeedColor
 
@@ -333,13 +335,14 @@ fun SettingsScreen(onBack: () -> Unit) {
             modifier =
                 Modifier
                     .fillMaxSize()
-                    .padding(padding),
+                    .padding(padding.withoutBottom())
+                    .consumeWindowInsets(padding),
         ) {
             val enabled = state is SettingsUiState.Idle
             val working = state is SettingsUiState.Working
             LazyColumn(
                 modifier = if (working) Modifier.semantics { hideFromAccessibility() } else Modifier,
-                contentPadding = PaddingValues(vertical = 8.dp),
+                contentPadding = PaddingValues(top = 8.dp, bottom = 8.dp + padding.calculateBottomPadding()),
                 userScrollEnabled = !working,
             ) {
                 item {
