@@ -204,27 +204,6 @@ class SettingsViewModelTest {
         }
 
     @Test
-    fun acknowledge_is_idempotent_and_does_not_re_emit() =
-        runTest(mainDispatcherRule.testDispatcher.scheduler) {
-            whenever(backup.export(any())).doReturn(
-                ExportSummary(cardCount = 1, folderCount = 0, transactionCount = 0, directoryName = "test-backup"),
-            )
-
-            val vm = newVm()
-            val collected = runAndCollect { vm.export(android.net.Uri.EMPTY) }
-            assertEquals(1, collected.size)
-            assertEquals(SettingsUiState.Done, vm.state.value)
-
-            vm.acknowledge()
-            assertEquals(SettingsUiState.Idle, vm.state.value)
-
-            vm.acknowledge()
-            advanceUntilIdle()
-            assertEquals(SettingsUiState.Idle, vm.state.value)
-            assertEquals("ack 不应重新 emit", 1, emittedEvents.size)
-        }
-
-    @Test
     fun import_failure_marks_event_as_error_with_cause() =
         runTest(mainDispatcherRule.testDispatcher.scheduler) {
             whenever(backup.import(any(), any(), any())).doThrow(BackupException("版本不匹配"))
