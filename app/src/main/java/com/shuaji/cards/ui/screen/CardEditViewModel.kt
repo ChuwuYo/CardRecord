@@ -89,6 +89,7 @@ sealed interface UserImageDraft {
 
     data class Selected(
         val staged: StagedUserImage,
+        val sourceTypeBeforeSelection: ImageSourceType,
     ) : UserImageDraft {
         override val previewModel: String = staged.displayUri
     }
@@ -186,8 +187,10 @@ class CardEditViewModel(
         }
         viewModelScope.launch {
             _uiState.collect { state ->
-                if (state.loadState == CardEditLoadState.NEW || state.loadState == CardEditLoadState.READY) {
-                    savedStateHandle[DRAFT_KEY] = CardEditDraft.fromUiState(state, persistedImagePreview).encode()
+                when {
+                    state.isSaving || state.saveResult is CardEditSaveResult.Saved -> savedStateHandle.remove<String>(DRAFT_KEY)
+                    state.loadState == CardEditLoadState.NEW || state.loadState == CardEditLoadState.READY ->
+                        savedStateHandle[DRAFT_KEY] = CardEditDraft.fromUiState(state, persistedImagePreview).encode()
                 }
             }
         }
@@ -526,7 +529,13 @@ class CardEditViewModel(
             }
             val updated =
                 current.copy(
-                    userImage = UserImageDraft.Selected(staged),
+                    userImage =
+                        UserImageDraft.Selected(
+                            staged = staged,
+                            sourceTypeBeforeSelection =
+                                (current.userImage as? UserImageDraft.Selected)?.sourceTypeBeforeSelection
+                                    ?: current.imageSourceType,
+                        ),
                     imageSourceType = ImageSourceType.USER,
                     isImportingImage = false,
                 )
