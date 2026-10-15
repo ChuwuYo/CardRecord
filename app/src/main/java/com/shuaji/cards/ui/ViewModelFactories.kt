@@ -1,11 +1,14 @@
 package com.shuaji.cards.ui
 
 import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.createSavedStateHandle
 import androidx.lifecycle.viewmodel.CreationExtras
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import androidx.navigation.toRoute
 import com.shuaji.cards.ShuajiApplication
 import com.shuaji.cards.requireShuajiApplication
+import com.shuaji.cards.ui.screen.CardDetailViewModel
 import com.shuaji.cards.ui.screen.CardEditViewModel
 import com.shuaji.cards.ui.screen.CardFolderViewModel
 import com.shuaji.cards.ui.screen.CardListViewModel
@@ -22,7 +25,21 @@ object ViewModelFactories {
         }
     val Edit =
         viewModelFactory {
-            initializer { CardEditViewModel(app().container.repository) }
+            initializer {
+                CardEditViewModel(
+                    repository = app().container.repository,
+                    cardId = createSavedStateHandle().toRoute<CardEdit>().cardId,
+                )
+            }
+        }
+    val Detail =
+        viewModelFactory {
+            initializer {
+                CardDetailViewModel(
+                    repository = app().container.repository,
+                    cardId = createSavedStateHandle().toRoute<CardDetail>().cardId,
+                )
+            }
         }
     val Folders =
         viewModelFactory {
