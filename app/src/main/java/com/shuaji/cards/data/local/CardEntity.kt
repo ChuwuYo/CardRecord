@@ -61,7 +61,7 @@ data class CardEntity(
     @ColumnInfo(name = "card_number_masked")
     val cardNumberMasked: String,
     @ColumnInfo(name = "card_type", defaultValue = CARD_TYPE_UNSPECIFIED_KEY)
-    val cardType: String = CARD_TYPE_UNSPECIFIED_KEY,
+    val cardType: CardType = CardType.UNSPECIFIED,
     @ColumnInfo(name = "statement_day")
     val statementDay: Int? = null,
     @ColumnInfo(name = "repayment_day")
@@ -81,11 +81,11 @@ data class CardEntity(
     @ColumnInfo(name = "image_asset_id")
     val imageAssetId: String? = null,
     @ColumnInfo(name = "image_source_type", defaultValue = IMAGE_SOURCE_USER_KEY)
-    val imageSourceType: String = IMAGE_SOURCE_USER_KEY,
+    val imageSourceType: ImageSourceType = ImageSourceType.USER,
     @ColumnInfo(name = "image_provider_key")
     val imageProviderKey: String? = null,
     @ColumnInfo(name = "card_orientation", defaultValue = CARD_ORIENTATION_LANDSCAPE_KEY)
-    val cardOrientation: String = CARD_ORIENTATION_LANDSCAPE_KEY,
+    val cardOrientation: CardOrientation = CardOrientation.LANDSCAPE,
     @ColumnInfo(name = "folder_id")
     val folderId: Long? = null,
     @ColumnInfo(name = "created_at_millis")
@@ -104,24 +104,6 @@ enum class ImageSourceType(
         fun fromKey(key: String): ImageSourceType = entries.firstOrNull { it.key == key } ?: NONE
     }
 }
-
-/**
- * 把数据库中的卡面来源安全解析成枚举。未知值按纯色处理，避免外部导入或未来版本
- * 写入的新枚举值让旧版应用崩溃。
- */
-val CardEntity.imageSourceTypeEnum: ImageSourceType
-    get() = ImageSourceType.fromKey(imageSourceType)
-
-/**
- * CardEntity 的辅助属性：把数据库存的 [CardEntity.cardOrientation] (String)
- * 安全转成 [CardOrientation] enum。**所有读卡面朝向的 UI 代码都走这个**，
- * 不要在调用点重复解析持久化字符串。
- *
- * 历史数据里如果出现异常字符串（手动改过 db、外部导入），回退到 LANDSCAPE——
- * 因为 PORTRAIT 是后期加的字段，老数据不可能是 PORTRAIT，fallback 安全。
- */
-val CardEntity.cardOrientationEnum: CardOrientation
-    get() = CardOrientation.fromKey(cardOrientation)
 
 /** 有效期是本地日历日期；用户所在时区进入次日后才算过期。 */
 fun CardEntity.isExpiredAt(
