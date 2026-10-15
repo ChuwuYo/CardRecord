@@ -22,18 +22,6 @@ import kotlinx.coroutines.launch
 import java.time.Instant
 import java.time.ZoneId
 
-/**
- * 详情页 UI 用的视图。
- *
- * - [currentCount] 当前已刷笔数（实时计算）
- * - [requiredCount] 年度免年费所需笔数
- * - [isExpired] 是否已过有效期
- * - [swipes] 该卡全部流水（按时间倒序）—— 详情页「流水列表」直接渲染这个序列，
- *   每行用 [TransactionEntity.id] 做单笔删除的 key
- *
- * 流水表只保存 id、所属卡片 id 与时间戳；UI 列表展示全部历史。
- * 窗口外历史仍保留，因此列表行数不一定等于 [currentCount]。
- */
 data class CardDetailUi(
     val card: com.shuaji.cards.data.local.CardEntity,
     val currentCount: Int,
@@ -93,10 +81,6 @@ class CardDetailViewModel(
     private val swipeFeedbackQueue = OneShotEventQueue<SwipeFeedback>()
     val swipeFeedback: Flow<SwipeFeedback> = swipeFeedbackQueue.events
 
-    /**
-     * 详情页主状态由 Repository 的单一派生快照提供，避免卡片计数与历史列表
-     * 分属两个订阅而出现短暂不一致。
-     */
     private val eventQueue = OneShotEventQueue<CardDetailEvent>()
     val events: Flow<CardDetailEvent> = eventQueue.events
 
@@ -109,7 +93,6 @@ class CardDetailViewModel(
                 } ?: CardDetailUiState.Missing
             }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), CardDetailUiState.Loading)
 
-    /** 详情页"记一笔"：成功交给观察流刷新，拒绝原因通过一次性反馈交给页面。 */
     fun recordSwipe() {
         viewModelScope.launch {
             try {
@@ -127,18 +110,10 @@ class CardDetailViewModel(
         }
     }
 
-    /**
-     * 详情页"重置年度笔数"：只删除当前统计窗口内流水。
-     * UI 上有 AlertDialog 二次确认，到这一层是用户已确认。
-     */
     fun resetCardCycle() {
         launchWrite { repository.resetCardCycle(cardId) }
     }
 
-    /**
-     * 详情页"单笔删除"：流水列表每行垃圾桶按钮触发。
-     * 删完 Repository 重新派生 currentCount，流水列表自动少一行。
-     */
     fun deleteSwipe(id: Long) {
         launchWrite { repository.deleteTransaction(id) }
     }
