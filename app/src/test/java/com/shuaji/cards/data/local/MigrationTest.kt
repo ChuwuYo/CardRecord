@@ -16,21 +16,6 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
-/**
- * Room 迁移 / 外键 schema 一致性测试。
- *
- * 历史上 `cards` 表的外键声明在「实体」与「迁移 SQL」之间不一致：
- * - `MIGRATION_5_6` 的建表 SQL 写了 `ON DELETE SET NULL` 外键；
- * - 但 v7 之前的 `CardEntity` 没声明 `@ForeignKey`/`@Index`。
- *
- * 后果：v5→v6 升级用户启动时 Room schema 校验抛 `IllegalStateException`；
- * 全新安装用户的 `cards` 表没外键，`deleteFolder` 依赖的 SET NULL 不生效。
- * v7（实体补外键 + `MIGRATION_6_7` 统一磁盘 schema）修复后，下面两条用例应通过。
- *
- * 这些回归测试手工建历史库，再用真实 `ALL_MIGRATIONS` 升到最新版并触发 schema 校验；
- * 导出的 schema JSON 另供 Room 自动迁移审阅与 CI 完整性检查。
- * 若外键不一致，`open` 会抛异常、测试失败。
- */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34], manifest = Config.NONE)
 class MigrationTest {
@@ -42,12 +27,6 @@ class MigrationTest {
         context.deleteDatabase(dbName)
     }
 
-    /**
-     * v5 → 最新：升级路径不崩 + 历史数据（含 folder_id 引用）保留。
-     *
-     * 修复前，Room 打开时会因
-     * 「实体期望无外键 vs 迁移后磁盘有外键」校验失败抛异常。
-     */
     @Test
     fun migrateFromV5_opensWithoutCrashAndPreservesData() {
         createV5DatabaseWithSampleRow()
@@ -59,7 +38,6 @@ class MigrationTest {
                 .build()
 
         try {
-            // 强制打开 → 触发 5→6→7→8 迁移 + onValidateSchema（出 bug 会在此抛异常）。
             val cards = runBlocking { db.cardDao().listAll() }
             assertEquals("历史卡片应被迁移保留", 1, cards.size)
             assertEquals("迁移不应丢失 folder_id 引用", 1L, cards.single().folderId)
@@ -165,10 +143,6 @@ class MigrationTest {
         }
     }
 
-    /**
-     * 删除文件夹时，外键 `ON DELETE SET NULL` 自动把卡片 folder_id 置空（卡片归未分类）。
-     * 这条用例覆盖「全新安装」路径下 SET NULL 是否真正生效。
-     */
     @Test
     fun deletingFolder_setsCardsFolderIdToNull() {
         val db =
@@ -204,15 +178,6 @@ class MigrationTest {
         }
     }
 
-    /**
-     * 手工建一个 version=5 的库，并写入一个 folder + 一张引用它的卡片。
-     *
-     * v5 表结构 = `MIGRATION_5_6` 执行**之前**的形态：
-     * - `cards`：含后来被删的 current_count / cycle_start_millis / archived，且**无 folder 外键**
-     *   （还原历史：v7 之前实体没声明外键，故 v5 建表也没有）。
-     * - `transactions`：含后来被删的 amount_cents / merchant / note，带 card 外键 + 索引。
-     * - `card_folders`：含后来被删的 icon_key。
-     */
     private fun createV5DatabaseWithSampleRow(
         folderId: Long = 1L,
         insertFolder: Boolean = true,
@@ -271,7 +236,6 @@ class MigrationTest {
                         )
                         """.trimIndent(),
                     )
-                    // 一个文件夹 + 一张引用它的卡片（验证迁移后 folder_id 仍被保留）
                     if (insertFolder) {
                         db.execSQL(
                             "INSERT INTO `card_folders` " +
@@ -298,7 +262,6 @@ class MigrationTest {
                     oldVersion: Int,
                     newVersion: Int,
                 ) {
-                    // 测试只建 v5；真正的升级交给被测的 ALL_MIGRATIONS。
                 }
             }
 
@@ -310,7 +273,7 @@ class MigrationTest {
                     .callback(callback)
                     .build(),
             )
-        helper.writableDatabase.use { /* 触发 onCreate，落地 v5 schema + 样例数据 */ }
+        helper.writableDatabase.use { }
         helper.close()
     }
 
