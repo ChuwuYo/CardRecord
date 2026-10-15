@@ -169,7 +169,7 @@ fun CardListScreen(
             if (state.visibleCards.isEmpty()) {
                 EmptyState(
                     hasCardsOutsideCurrentFilter = state.allCards.isNotEmpty(),
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier.fillMaxSize().padding(bottom = padding.calculateBottomPadding()),
                 )
             } else {
                 when (state.layoutMode) {
