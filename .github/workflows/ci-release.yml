@@ -37,10 +37,14 @@ jobs:
 
       - name: Verify (ktlint, unit tests, lint)
         run: |
-          ./gradlew ktlintCheck :app:testDebugUnitTest :app:lintDebug :app:lintRelease --stacktrace || {
-            echo "::group::ktlint violation reports"
-            find app/build/reports/ktlint -name '*.txt' -exec sh -c 'echo "== $1 =="; cat "$1"' _ {} \;
-            echo "::endgroup::"
+          log="$RUNNER_TEMP/verify.log"
+          ./gradlew ktlintCheck :app:testDebugUnitTest :app:lintDebug :app:lintRelease --stacktrace 2>&1 | tee "$log" || {
+            {
+              grep -E -A3 '^e: |^\* What went wrong:|^[A-Za-z0-9_.]+ > .+ FAILED$' "$log" | grep -v -e '^--$' | head -n 60 || true
+              find app/build/reports/ktlint -name '*.txt' -exec cat {} + 2>/dev/null | head -n 40 || true
+            } > "$RUNNER_TEMP/verify-errors.txt"
+            summary=$(sed -e 's/%/%25/g' "$RUNNER_TEMP/verify-errors.txt" | sed -e ':a' -e 'N' -e '$!ba' -e 's/\r/%0D/g' -e 's/\n/%0A/g')
+            echo "::error title=Verify failed::${summary}"
             exit 1
           }
 
