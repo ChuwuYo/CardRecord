@@ -10,9 +10,6 @@ import java.io.FileNotFoundException
 import java.io.InputStream
 import java.io.OutputStream
 
-/**
- * 目录备份的存储边界。业务层只认识固定布局，不依赖 SAF 文档 URI 的层级或真实文件路径。
- */
 internal interface BackupDirectoryAccess {
     fun createBackup(
         parentUri: Uri,
@@ -26,7 +23,6 @@ internal interface BackupDirectoryAccess {
     ): BackupDirectory
 }
 
-/** 一个已经定位好的备份目录；所有文件名均由实现内部固定生成或精确匹配。 */
 internal interface BackupDirectory {
     val displayName: String
     val lastModifiedMillis: Long?
@@ -35,7 +31,6 @@ internal interface BackupDirectory {
 
     fun openManifestOutput(cancellationSignal: CancellationSignal): OutputStream?
 
-    /** 清单解析后，仅索引它实际引用的图片；额外目录项不得进入长期内存。 */
     fun indexImageInputs(
         assetFileNames: Set<String>,
         cancellationSignal: CancellationSignal,
@@ -51,7 +46,6 @@ internal interface BackupDirectory {
         cancellationSignal: CancellationSignal,
     ): OutputStream?
 
-    /** 只用于回收本次失败导出刚创建的不完整目录。 */
     fun delete(): Boolean
 }
 
@@ -128,7 +122,6 @@ internal class AndroidBackupDirectoryAccess(
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (_: Exception) {
-            // 原始创建失败更有诊断价值；残留目录没有最终 JSON，不会被识别为完整备份。
         }
     }
 
@@ -268,7 +261,6 @@ private data class DocumentEntry(
     val isDirectory: Boolean get() = mimeType == DocumentsContract.Document.MIME_TYPE_DIR
 }
 
-/** 只保留协议关心的条目；扫描预算允许全部合法引用，再额外容忍有限无关文件。 */
 private fun queryRelevantChildren(
     resolver: ContentResolver,
     treeUri: Uri,
@@ -375,7 +367,6 @@ private fun deleteDocumentIgnoringFailure(
     try {
         DocumentsContract.deleteDocument(resolver, uri)
     } catch (_: Exception) {
-        // 创建方会删除整个不完整备份目录；这里不能用次要清理错误覆盖根因。
     }
 }
 
