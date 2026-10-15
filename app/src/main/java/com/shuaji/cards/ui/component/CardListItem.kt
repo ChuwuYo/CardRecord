@@ -109,12 +109,13 @@ private fun CardListItemContent(
     modifier: Modifier = Modifier,
 ) {
     val isPortrait = card.card.cardOrientationEnum == CardOrientation.PORTRAIT
-    val deleteLabel = stringResource(R.string.card_long_press_hint)
+    val deleteLabel = stringResource(R.string.common_delete)
 
     Surface(
         modifier =
             modifier
                 .fillMaxWidth()
+                .clip(MaterialTheme.shapes.medium)
                 .combinedClickable(
                     onClick = onClick,
                     onLongClickLabel = deleteLabel,

@@ -7,7 +7,6 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -303,19 +302,18 @@ fun CardEditScreen(
                 // 预览比例与卡片朝向一致，ContentScale.Fit 保留完整图片。
                 val cardAspect = state.cardOrientation.aspectRatio
                 Surface(
+                    onClick = {
+                        imagePicker.launch(
+                            androidx.activity.result.PickVisualMediaRequest(
+                                ActivityResultContracts.PickVisualMedia.ImageOnly,
+                            ),
+                        )
+                    },
+                    enabled = !state.isSaving && !state.isClosing && !state.isImportingImage,
                     modifier =
                         Modifier
                             .fillMaxWidth()
-                            .aspectRatio(cardAspect)
-                            .clickable(
-                                enabled = !state.isSaving && !state.isClosing && !state.isImportingImage,
-                            ) {
-                                imagePicker.launch(
-                                    androidx.activity.result.PickVisualMediaRequest(
-                                        ActivityResultContracts.PickVisualMedia.ImageOnly,
-                                    ),
-                                )
-                            },
+                            .aspectRatio(cardAspect),
                     shape = MaterialTheme.shapes.medium,
                     color = MaterialTheme.colorScheme.surfaceVariant,
                 ) {
@@ -416,10 +414,8 @@ fun CardEditScreen(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Surface(
-                modifier =
-                    Modifier
-                        .fillMaxWidth()
-                        .clickable { showColorPicker = true },
+                onClick = { showColorPicker = true },
+                modifier = Modifier.fillMaxWidth(),
                 shape = MaterialTheme.shapes.medium,
                 color = MaterialTheme.colorScheme.surfaceVariant,
             ) {
@@ -554,7 +550,7 @@ fun CardEditScreen(
                 value = state.note,
                 onValueChange = { v -> viewModel.update { it.copy(note = v) } },
                 label = { Text(noteLabel) },
-                modifier = Modifier.fillMaxWidth().height(120.dp),
+                modifier = Modifier.fillMaxWidth().heightIn(min = 120.dp),
                 maxLines = 4,
             )
 
@@ -1001,12 +997,11 @@ private fun CardNetworkPicker(
                     }
                 }
                 Spacer(Modifier.height(6.dp))
-                // 名字区域：固定容纳 2 行（≈ 40.dp），单行名字上下居中、American Express 上下两行铺满
                 Box(
                     modifier =
                         Modifier
                             .fillMaxWidth()
-                            .height(40.dp),
+                            .heightIn(min = 40.dp),
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(
@@ -1019,7 +1014,6 @@ private fun CardNetworkPicker(
                                 MaterialTheme.colorScheme.onSurfaceVariant
                             },
                         textAlign = TextAlign.Center,
-                        maxLines = 2,
                     )
                 }
             }
@@ -1041,7 +1035,8 @@ private fun DateRow(
     isError: Boolean = false,
 ) {
     Surface(
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.medium,
         color = MaterialTheme.colorScheme.surfaceVariant,
     ) {
