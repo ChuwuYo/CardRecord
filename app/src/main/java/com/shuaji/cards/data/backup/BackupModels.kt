@@ -10,16 +10,6 @@ import com.shuaji.cards.data.local.withNormalizedCreditDetails
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
-/**
- * 当前备份清单协议。
- *
- * 顶层必须显式包含 `version`、`cards`、`folders`、`transactions`。表内字段由独立 DTO
- * 固定，不直接序列化 Room Entity，避免数据库模型的默认值或重构悄悄改变文件协议。
- * 正式导出目录始终包含 `cardrecord_backup.json`；仅当卡片实际引用图片资源时创建
- * `card_images/`，JSON 通过资源 ID 对应图片文件。
- * 当前版本只接受 schema 3 目录，避免未发布协议的兼容分支成为长期维护负担。
- * `settings` 仅持久化应用偏好（如年费提醒开关），不包含系统通知权限状态。
- */
 @Serializable
 data class BackupBundle(
     @SerialName("version")
@@ -30,7 +20,6 @@ data class BackupBundle(
     val folders: List<BackupFolder>,
     @SerialName("transactions")
     val transactions: List<BackupTransaction>,
-    /** 缺省兼容 1.6.0 及更早未写 settings 的 schema 3 文件。 */
     @SerialName("settings")
     val settings: BackupSettings = BackupSettings(),
 ) {
@@ -39,18 +28,12 @@ data class BackupBundle(
     }
 }
 
-/**
- * 备份内的应用设置。
- *
- * 只存「用户是否开启年费进度提醒」；通知权限属于系统状态，禁止写入备份。
- */
 @Serializable
 data class BackupSettings(
     @SerialName("annualFeeRemindersEnabled")
     val annualFeeRemindersEnabled: Boolean = false,
 )
 
-/** 卡片备份记录；所有字段均属于当前协议，nullable 不等于可从 JSON 中省略。 */
 @Serializable
 data class BackupCard(
     @SerialName("id")
@@ -154,7 +137,6 @@ internal fun BackupCard.toEntity(): CardEntity {
         requiredCount = requiredCount,
         colorArgb = colorArgb,
         note = note,
-        // 设备专属 URI 不属于备份协议；私有资产已经随目录恢复。
         imageUri = null,
         imageAssetId = imageAssetId,
         imageSourceType = ImageSourceType.fromKey(imageSourceType),
@@ -197,38 +179,22 @@ internal fun BackupTransaction.toEntity(): TransactionEntity =
         occurredAtMillis = occurredAtMillis,
     )
 
-/** 备份确认页使用的可信摘要；只由完整解码并校验过的 [BackupBundle] 生成。 */
 data class BackupPreview(
     val cardCount: Int,
     val folderCount: Int,
     val transactionCount: Int,
     val lastModifiedMillis: Long?,
-    /** 预览时所读 JSON 清单的 SHA-256，用于确认后阻止导入已被替换的内容。 */
     val manifestSha256: String,
 )
 
-/**
- * 导入模式。导入前用户选一个：
- * - [REPLACE] 先清空数据库全部表，再写入备份
- * - [MERGE]   保留现有数据，把备份追加进去；card / folder / transaction 都会自增分配新 id
- */
 enum class ImportMode { REPLACE, MERGE }
 
-/** [BackupRepository.cancelActive] 的阶段化结果，避免把“无操作”和“已经开始提交”混成同一个布尔值。 */
 enum class BackupCancelResult {
     CANCELLED,
     COMMIT_IN_PROGRESS,
     NO_ACTIVE_OPERATION,
 }
 
-/**
- * 导入结果。返回给 UI 用：
- * - [cardsAdded] / [foldersAdded] / [transactionsAdded] — 实际插入条数
- * - [transactionsSkipped] — MERGE 模式下因 cardId 找不到映射被跳过的孤立 transaction 数
- * - [cardsSkippedInvalidFolder] — REPLACE 模式下被置为未分组的 card 数（folder 引用失效）
- * - [duplicateFolderNames] / [duplicateCardNames] — MERGE 模式下与现库重名的 folder / card 数
- * - 出错时抛 [BackupException]，UI 层 try-catch 转 Snackbar
- */
 data class ImportResult(
     val cardsAdded: Int,
     val foldersAdded: Int,
@@ -237,7 +203,6 @@ data class ImportResult(
     val cardsSkippedInvalidFolder: Int = 0,
     val duplicateFolderNames: Int = 0,
     val duplicateCardNames: Int = 0,
-    /** 备份中的年费提醒开关是否已应用到本机且需引导权限；MERGE 始终为 false。 */
     val annualFeeRemindersEnabled: Boolean = false,
 )
 
