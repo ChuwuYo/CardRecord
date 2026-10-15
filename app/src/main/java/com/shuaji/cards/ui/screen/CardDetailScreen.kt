@@ -74,7 +74,6 @@ import com.shuaji.cards.ui.component.LocalUiDateFormatter
 import com.shuaji.cards.ui.component.ObserveAsEvents
 import com.shuaji.cards.ui.component.plus
 
-/** 卡片元数据、当前周期进度与完整流水的详情页。 */
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 fun CardDetailScreen(
@@ -304,7 +303,6 @@ private fun ExtendedFabRecord(
     )
 }
 
-/** 流水与详情共用外层 LazyColumn，避免把全部历史一次性组合进单个 item。 */
 private fun LazyListScope.swipeListItems(
     detail: CardDetailUi,
     onRequestDelete: (TransactionEntity) -> Unit,
@@ -485,12 +483,6 @@ private fun ProgressBlock(
     }
 }
 
-/**
- * 详情字段消费区。
- *
- * 卡名、颜色和朝向由 [CardVisual] 展示，所需笔数由 [ProgressBlock] 展示，文件夹
- * 由列表分组消费；这里只渲染非空的补充信息，避免空银行名或卡号占据整行。
- */
 @Composable
 private fun CardInfoSection(detail: CardDetailUi) {
     val dates = LocalUiDateFormatter.current
