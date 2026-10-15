@@ -1,6 +1,7 @@
 package com.shuaji.cards.ui.screen
 
 import android.util.Log
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.shuaji.cards.core.OneShotEventQueue
@@ -151,6 +152,7 @@ data class CardEditUiState(
 class CardEditViewModel(
     private val repository: CardRepository,
     cardId: Long? = null,
+    private val savedStateHandle: SavedStateHandle = SavedStateHandle(),
     private val clock: Clock = Clock.systemUTC(),
     private val zoneIdProvider: () -> ZoneId = { ZoneId.systemDefault() },
 ) : ViewModel() {
@@ -163,6 +165,7 @@ class CardEditViewModel(
     private var imageSelectionJob: Job? = null
     private var imageSelectionGeneration = 0L
     private var formGeneration = 0L
+    private var persistedImagePreview: String? = null
 
     @Volatile
     private var isCleared = false
@@ -174,7 +177,20 @@ class CardEditViewModel(
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     init {
-        if (cardId != null) load(cardId)
+        val draft = savedStateHandle.get<String>(DRAFT_KEY)?.let(CardEditDraft::decodeOrNull)
+        if (draft != null) {
+            persistedImagePreview = draft.persistedImagePreview
+            _uiState.value = draft.toUiState()
+        } else if (cardId != null) {
+            load(cardId)
+        }
+        viewModelScope.launch {
+            _uiState.collect { state ->
+                if (state.loadState == CardEditLoadState.NEW || state.loadState == CardEditLoadState.READY) {
+                    savedStateHandle[DRAFT_KEY] = CardEditDraft.fromUiState(state, persistedImagePreview).encode()
+                }
+            }
+        }
     }
 
     /** 加载已有卡片数据；只做一次单卡查询，不启动列表所需的全表派生流。 */
@@ -189,6 +205,7 @@ class CardEditViewModel(
                         return@launch
                     }
                     val c = entity.card
+                    persistedImagePreview = entity.resolvedUserImageUri
                     _uiState.value =
                         CardEditUiState(
                             name = c.name,
@@ -556,6 +573,8 @@ class CardEditViewModel(
         super.onCleared()
     }
 }
+
+private const val DRAFT_KEY = "card_edit_draft"
 
 internal fun normalizeAnnualDueDate(date: LocalDate): LocalDate = DateToken.normalizeAnnualDate(date)
 
