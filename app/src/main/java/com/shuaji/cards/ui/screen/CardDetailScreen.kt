@@ -44,6 +44,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -85,9 +86,10 @@ fun CardDetailScreen(
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val card = (state as? CardDetailUiState.Loaded)?.detail
 
-    var showResetDialog by remember { mutableStateOf(false) }
-    var showDeleteDialog by remember { mutableStateOf(false) }
-    var swipeToDelete by remember { mutableStateOf<TransactionEntity?>(null) }
+    var showResetDialog by rememberSaveable { mutableStateOf(false) }
+    var showDeleteDialog by rememberSaveable { mutableStateOf(false) }
+    var swipeToDeleteId by rememberSaveable { mutableStateOf<Long?>(null) }
+    val swipeToDelete = swipeToDeleteId?.let { id -> card?.swipes?.firstOrNull { it.id == id } }
 
     val titleLoading = stringResource(R.string.detail_title_loading)
     val backCd = stringResource(R.string.common_back)
@@ -218,14 +220,14 @@ fun CardDetailScreen(
                     }
                     swipeListItems(
                         detail = current,
-                        onRequestDelete = { swipeToDelete = it },
+                        onRequestDelete = { swipeToDeleteId = it.id },
                     )
                 }
             }
         }
     }
 
-    if (showResetDialog) {
+    if (showResetDialog && card != null) {
         AlertDialog(
             onDismissRequest = { showResetDialog = false },
             title = { Text(stringResource(R.string.detail_reset_dialog_title)) },
@@ -242,7 +244,7 @@ fun CardDetailScreen(
         )
     }
 
-    if (showDeleteDialog) {
+    if (showDeleteDialog && card != null) {
         AlertDialog(
             onDismissRequest = { showDeleteDialog = false },
             title = { Text(stringResource(R.string.detail_delete_dialog_title)) },
@@ -259,20 +261,19 @@ fun CardDetailScreen(
         )
     }
 
-    // 单笔删除流水：每行垃圾桶按钮 → 二次确认 → ViewModel.deleteSwipe
     swipeToDelete?.let { target ->
         AlertDialog(
-            onDismissRequest = { swipeToDelete = null },
+            onDismissRequest = { swipeToDeleteId = null },
             title = { Text(stringResource(R.string.detail_delete_swipe_dialog_title)) },
             text = { Text(stringResource(R.string.detail_delete_swipe_dialog_message, formatDateTime(target.occurredAtMillis))) },
             confirmButton = {
                 TextButton(onClick = {
                     viewModel.deleteSwipe(target.id)
-                    swipeToDelete = null
+                    swipeToDeleteId = null
                 }) { Text(stringResource(R.string.common_delete)) }
             },
             dismissButton = {
-                TextButton(onClick = { swipeToDelete = null }) { Text(stringResource(R.string.common_cancel)) }
+                TextButton(onClick = { swipeToDeleteId = null }) { Text(stringResource(R.string.common_cancel)) }
             },
         )
     }

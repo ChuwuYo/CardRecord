@@ -48,6 +48,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.Saver
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -76,8 +78,10 @@ fun CardFolderScreen(onBack: () -> Unit) {
     val resources = LocalResources.current
     val snackbarHostState = remember { SnackbarHostState() }
 
-    var dialogTarget by remember { mutableStateOf<DialogTarget?>(null) }
-    var folderToDelete by remember { mutableStateOf<CardFolderEntity?>(null) }
+    var dialogTarget by rememberSaveable(stateSaver = DialogTargetSaver) { mutableStateOf<DialogTarget?>(null) }
+    var folderToDeleteId by rememberSaveable { mutableStateOf<Long?>(null) }
+    val folders = (uiState as? CardFolderUiState.Ready)?.folders.orEmpty()
+    val folderToDelete = folderToDeleteId?.let { id -> folders.firstOrNull { it.folder.id == id }?.folder }
 
     val titleText = stringResource(R.string.folder_title)
     val backCd = stringResource(R.string.common_back)
@@ -151,8 +155,8 @@ fun CardFolderScreen(onBack: () -> Unit) {
                                 cardCount = item.cardCount,
                                 editCd = editCd,
                                 deleteCd = deleteCd,
-                                onClick = { dialogTarget = DialogTarget.Edit(item.folder) },
-                                onDelete = { folderToDelete = item.folder },
+                                onClick = { dialogTarget = DialogTarget.Edit(item.folder.id) },
+                                onDelete = { folderToDeleteId = item.folder.id },
                             )
                         }
                     }
@@ -172,31 +176,33 @@ fun CardFolderScreen(onBack: () -> Unit) {
             )
         }
         is DialogTarget.Edit -> {
-            FolderEditDialog(
-                initial = target.folder,
-                onDismiss = { dialogTarget = null },
-                onConfirm = { name, color ->
-                    viewModel.update(target.folder, name, color)
-                    dialogTarget = null
-                },
-            )
+            folders.firstOrNull { it.folder.id == target.folderId }?.folder?.let { folder ->
+                FolderEditDialog(
+                    initial = folder,
+                    onDismiss = { dialogTarget = null },
+                    onConfirm = { name, color ->
+                        viewModel.update(folder, name, color)
+                        dialogTarget = null
+                    },
+                )
+            }
         }
         null -> Unit
     }
 
     folderToDelete?.let { folder ->
         AlertDialog(
-            onDismissRequest = { folderToDelete = null },
+            onDismissRequest = { folderToDeleteId = null },
             title = { Text(stringResource(R.string.folder_delete_title, folder.name)) },
             text = { Text(stringResource(R.string.folder_delete_message)) },
             confirmButton = {
                 TextButton(onClick = {
                     viewModel.delete(folder)
-                    folderToDelete = null
+                    folderToDeleteId = null
                 }) { Text(deleteCd) }
             },
             dismissButton = {
-                TextButton(onClick = { folderToDelete = null }) { Text(cancelText) }
+                TextButton(onClick = { folderToDeleteId = null }) { Text(cancelText) }
             },
         )
     }
@@ -206,9 +212,23 @@ private sealed interface DialogTarget {
     data object Create : DialogTarget
 
     data class Edit(
-        val folder: CardFolderEntity,
+        val folderId: Long,
     ) : DialogTarget
 }
+
+private val DialogTargetSaver =
+    Saver<DialogTarget?, Any>(
+        save = { target ->
+            when (target) {
+                DialogTarget.Create -> DIALOG_TARGET_CREATE
+                is DialogTarget.Edit -> target.folderId
+                null -> null
+            }
+        },
+        restore = { saved -> (saved as? Long)?.let(DialogTarget::Edit) ?: DialogTarget.Create },
+    )
+
+private const val DIALOG_TARGET_CREATE = "create"
 
 @Composable
 private fun FolderRow(
@@ -318,8 +338,8 @@ private fun FolderEditDialog(
     onDismiss: () -> Unit,
     onConfirm: (name: String, color: Int) -> Unit,
 ) {
-    var name by remember(initial) { mutableStateOf(initial?.name ?: "") }
-    var color by remember(initial) { mutableIntStateOf(initial?.colorArgb ?: DEFAULT_BRAND_PRIMARY_ARGB.toInt()) }
+    var name by rememberSaveable(initial?.id) { mutableStateOf(initial?.name ?: "") }
+    var color by rememberSaveable(initial?.id) { mutableIntStateOf(initial?.colorArgb ?: DEFAULT_BRAND_PRIMARY_ARGB.toInt()) }
 
     val titleText =
         stringResource(

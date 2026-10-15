@@ -73,6 +73,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -112,7 +113,7 @@ fun CardEditScreen(
     val folders by viewModel.folders.collectAsStateWithLifecycle()
     val resources = LocalResources.current
     val snackbarHostState = remember { SnackbarHostState() }
-    var showImageImportError by remember { mutableStateOf(false) }
+    var showImageImportError by rememberSaveable { mutableStateOf(false) }
     val networkPickerPresentation =
         resolveCardNetworkPickerPresentation(state.imageSourceType, state.imageProviderKey)
 
@@ -136,8 +137,8 @@ fun CardEditScreen(
     }
     BackHandler(onBack = closeWithoutSaving)
 
-    var dateDialogTarget by remember { mutableStateOf<DateField?>(null) }
-    var showColorPicker by remember { mutableStateOf(false) }
+    var dateDialogTarget by rememberSaveable { mutableStateOf<DateField?>(null) }
+    var showColorPicker by rememberSaveable { mutableStateOf(false) }
     val colorSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     // Photo Picker 只提供一次性输入 URI；选中后立即复制进应用私有目录。
