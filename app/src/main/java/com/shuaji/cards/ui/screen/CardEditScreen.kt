@@ -99,6 +99,7 @@ import com.shuaji.cards.data.local.CardType
 import com.shuaji.cards.data.local.ImageSourceType
 import com.shuaji.cards.ui.ViewModelFactories
 import com.shuaji.cards.ui.component.ModernColorPicker
+import com.shuaji.cards.ui.component.ObserveAsEvents
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 
@@ -129,16 +130,14 @@ fun CardEditScreen(
             else -> Unit
         }
     }
-    LaunchedEffect(viewModel) {
-        viewModel.events.collect { event ->
-            when (event) {
-                CardEditEvent.ImageImportFailed -> showImageImportError = true
-                CardEditEvent.CloseReady -> onBack()
-                CardEditEvent.SaveFailed ->
-                    snackbarScope.launch {
-                        snackbarHostState.showSnackbar(context.getString(R.string.edit_save_failed))
-                    }
-            }
+    ObserveAsEvents(viewModel.events) { event ->
+        when (event) {
+            CardEditEvent.ImageImportFailed -> showImageImportError = true
+            CardEditEvent.CloseReady -> onBack()
+            CardEditEvent.SaveFailed ->
+                snackbarScope.launch {
+                    snackbarHostState.showSnackbar(context.getString(R.string.edit_save_failed))
+                }
         }
     }
     BackHandler(onBack = closeWithoutSaving)
