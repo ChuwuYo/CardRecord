@@ -139,7 +139,11 @@ class SettingsViewModel(
             } catch (e: IOException) {
                 emitSettingsEvent(
                     SettingsDoneEvent(
-                        message = AppLocales.localize(getApplication<Application>()).getString(R.string.settings_result_appearance_save_failed),
+                        message =
+                            AppLocales
+                                .localize(
+                                    getApplication<Application>(),
+                                ).getString(R.string.settings_result_appearance_save_failed),
                         isError = true,
                     ),
                 )
