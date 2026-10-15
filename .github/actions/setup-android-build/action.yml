@@ -14,20 +14,6 @@ runs:
       with:
         packages: ''
 
-    - name: Locate Android SDK
-      id: sdk
-      shell: bash
-      run: echo "home=$ANDROID_HOME" >> "$GITHUB_OUTPUT"
-
-    - name: Cache Android SDK packages
-      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-      with:
-        path: |
-          ${{ steps.sdk.outputs.home }}/platforms
-          ${{ steps.sdk.outputs.home }}/build-tools
-          ${{ steps.sdk.outputs.home }}/platform-tools
-        key: android-sdk-api36-buildtools36.0.0-${{ runner.os }}
-
     - name: Install SDK packages
       shell: bash
       run: sdkmanager "platforms;android-36" "build-tools;36.0.0" "platform-tools" > /dev/null
