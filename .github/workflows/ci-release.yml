@@ -85,6 +85,16 @@ jobs:
       - name: Set up Android build
         uses: ./.github/actions/setup-android-build
 
+      - name: Recheck main tip
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tip="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')"
+          if [ "$tip" != "$GITHUB_SHA" ]; then
+            echo "::error::main 已前进到 $tip，$GITHUB_SHA 不再接触签名密钥。"
+            exit 1
+          fi
+
       - name: Restore release keystore
         env:
           RELEASE_KEYSTORE_BASE64: ${{ secrets.CARDRECORD_RELEASE_KEYSTORE_BASE64 }}
