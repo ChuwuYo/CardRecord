@@ -23,9 +23,6 @@ enum class CardType(
     }
 }
 
-val CardEntity.cardTypeEnum: CardType
-    get() = CardType.fromKey(cardType)
-
 /** 账单日和还款日都是每月的日号，不携带月份或时区语义。 */
 fun Int.isValidCardMonthDay(): Boolean = this in 1..31
 
@@ -33,21 +30,18 @@ fun Int.isValidCardMonthDay(): Boolean = this in 1..31
  * 保存边界使用的统一归一化：只有信用卡保留账单日和还款日；信用卡的非空日号必须合法。
  * 外部导入应先完成结构校验并映射成自己的错误类型，不能把这里的参数异常泄漏给 UI。
  */
-fun CardEntity.withNormalizedCreditDetails(): CardEntity {
-    val normalizedType = cardTypeEnum
-    return if (normalizedType == CardType.CREDIT) {
+fun CardEntity.withNormalizedCreditDetails(): CardEntity =
+    if (cardType == CardType.CREDIT) {
         require(statementDay == null || statementDay.isValidCardMonthDay()) {
             "statementDay must be null or in 1..31"
         }
         require(repaymentDay == null || repaymentDay.isValidCardMonthDay()) {
             "repaymentDay must be null or in 1..31"
         }
-        copy(cardType = normalizedType.key)
+        this
     } else {
         copy(
-            cardType = normalizedType.key,
             statementDay = null,
             repaymentDay = null,
         )
     }
-}
