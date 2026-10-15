@@ -90,8 +90,8 @@ import com.shuaji.cards.data.backup.ImportMode
 import com.shuaji.cards.data.reminder.AnnualFeeReminderNotifier
 import com.shuaji.cards.ui.AppLanguage
 import com.shuaji.cards.ui.ViewModelFactories
+import com.shuaji.cards.ui.component.LocalUiDateFormatter
 import com.shuaji.cards.ui.component.ModernColorPicker
-import com.shuaji.cards.ui.component.rememberUiDateFormatter
 import com.shuaji.cards.ui.theme.DefaultBrandPrimary
 import com.shuaji.cards.ui.theme.parseSeedColor
 
@@ -787,7 +787,7 @@ private fun confirmMessage(
     @androidx.annotation.StringRes templateRes: Int,
     info: BackupPreview,
 ): String {
-    val dates = rememberUiDateFormatter()
+    val dates = LocalUiDateFormatter.current
     val template =
         stringResource(
             templateRes,
