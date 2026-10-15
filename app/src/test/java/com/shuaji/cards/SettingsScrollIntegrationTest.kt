@@ -52,7 +52,7 @@ class SettingsScrollIntegrationTest {
     private fun openSettingsScrolledToBottom(): Float {
         waitFor(hasContentDescription("设置"), "card list")
         composeRule.onAllNodesWithContentDescription("设置")[0].performClick()
-        waitFor(hasText("颜色来源"), "settings")
+        waitFor(hasText("数据"), "settings")
         composeRule.onNode(hasScrollAction()).performScrollToNode(hasText("语言"))
         composeRule.waitForIdle()
         return scrollValue()
@@ -62,7 +62,7 @@ class SettingsScrollIntegrationTest {
         label: String,
         before: Float,
     ) {
-        waitFor(hasText("颜色来源"), "settings after $label")
+        waitFor(hasScrollAction(), "settings after $label")
         Thread.sleep(300)
         composeRule.waitForIdle()
         val after = scrollValue()
