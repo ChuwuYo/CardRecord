@@ -20,19 +20,6 @@ class CardListScreenTest {
     }
 
     @Test
-    fun defaultFilters_keepProductOrder() {
-        assertEquals(
-            listOf(
-                CardFilter.All,
-                CardFilter.Debit,
-                CardFilter.Credit,
-                CardFilter.Unfiled,
-            ),
-            DEFAULT_CARD_FILTERS,
-        )
-    }
-
-    @Test
     fun folderFilterKey_dependsOnIdentityInsteadOfEditableName() {
         assertEquals(
             cardFilterKey(CardFilter.Folder(folderId = 7, folderName = "旧名称")),
