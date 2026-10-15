@@ -19,6 +19,7 @@ import com.shuaji.cards.ui.ViewModelFactories
 import com.shuaji.cards.ui.component.LocalUiDateFormatter
 import com.shuaji.cards.ui.component.rememberUiDateFormatter
 import com.shuaji.cards.ui.theme.AppThemeViewModel
+import com.shuaji.cards.ui.theme.ResolvedAppearance
 import com.shuaji.cards.ui.theme.ShuajiTheme
 import com.shuaji.cards.ui.theme.ThemeSwitchTransition
 import com.shuaji.cards.ui.theme.resolveAppCompatNightMode
@@ -37,8 +38,11 @@ class MainActivity : AppCompatActivity() {
         enableEdgeToEdge()
         setContent {
             val settings by themeViewModel.themeSettings.collectAsStateWithLifecycle()
+            val systemDark = isSystemInDarkTheme()
             settings?.let { latestSettings ->
-                ThemeSwitchTransition(latestSettings) { loadedSettings ->
+                val latestAppearance =
+                    ResolvedAppearance(latestSettings, resolveDarkTheme(latestSettings.themeMode, systemDark))
+                ThemeSwitchTransition(latestAppearance) { (loadedSettings, darkTheme) ->
                     val appCompatNightMode = resolveAppCompatNightMode(loadedSettings.themeMode)
                     LaunchedEffect(loadedSettings.themeMode) {
                         settingsRepo.syncStartupThemeMode(loadedSettings.themeMode)
@@ -46,7 +50,6 @@ class MainActivity : AppCompatActivity() {
                             AppCompatDelegate.setDefaultNightMode(appCompatNightMode)
                         }
                     }
-                    val darkTheme = resolveDarkTheme(loadedSettings.themeMode, isSystemInDarkTheme())
                     SideEffect {
                         val style =
                             if (darkTheme) {
