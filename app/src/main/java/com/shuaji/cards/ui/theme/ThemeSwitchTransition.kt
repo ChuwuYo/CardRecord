@@ -11,6 +11,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
@@ -29,6 +30,7 @@ import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.toSize
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.math.hypot
 
@@ -56,8 +58,14 @@ fun <T> ThemeSwitchTransition(
     val lastPress = remember { PressPosition() }
     val holePath = remember { Path() }
 
+    val revealScope = rememberCoroutineScope()
+
     LaunchedEffect(target) {
         if (target == shown) return@LaunchedEffect
+        if (overlay != null) {
+            shown = target
+            return@LaunchedEffect
+        }
         val size = layer.size.toSize()
         val snapshot =
             if (size.isEmpty()) {
@@ -76,16 +84,18 @@ fun <T> ThemeSwitchTransition(
             return@LaunchedEffect
         }
         val center = lastPress.value.takeIf { it.isSpecified && size.toRect().contains(it) } ?: size.center
-        try {
-            radius.snapTo(0f)
-            overlay = RevealOverlay(snapshot, center)
-            shown = target
-            radius.animateTo(
-                targetValue = size.farthestCornerDistance(center),
-                animationSpec = tween(THEME_REVEAL_DURATION_MILLIS, easing = EaseInOutQuad),
-            )
-        } finally {
-            overlay = null
+        radius.snapTo(0f)
+        overlay = RevealOverlay(snapshot, center)
+        shown = target
+        revealScope.launch {
+            try {
+                radius.animateTo(
+                    targetValue = size.farthestCornerDistance(center),
+                    animationSpec = tween(THEME_REVEAL_DURATION_MILLIS, easing = EaseInOutQuad),
+                )
+            } finally {
+                overlay = null
+            }
         }
     }
 
