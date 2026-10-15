@@ -40,8 +40,9 @@ jobs:
           log="$RUNNER_TEMP/verify.log"
           ./gradlew ktlintCheck :app:testDebugUnitTest :app:lintDebug :app:lintRelease --stacktrace 2>&1 | tee "$log" || {
             {
-              grep -E -A15 '^e: |^\* What went wrong:|^[A-Za-z0-9_.]+ > .+ FAILED$' "$log" | grep -v -e '^--$' | head -n 60 || true
+              grep -E -A15 '^e: |^\* What went wrong:|^[A-Za-z0-9_.]+ > .+ FAILED$' "$log" | grep -v -e '^--$' | head -n 20 || true
               find app/build/reports/ktlint -name '*.txt' -exec cat {} + 2>/dev/null | head -n 40 || true
+              python3 -c "import glob,re;[print(m[:1500]) for f in glob.glob('app/build/test-results/testDebugUnitTest/*.xml') for m in re.findall(r'<failure message=\"(.*?)\"',open(f).read(),re.S)]" || true
             } > "$RUNNER_TEMP/verify-errors.txt"
             summary=$(sed -e 's/%/%25/g' "$RUNNER_TEMP/verify-errors.txt" | sed -e ':a' -e 'N' -e '$!ba' -e 's/\r/%0D/g' -e 's/\n/%0A/g')
             echo "::error title=Verify failed::${summary}"
