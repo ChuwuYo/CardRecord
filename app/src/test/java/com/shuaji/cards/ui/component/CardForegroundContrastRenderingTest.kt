@@ -46,7 +46,7 @@ class CardForegroundContrastRenderingTest {
                             cardNumberMasked = "•••• •••• •••• 4242",
                             requiredCount = 1,
                             colorArgb = Color.White.toArgb(),
-                            imageSourceType = ImageSourceType.NONE.key,
+                            imageSourceType = ImageSourceType.NONE,
                             createdAtMillis = 0L,
                         ),
                     userImageModel = null,

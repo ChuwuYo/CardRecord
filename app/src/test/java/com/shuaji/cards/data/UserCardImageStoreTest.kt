@@ -354,7 +354,7 @@ class UserCardImageStoreTest {
                     database.cardDao().upsert(
                         card().copy(
                             imageUri = "content://gallery/legacy",
-                            imageSourceType = ImageSourceType.USER.key,
+                            imageSourceType = ImageSourceType.USER,
                         ),
                     )
                 var source: ByteArray? = ONE_PIXEL_PNG

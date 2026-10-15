@@ -9,7 +9,6 @@ import com.shuaji.cards.data.CardWithCount
 import com.shuaji.cards.data.SwipeRecordResult
 import com.shuaji.cards.data.local.CardType
 import com.shuaji.cards.data.local.TransactionEntity
-import com.shuaji.cards.data.local.cardTypeEnum
 import com.shuaji.cards.data.local.isExpiredAt
 import com.shuaji.cards.data.local.isValidCardMonthDay
 import kotlinx.coroutines.CancellationException
@@ -46,7 +45,7 @@ data class CardDetailUi(
 ) {
     val requiredCount: Int get() = card.requiredCount
     val selectedCardType: CardType?
-        get() = card.cardTypeEnum.takeUnless { it == CardType.UNSPECIFIED }
+        get() = card.cardType.takeUnless { it == CardType.UNSPECIFIED }
     val statementDay: Int?
         get() = card.statementDay?.takeIf { selectedCardType == CardType.CREDIT && it.isValidCardMonthDay() }
     val repaymentDay: Int?

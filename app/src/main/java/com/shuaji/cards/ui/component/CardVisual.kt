@@ -45,8 +45,6 @@ import com.shuaji.cards.data.CardNetworkProvider
 import com.shuaji.cards.data.local.CardEntity
 import com.shuaji.cards.data.local.CardOrientation
 import com.shuaji.cards.data.local.ImageSourceType
-import com.shuaji.cards.data.local.cardOrientationEnum
-import com.shuaji.cards.data.local.imageSourceTypeEnum
 
 /**
  * 竖版宽度占父容器比例。
@@ -91,8 +89,8 @@ fun CardVisual(
     contentLayout: CardVisualContentLayout = CardVisualContentLayout.STANDARD,
 ) {
     val network = CardNetworkProvider.fromKey(card.imageProviderKey)
-    val sourceType = card.imageSourceTypeEnum
-    val orientation = card.cardOrientationEnum
+    val sourceType = card.imageSourceType
+    val orientation = card.cardOrientation
 
     Card(
         modifier = modifier.fillMaxWidth(),
@@ -150,7 +148,7 @@ private fun LandscapeCardBody(
     ) {
         // 严格按 ISO 7810 ID-1 比例，比例单一来源是 CardOrientation.aspectRatio
         val aspectHeight: Dp =
-            (maxWidth / card.cardOrientationEnum.aspectRatio).coerceAtLeast(CARD_MIN_HEIGHT_DP.dp)
+            (maxWidth / card.cardOrientation.aspectRatio).coerceAtLeast(CARD_MIN_HEIGHT_DP.dp)
         val compact = isCompactCardContent(contentLayout)
         val networkLayout =
             resolveCardNetworkVisualLayout(
@@ -263,7 +261,7 @@ private fun PortraitCardBody(
             (maxWidth * PORTRAIT_WIDTH_FRACTION)
                 .coerceIn(100.dp, 180.dp)
         // aspectRatio 始终表示宽 / 高；竖版必须用宽度除以比例，不能把 0.631 再当成高 / 宽相乘。
-        val height: Dp = resolveCardHeight(width, card.cardOrientationEnum).coerceAtMost(280.dp)
+        val height: Dp = resolveCardHeight(width, card.cardOrientation).coerceAtMost(280.dp)
         val compact = isCompactCardContent(contentLayout)
         val networkLayout =
             resolveCardNetworkVisualLayout(

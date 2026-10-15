@@ -2,9 +2,10 @@ package com.shuaji.cards.data.backup
 
 import com.shuaji.cards.data.local.CardEntity
 import com.shuaji.cards.data.local.CardFolderEntity
+import com.shuaji.cards.data.local.CardOrientation
 import com.shuaji.cards.data.local.CardType
+import com.shuaji.cards.data.local.ImageSourceType
 import com.shuaji.cards.data.local.TransactionEntity
-import com.shuaji.cards.data.local.cardTypeEnum
 import com.shuaji.cards.data.local.withNormalizedCreditDetails
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -127,12 +128,12 @@ internal fun CardEntity.toBackup(): BackupCard {
         colorArgb = colorArgb,
         note = note,
         imageAssetId = imageAssetId,
-        imageSourceType = imageSourceType,
+        imageSourceType = imageSourceType.key,
         imageProviderKey = imageProviderKey,
-        cardOrientation = cardOrientation,
+        cardOrientation = cardOrientation.key,
         folderId = folderId,
         createdAtMillis = createdAtMillis,
-        cardType = normalized.cardTypeEnum.key,
+        cardType = normalized.cardType.key,
         statementDay = normalized.statementDay,
         repaymentDay = normalized.repaymentDay,
     )
@@ -145,7 +146,7 @@ internal fun BackupCard.toEntity(): CardEntity {
         name = name,
         bank = bank,
         cardNumberMasked = cardNumberMasked,
-        cardType = resolvedType.key,
+        cardType = resolvedType,
         statementDay = statementDay.takeIf { resolvedType == CardType.CREDIT },
         repaymentDay = repaymentDay.takeIf { resolvedType == CardType.CREDIT },
         validUntilMillis = validUntilMillis,
@@ -156,9 +157,9 @@ internal fun BackupCard.toEntity(): CardEntity {
         // 设备专属 URI 不属于备份协议；私有资产已经随目录恢复。
         imageUri = null,
         imageAssetId = imageAssetId,
-        imageSourceType = imageSourceType,
+        imageSourceType = ImageSourceType.fromKey(imageSourceType),
         imageProviderKey = imageProviderKey,
-        cardOrientation = cardOrientation,
+        cardOrientation = CardOrientation.fromKey(cardOrientation),
         folderId = folderId,
         createdAtMillis = createdAtMillis,
     )

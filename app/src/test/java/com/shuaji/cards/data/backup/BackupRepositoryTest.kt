@@ -19,6 +19,7 @@ import com.shuaji.cards.data.backup.TestData.transaction
 import com.shuaji.cards.data.local.AppDatabase
 import com.shuaji.cards.data.local.CardEntity
 import com.shuaji.cards.data.local.CardFolderEntity
+import com.shuaji.cards.data.local.CardOrientation
 import com.shuaji.cards.data.local.CardType
 import com.shuaji.cards.data.local.ImageSourceType
 import com.shuaji.cards.data.local.TransactionEntity
@@ -306,7 +307,7 @@ class BackupRepositoryTest {
                     id = 0L,
                     name = "招行",
                     colorArgb = 0xFF2E7D32.toInt(),
-                    imageSourceType = "PROVIDER",
+                    imageSourceType = ImageSourceType.PROVIDER,
                     imageProviderKey = "visa",
                     folderId = f1Id,
                 )
@@ -496,7 +497,7 @@ class BackupRepositoryTest {
     @Test
     fun directoryWithoutImageFolder_importsCardsWithoutImagesNormally() =
         runTest {
-            db.cardDao().upsert(card(name = "无图片卡", imageSourceType = ImageSourceType.NONE.key))
+            db.cardDao().upsert(card(name = "无图片卡", imageSourceType = ImageSourceType.NONE))
             val (backupDirectory, _) = exportBackup("no-images-parent")
             assertFalse(backupDirectory.resolve(BACKUP_IMAGES_DIRECTORY_NAME).exists())
             db.cardDao().deleteAll()
@@ -528,7 +529,7 @@ class BackupRepositoryTest {
                 card(
                     name = "旧外部图片",
                     imageUri = "content://gallery/unavailable",
-                    imageSourceType = ImageSourceType.PROVIDER.key,
+                    imageSourceType = ImageSourceType.PROVIDER,
                 ),
             )
             val parent = tempFolder.newFolder("unowned-image-parent")
@@ -623,7 +624,7 @@ class BackupRepositoryTest {
             db.cardDao().upsert(
                 card(name = "可恢复图片卡")
                     .copy(
-                        imageSourceType = ImageSourceType.USER.key,
+                        imageSourceType = ImageSourceType.USER,
                         imageUri = null,
                         imageAssetId = staged.assetId.value,
                     ),
@@ -1219,7 +1220,7 @@ class BackupRepositoryTest {
                     id = 0L,
                     name = "C",
                     colorArgb = 0xFF6A1B9A.toInt(),
-                    imageSourceType = "PROVIDER",
+                    imageSourceType = ImageSourceType.PROVIDER,
                     imageProviderKey = "mastercard",
                     folderId = folderId,
                 )
@@ -1275,7 +1276,7 @@ class BackupRepositoryTest {
                         name = "完整卡片",
                         bank = "完整银行",
                         cardNumberMasked = "**** 9876",
-                        cardType = CardType.CREDIT.key,
+                        cardType = CardType.CREDIT,
                         statementDay = 12,
                         repaymentDay = 27,
                         validUntilMillis = 222L,
@@ -1284,9 +1285,9 @@ class BackupRepositoryTest {
                         colorArgb = 0xFF445566.toInt(),
                         note = "完整备注",
                         imageUri = null,
-                        imageSourceType = "USER",
+                        imageSourceType = ImageSourceType.USER,
                         imageProviderKey = "provider",
-                        cardOrientation = "PORTRAIT",
+                        cardOrientation = CardOrientation.PORTRAIT,
                         folderId = folderId,
                         createdAtMillis = 333L,
                     ).copy(imageAssetId = stagedImage.assetId.value),
@@ -1297,14 +1298,14 @@ class BackupRepositoryTest {
                 card(
                     id = 0L,
                     name = "纯色银联",
-                    imageSourceType = ImageSourceType.NONE.key,
+                    imageSourceType = ImageSourceType.NONE,
                     imageProviderKey = CardNetworkProvider.UNIONPAY.key,
                 )
             val userNetworkCard =
                 card(
                     id = 0L,
                     name = "图片万事达",
-                    imageSourceType = ImageSourceType.USER.key,
+                    imageSourceType = ImageSourceType.USER,
                     imageProviderKey = CardNetworkProvider.MASTERCARD.key,
                 )
             db.cardDao().upsert(plainNetworkCard)
@@ -1329,7 +1330,7 @@ class BackupRepositoryTest {
                 2,
                 mergedCards.count {
                     it.name == "完整卡片" &&
-                        it.cardType == CardType.CREDIT.key &&
+                        it.cardType == CardType.CREDIT &&
                         it.statementDay == 12 &&
                         it.repaymentDay == 27
                 },
@@ -1338,7 +1339,7 @@ class BackupRepositoryTest {
                 2,
                 mergedCards.count {
                     it.name == plainNetworkCard.name &&
-                        it.imageSourceType == ImageSourceType.NONE.key &&
+                        it.imageSourceType == ImageSourceType.NONE &&
                         it.imageProviderKey == CardNetworkProvider.UNIONPAY.key
                 },
             )
@@ -1346,7 +1347,7 @@ class BackupRepositoryTest {
                 2,
                 mergedCards.count {
                     it.name == userNetworkCard.name &&
-                        it.imageSourceType == ImageSourceType.USER.key &&
+                        it.imageSourceType == ImageSourceType.USER &&
                         it.imageProviderKey == CardNetworkProvider.MASTERCARD.key
                 },
             )
@@ -1373,7 +1374,7 @@ class BackupRepositoryTest {
         runTest {
             val validDebit =
                 TestData.backupBundle(
-                    cards = listOf(card(id = 20L, name = "借记卡", cardType = CardType.DEBIT.key)),
+                    cards = listOf(card(id = 20L, name = "借记卡", cardType = CardType.DEBIT)),
                 )
             val inconsistentDebit =
                 validDebit.copy(
@@ -1385,7 +1386,7 @@ class BackupRepositoryTest {
             importInspected(file, ImportMode.REPLACE)
 
             val stored = db.cardDao().listAll().single()
-            assertEquals(CardType.DEBIT.key, stored.cardType)
+            assertEquals(CardType.DEBIT, stored.cardType)
             assertNull(stored.statementDay)
             assertNull(stored.repaymentDay)
         }
@@ -1401,7 +1402,7 @@ class BackupRepositoryTest {
                             card(
                                 id = 20L,
                                 name = "信用卡",
-                                cardType = CardType.CREDIT.key,
+                                cardType = CardType.CREDIT,
                                 statementDay = 8,
                                 repaymentDay = 21,
                             ),
@@ -1592,9 +1593,9 @@ class BackupRepositoryTest {
                                 id = 20L,
                                 name = "C1",
                                 colorArgb = 0xFF123456.toInt(),
-                                imageSourceType = "PROVIDER",
+                                imageSourceType = ImageSourceType.PROVIDER,
                                 imageProviderKey = "visa",
-                                cardOrientation = "PORTRAIT",
+                                cardOrientation = CardOrientation.PORTRAIT,
                                 folderId = 10L,
                             ),
                             card(id = 21L, name = "C2", folderId = 9999L), // 指向不存在（应保留原值）
@@ -1615,9 +1616,9 @@ class BackupRepositoryTest {
             val c1 = cards.first { it.name == "C1" }
             assertEquals(folderAId, c1.folderId)
             assertEquals(0xFF123456.toInt(), c1.colorArgb)
-            assertEquals("PROVIDER", c1.imageSourceType)
+            assertEquals(ImageSourceType.PROVIDER, c1.imageSourceType)
             assertEquals("visa", c1.imageProviderKey)
-            assertEquals("PORTRAIT", c1.cardOrientation)
+            assertEquals(CardOrientation.PORTRAIT, c1.cardOrientation)
 
             val c2 = cards.first { it.name == "C2" }
             // 指向 backup 内不存在、现库也没有的 folder（9999）→ 置 null（避免悬空外键约束），
@@ -1680,9 +1681,9 @@ class BackupRepositoryTest {
                     requiredCount = 6,
                     colorArgb = 0xFF405060.toInt(),
                     note = "历史备注",
-                    imageSourceType = "USER",
+                    imageSourceType = ImageSourceType.USER,
                     imageProviderKey = "history-provider",
-                    cardOrientation = "PORTRAIT",
+                    cardOrientation = CardOrientation.PORTRAIT,
                     folderId = 10L,
                     createdAtMillis = 333L,
                 )

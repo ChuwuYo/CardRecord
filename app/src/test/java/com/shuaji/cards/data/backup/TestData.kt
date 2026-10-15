@@ -2,7 +2,9 @@ package com.shuaji.cards.data.backup
 
 import com.shuaji.cards.data.local.CardEntity
 import com.shuaji.cards.data.local.CardFolderEntity
+import com.shuaji.cards.data.local.CardOrientation
 import com.shuaji.cards.data.local.CardType
+import com.shuaji.cards.data.local.ImageSourceType
 import com.shuaji.cards.data.local.TransactionEntity
 
 /** 测试数据工厂。固定时间用于保证测试结果可重复。 */
@@ -28,7 +30,7 @@ object TestData {
         name: String = "招行经典白",
         bank: String = "招商银行",
         cardNumberMasked: String = "**** **** **** 1234",
-        cardType: String = CardType.UNSPECIFIED.key,
+        cardType: CardType = CardType.UNSPECIFIED,
         statementDay: Int? = null,
         repaymentDay: Int? = null,
         validUntilMillis: Long? = null,
@@ -37,9 +39,9 @@ object TestData {
         colorArgb: Int = 0xFFD32F2F.toInt(),
         note: String = "",
         imageUri: String? = null,
-        imageSourceType: String = "NONE",
+        imageSourceType: ImageSourceType = ImageSourceType.NONE,
         imageProviderKey: String? = null,
-        cardOrientation: String = "LANDSCAPE",
+        cardOrientation: CardOrientation = CardOrientation.LANDSCAPE,
         folderId: Long? = null,
         createdAtMillis: Long = FIXED_TIME_MILLIS,
     ) = CardEntity(

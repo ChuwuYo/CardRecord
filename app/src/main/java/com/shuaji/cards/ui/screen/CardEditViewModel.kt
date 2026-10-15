@@ -14,9 +14,6 @@ import com.shuaji.cards.data.local.CardFolderEntity
 import com.shuaji.cards.data.local.CardOrientation
 import com.shuaji.cards.data.local.CardType
 import com.shuaji.cards.data.local.ImageSourceType
-import com.shuaji.cards.data.local.cardOrientationEnum
-import com.shuaji.cards.data.local.cardTypeEnum
-import com.shuaji.cards.data.local.imageSourceTypeEnum
 import com.shuaji.cards.data.local.isValidCardMonthDay
 import com.shuaji.cards.ui.theme.DEFAULT_BRAND_PRIMARY_ARGB
 import kotlinx.coroutines.CancellationException
@@ -214,7 +211,7 @@ class CardEditViewModel(
                             name = c.name,
                             bank = c.bank,
                             cardNumberMasked = c.cardNumberMasked,
-                            cardType = c.cardTypeEnum,
+                            cardType = c.cardType,
                             statementDay = c.statementDay?.toString().orEmpty(),
                             repaymentDay = c.repaymentDay?.toString().orEmpty(),
                             requiredCount = c.requiredCount.toString(),
@@ -222,10 +219,10 @@ class CardEditViewModel(
                             nextDueDateMillis = c.nextDueDateMillis,
                             colorArgb = c.colorArgb,
                             note = c.note,
-                            imageSourceType = c.imageSourceTypeEnum,
+                            imageSourceType = c.imageSourceType,
                             imageProviderKey = c.imageProviderKey,
                             userImage = UserImageDraft.Unchanged(entity.resolvedUserImageUri),
-                            cardOrientation = c.cardOrientationEnum,
+                            cardOrientation = c.cardOrientation,
                             folderId = c.folderId,
                             editingId = c.id,
                             loadState = CardEditLoadState.READY,
@@ -401,7 +398,7 @@ class CardEditViewModel(
                             name = state.name.trim(),
                             bank = state.bank.trim(),
                             cardNumberMasked = state.cardNumberMasked.trim(),
-                            cardType = state.cardType.key,
+                            cardType = state.cardType,
                             statementDay = persistedCardMonthDay(state.cardType, state.statementDay),
                             repaymentDay = persistedCardMonthDay(state.cardType, state.repaymentDay),
                             requiredCount = required,
@@ -411,9 +408,9 @@ class CardEditViewModel(
                             note = state.note,
                             imageUri = null,
                             imageAssetId = selectedImage?.assetId?.value,
-                            imageSourceType = state.imageSourceType.key,
+                            imageSourceType = state.imageSourceType,
                             imageProviderKey = state.imageProviderKey,
-                            cardOrientation = state.cardOrientation.key,
+                            cardOrientation = state.cardOrientation,
                             folderId = state.folderId,
                             createdAtMillis = latest?.createdAtMillis ?: clock.millis(),
                         )

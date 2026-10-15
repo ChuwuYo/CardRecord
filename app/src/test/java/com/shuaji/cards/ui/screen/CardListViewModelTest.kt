@@ -224,7 +224,7 @@ class CardListViewModelTest {
                     name = "卡$id",
                     bank = "某银行",
                     cardNumberMasked = "**** $id",
-                    cardType = cardType.key,
+                    cardType = cardType,
                     requiredCount = 0,
                     colorArgb = 0,
                     folderId = folderId,
