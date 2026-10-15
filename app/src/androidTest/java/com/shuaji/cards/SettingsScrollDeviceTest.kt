@@ -73,7 +73,7 @@ class SettingsScrollDeviceTest {
         composeRule.waitForIdle()
         val after = scrollValue()
         fail(
-            "DIAG RESULT ${if (after == before && before > 0f) "KEPT" else "LOST"} $label before=$before after=$after\nBEFORE $beforeDump\nAFTER ${dump()}\n",
+            "DIAG RESULT ${if (after == before && before > 0f) "KEPT" else "LOST"} $label night=${composeRule.activity.resources.configuration.uiMode and 0x30} before=$before after=$after\nBEFORE $beforeDump\nAFTER ${dump()}\n",
         )
     }
 
