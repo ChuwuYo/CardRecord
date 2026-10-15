@@ -40,6 +40,16 @@ class CardVisualTest {
     }
 
     @Test
+    fun networkBadgeReservation_growsWithCardWidth() {
+        val compact = resolveCardNetworkVisualLayout(160.dp)
+        val large = resolveCardNetworkVisualLayout(320.dp)
+
+        assertTrue(large.badgeWidth > compact.badgeWidth)
+        assertTrue(large.contentEndPadding > compact.contentEndPadding)
+        assertTrue(compact.contentEndPadding > compact.badgeWidth + compact.badgeInset)
+    }
+
+    @Test
     fun compactContent_usesBadgeInsetAndClearsBadgeVerticalBand() {
         val compactLayout = resolveCardNetworkVisualLayout(140.dp)
 
