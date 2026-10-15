@@ -85,8 +85,8 @@ import com.shuaji.cards.R
 import com.shuaji.cards.ui.ViewModelFactories
 import com.shuaji.cards.ui.component.CardListItem
 import com.shuaji.cards.ui.component.CompactCardListItem
+import com.shuaji.cards.ui.component.LocalUiDateFormatter
 import com.shuaji.cards.ui.component.ObserveAsEvents
-import com.shuaji.cards.ui.component.rememberUiDateFormatter
 
 /**
  * 主页：卡类型/文件夹过滤 + 卡片列表/网格切换。
@@ -103,7 +103,7 @@ fun CardListScreen(
     onManageFolders: () -> Unit = {},
     onOpenSettings: () -> Unit = {},
 ) {
-    val dates = rememberUiDateFormatter()
+    val dates = LocalUiDateFormatter.current
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val pendingDelete by viewModel.pendingDelete.collectAsStateWithLifecycle()
     val defaultName = stringResource(R.string.card_default_name)
