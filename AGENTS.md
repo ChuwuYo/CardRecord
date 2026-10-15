@@ -9,6 +9,7 @@
 - Kotlin + Jetpack Compose + Material 3；Room v9 存业务数据并用 KSP 生成代码；外观主题走 DataStore Preferences，年费提醒开关与去重状态走 SharedPreferences（见第 46 行，勿当成第二套设置真源）。
 - 无账号、后端或自动云同步；用户通过 SAF 主动导入/导出备份目录（JSON + 可选图片文件夹）；系统云备份和设备迁移关闭。
 - 手写依赖容器 `AppContainer`；Screen → ViewModel → Repository → DAO，Repository 仍会向 ViewModel 暴露部分 Entity / 投影，不是完整领域模型隔离层。
+- 导航目的地是 `ShuajiApp.kt` 里的 `@Serializable` 路由类型；带参数的 ViewModel 在 `ViewModelFactories` 里用 `createSavedStateHandle().toRoute<T>()` 取参数，数据由 ViewModel 自己加载（构造时加载，或 `stateIn` 在订阅后加载），不由 Composable 传参或调用初始化方法。
 
 ## 环境与构建
 

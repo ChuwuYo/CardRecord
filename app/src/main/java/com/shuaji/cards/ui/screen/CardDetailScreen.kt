@@ -48,7 +48,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
@@ -65,7 +64,7 @@ import com.shuaji.cards.data.AnnualFeeCycle
 import com.shuaji.cards.data.DateToken
 import com.shuaji.cards.data.local.CardType
 import com.shuaji.cards.data.local.TransactionEntity
-import com.shuaji.cards.requireShuajiApplication
+import com.shuaji.cards.ui.ViewModelFactories
 import com.shuaji.cards.ui.component.CardVisual
 import com.shuaji.cards.ui.component.CycleProgressContent
 import com.shuaji.cards.ui.component.CycleProgressVariant
@@ -78,17 +77,11 @@ import java.util.Locale
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 fun CardDetailScreen(
-    cardId: Long,
     onBack: () -> Unit,
     onEdit: () -> Unit,
 ) {
-    val context = LocalContext.current
     val resources = LocalResources.current
-    val app = context.requireShuajiApplication()
-    val viewModel: CardDetailViewModel =
-        viewModel(
-            factory = cardDetailViewModelFactory(app.container.repository, cardId),
-        )
+    val viewModel: CardDetailViewModel = viewModel(factory = ViewModelFactories.Detail)
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val card = (state as? CardDetailUiState.Loaded)?.detail
 

@@ -621,36 +621,24 @@ class CardEditViewModelTest {
         }
 
     @Test
-    fun repeatedInitializeAfterRecreation_preservesUnsavedFormAndPendingImage() =
+    fun editRoute_loadsTheCardWithoutAnInitializeCall() =
         runTest {
-            val viewModel = CardEditViewModel(repository)
-            val uri = "content://card/recreated"
-            viewModel.initialize(null)
-            viewModel.update { it.copy(name = "未保存名称", bank = "未保存银行") }
-            viewModel.selectUserImage(uri)
-            advanceUntilIdle()
+            val id =
+                repository.upsertCard(
+                    CardEntity(
+                        name = "路由卡",
+                        bank = "",
+                        cardNumberMasked = "",
+                        requiredCount = 6,
+                        colorArgb = 0,
+                    ),
+                )
 
-            viewModel.initialize(null)
+            val viewModel = CardEditViewModel(repository, cardId = id)
 
-            assertEquals("未保存名称", viewModel.uiState.value.name)
-            assertEquals("未保存银行", viewModel.uiState.value.bank)
-            assertEquals(userImages.staged.single().displayUri, viewModel.uiState.value.imageUri)
-            assertTrue(userImages.releasedPending.isEmpty())
-        }
-
-    @Test
-    fun initializeNewCard_releasesPendingImageFromPreviousForm() =
-        runTest {
-            val viewModel = CardEditViewModel(repository)
-            val uri = "content://card/reset"
-            viewModel.selectUserImage(uri)
-            advanceUntilIdle()
-
-            viewModel.initialize(null)
-            advanceUntilIdle()
-
-            assertEquals(CardEditUiState(), viewModel.uiState.value)
-            assertEquals(listOf(userImages.staged.toSet()), userImages.releasedPending)
+            val state = viewModel.uiState.first { it.loadState == CardEditLoadState.READY }
+            assertEquals("路由卡", state.name)
+            assertEquals(id, state.editingId)
         }
 
     @Test
@@ -825,7 +813,7 @@ class CardEditViewModelTest {
     fun invalidNextDueDate_keepsFormOpenAndDoesNotWrite() =
         runTest {
             val clock = Clock.fixed(Instant.parse("2027-06-01T12:00:00Z"), ZoneOffset.UTC)
-            val viewModel = CardEditViewModel(repository, clock)
+            val viewModel = CardEditViewModel(repository, clock = clock)
             viewModel.update {
                 it.copy(
                     name = "日期错误卡",
@@ -851,7 +839,7 @@ class CardEditViewModelTest {
         runTest {
             val clock = Clock.fixed(Instant.parse("2027-06-01T23:30:00Z"), ZoneOffset.UTC)
             var zone = ZoneOffset.ofHours(-1)
-            val viewModel = CardEditViewModel(repository, clock) { zone }
+            val viewModel = CardEditViewModel(repository, clock = clock) { zone }
             viewModel.update {
                 it.copy(
                     name = "切换时区",

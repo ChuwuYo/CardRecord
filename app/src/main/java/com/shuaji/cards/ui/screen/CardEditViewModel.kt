@@ -150,6 +150,7 @@ data class CardEditUiState(
 
 class CardEditViewModel(
     private val repository: CardRepository,
+    cardId: Long? = null,
     private val clock: Clock = Clock.systemUTC(),
     private val zoneIdProvider: () -> ZoneId = { ZoneId.systemDefault() },
 ) : ViewModel() {
@@ -161,8 +162,6 @@ class CardEditViewModel(
     private var imageCleanupJob: Job? = null
     private var imageSelectionJob: Job? = null
     private var imageSelectionGeneration = 0L
-    private var initializedCardId: Long? = null
-    private var isInitialized = false
     private var formGeneration = 0L
 
     @Volatile
@@ -174,23 +173,13 @@ class CardEditViewModel(
             .observeFolders()
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    /**
-     * 每个导航目的地只初始化一次。配置变更会重建 Composable，但不会清掉同一个
-     * NavBackStackEntry 的 ViewModel，因此不能再次覆盖用户尚未保存的表单。
-     */
-    fun initialize(cardId: Long?) {
-        if (isInitialized && initializedCardId == cardId) return
-        if (cardId == null) reset() else load(cardId)
+    init {
+        if (cardId != null) load(cardId)
     }
-
-    private fun reset() = transitionToForm(cardId = null, state = CardEditUiState())
 
     /** 加载已有卡片数据；只做一次单卡查询，不启动列表所需的全表派生流。 */
     fun load(cardId: Long) {
-        transitionToForm(
-            cardId = cardId,
-            state = CardEditUiState(loadState = CardEditLoadState.LOADING),
-        )
+        transitionToForm(CardEditUiState(loadState = CardEditLoadState.LOADING))
         loadJob =
             viewModelScope.launch {
                 try {
@@ -231,12 +220,7 @@ class CardEditViewModel(
     }
 
     /** 所有表单切换共用同一套代际、取消和暂存图片清理规则。 */
-    private fun transitionToForm(
-        cardId: Long?,
-        state: CardEditUiState,
-    ) {
-        isInitialized = true
-        initializedCardId = cardId
+    private fun transitionToForm(state: CardEditUiState) {
         val staleImage = _uiState.value.userImage.stagedOrNull()
         formGeneration++
         imageSelectionGeneration++
