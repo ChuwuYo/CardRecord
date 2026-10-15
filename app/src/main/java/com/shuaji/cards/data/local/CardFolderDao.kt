@@ -27,9 +27,6 @@ interface CardFolderDao {
     @Query("SELECT * FROM card_folders ORDER BY sort_order ASC, created_at_millis ASC")
     fun observeAll(): Flow<List<CardFolderEntity>>
 
-    /**
-     * 备份导出用：一次性读所有文件夹。
-     */
     @Query("SELECT * FROM card_folders")
     suspend fun listAll(): List<CardFolderEntity>
 
@@ -45,9 +42,6 @@ interface CardFolderDao {
     @Delete
     suspend fun delete(folder: CardFolderEntity): Int
 
-    /**
-     * 备份导入 REPLACE 用：清空 card_folders 表。
-     */
     @Query("DELETE FROM card_folders")
     suspend fun deleteAll()
 }
