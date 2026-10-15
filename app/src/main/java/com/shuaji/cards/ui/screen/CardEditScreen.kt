@@ -73,7 +73,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -99,7 +98,7 @@ import com.shuaji.cards.data.local.CardType
 import com.shuaji.cards.data.local.ImageSourceType
 import com.shuaji.cards.ui.ViewModelFactories
 import com.shuaji.cards.ui.component.ModernColorPicker
-import kotlinx.coroutines.launch
+import com.shuaji.cards.ui.component.ObserveAsEvents
 import java.time.LocalDate
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -113,12 +112,14 @@ fun CardEditScreen(
     val folders by viewModel.folders.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
-    val snackbarScope = rememberCoroutineScope()
     var showImageImportError by remember { mutableStateOf(false) }
     val networkPickerPresentation =
         resolveCardNetworkPickerPresentation(state.imageSourceType, state.imageProviderKey)
 
-    val closeWithoutSaving = viewModel::closeWithoutSaving
+    val closeWithoutSaving = {
+        snackbarHostState.currentSnackbarData?.dismiss()
+        viewModel.closeWithoutSaving()
+    }
 
     LaunchedEffect(cardId) {
         viewModel.initialize(cardId)
@@ -129,16 +130,11 @@ fun CardEditScreen(
             else -> Unit
         }
     }
-    LaunchedEffect(viewModel) {
-        viewModel.events.collect { event ->
-            when (event) {
-                CardEditEvent.ImageImportFailed -> showImageImportError = true
-                CardEditEvent.CloseReady -> onBack()
-                CardEditEvent.SaveFailed ->
-                    snackbarScope.launch {
-                        snackbarHostState.showSnackbar(context.getString(R.string.edit_save_failed))
-                    }
-            }
+    ObserveAsEvents(viewModel.events) { event ->
+        when (event) {
+            CardEditEvent.ImageImportFailed -> showImageImportError = true
+            CardEditEvent.CloseReady -> onBack()
+            CardEditEvent.SaveFailed -> snackbarHostState.showSnackbar(context.getString(R.string.edit_save_failed))
         }
     }
     BackHandler(onBack = closeWithoutSaving)

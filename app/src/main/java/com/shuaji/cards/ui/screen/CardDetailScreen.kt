@@ -67,6 +67,7 @@ import com.shuaji.cards.requireShuajiApplication
 import com.shuaji.cards.ui.component.CardVisual
 import com.shuaji.cards.ui.component.CycleProgressContent
 import com.shuaji.cards.ui.component.CycleProgressVariant
+import com.shuaji.cards.ui.component.ObserveAsEvents
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -109,26 +110,22 @@ fun CardDetailScreen(
         }
     val snackbarHostState = remember { SnackbarHostState() }
 
-    LaunchedEffect(viewModel) {
-        viewModel.swipeFeedback.collect { feedback ->
-            val message =
-                when (feedback) {
-                    is SwipeFeedback.CountingNotStarted ->
-                        context.getString(R.string.card_record_not_started_feedback, feedback.startDate.toString())
-                    SwipeFeedback.CardMissing -> context.getString(R.string.card_missing)
-                }
-            snackbarHostState.showSnackbar(message)
-        }
-    }
-    LaunchedEffect(viewModel) {
-        viewModel.events.collect { event ->
-            when (event) {
-                CardDetailEvent.Deleted -> onBack()
-                CardDetailEvent.DeleteFailed ->
-                    snackbarHostState.showSnackbar(context.getString(R.string.card_delete_failed))
-                CardDetailEvent.WriteFailed ->
-                    snackbarHostState.showSnackbar(context.getString(R.string.common_operation_failed))
+    ObserveAsEvents(viewModel.swipeFeedback) { feedback ->
+        val message =
+            when (feedback) {
+                is SwipeFeedback.CountingNotStarted ->
+                    context.getString(R.string.card_record_not_started_feedback, feedback.startDate.toString())
+                SwipeFeedback.CardMissing -> context.getString(R.string.card_missing)
             }
+        snackbarHostState.showSnackbar(message)
+    }
+    ObserveAsEvents(viewModel.events) { event ->
+        when (event) {
+            CardDetailEvent.Deleted -> onBack()
+            CardDetailEvent.DeleteFailed ->
+                snackbarHostState.showSnackbar(context.getString(R.string.card_delete_failed))
+            CardDetailEvent.WriteFailed ->
+                snackbarHostState.showSnackbar(context.getString(R.string.common_operation_failed))
         }
     }
     LaunchedEffect(card?.cycle) {

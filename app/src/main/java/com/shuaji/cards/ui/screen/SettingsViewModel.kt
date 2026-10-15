@@ -27,6 +27,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.yield
+import java.io.IOException
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
 
@@ -118,35 +119,45 @@ class SettingsViewModel(
     }
 
     fun setThemeMode(mode: com.shuaji.cards.data.ThemeMode) {
-        viewModelScope.launch { settingsRepo.setThemeMode(mode) }
+        launchAppearanceWrite { settingsRepo.setThemeMode(mode) }
     }
 
     fun setColorSource(source: com.shuaji.cards.data.ColorSource) {
-        viewModelScope.launch { settingsRepo.setColorSource(source) }
+        launchAppearanceWrite { settingsRepo.setColorSource(source) }
     }
 
     fun setSeedColorHex(hex: String?) {
-        viewModelScope.launch { settingsRepo.setSeedColorHex(hex) }
+        launchAppearanceWrite { settingsRepo.setSeedColorHex(hex) }
+    }
+
+    private fun launchAppearanceWrite(write: suspend () -> Unit) {
+        viewModelScope.launch {
+            try {
+                write()
+            } catch (e: IOException) {
+                emitSettingsEvent(
+                    SettingsDoneEvent(
+                        message = getApplication<Application>().getString(R.string.settings_result_appearance_save_failed),
+                        isError = true,
+                    ),
+                )
+            }
+        }
     }
 
     /**
      * 用仓库的正式解码路径检查待导入目录；成功才允许 UI 进入模式确认对话框。
      * 失败通过全局 Snackbar 告知原因，避免把损坏备份伪装成“0 条记录”。
      */
-    suspend fun inspectBackup(uri: Uri): BackupPreview? {
-        val job = checkNotNull(currentCoroutineContext()[Job])
-        if (!registerOperation(job)) return null
-        return try {
-            backup.inspect(uri).also { info ->
-                _pendingImport.value = PendingImport(uri, info)
+    fun inspectBackup(uri: Uri) {
+        launchOperation { job ->
+            try {
+                _pendingImport.value = PendingImport(uri, backup.inspect(uri))
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                finalize(job, backupErrorMessage(R.string.settings_result_inspect_failed, e), isError = true)
             }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            finalize(job, backupErrorMessage(R.string.settings_result_inspect_failed, e), isError = true)
-            null
-        } finally {
-            releaseOperation(job)
         }
     }
 

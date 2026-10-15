@@ -45,6 +45,7 @@
     <string name="settings_result_export_failed">Export failed: %1$s</string>
     <string name="settings_result_import_failed">Import failed: %1$s</string>
     <string name="settings_result_inspect_failed">Couldn\'t read the backup: %1$s</string>
+    <string name="settings_result_appearance_save_failed">Couldn\'t save the appearance setting. Try again.</string>
     <string name="settings_snackbar_error_prefix">"⚠️ "</string>
     <string name="settings_result_extras_separator">"; "</string>
 

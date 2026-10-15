@@ -44,7 +44,6 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -66,6 +65,7 @@ import com.shuaji.cards.R
 import com.shuaji.cards.data.local.CardFolderEntity
 import com.shuaji.cards.ui.ViewModelFactories
 import com.shuaji.cards.ui.component.ModernColorPicker
+import com.shuaji.cards.ui.component.ObserveAsEvents
 import com.shuaji.cards.ui.theme.DEFAULT_BRAND_PRIMARY_ARGB
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -86,11 +86,9 @@ fun CardFolderScreen(onBack: () -> Unit) {
     val deleteCd = stringResource(R.string.common_delete)
     val cancelText = stringResource(R.string.common_cancel)
 
-    LaunchedEffect(viewModel) {
-        viewModel.events.collect { event ->
-            if (event is CardFolderEvent.WriteFailed) {
-                snackbarHostState.showSnackbar(context.getString(R.string.common_operation_failed))
-            }
+    ObserveAsEvents(viewModel.events) { event ->
+        if (event is CardFolderEvent.WriteFailed) {
+            snackbarHostState.showSnackbar(context.getString(R.string.common_operation_failed))
         }
     }
 

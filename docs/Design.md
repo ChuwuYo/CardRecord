@@ -24,7 +24,7 @@ Room DAO / DataStore / SAF
 - Repository 收口跨表事务、日期规则、导入导出和 DAO 访问。
 - `AppContainer` 负责轻量依赖装配和跨页面事件；当前 Repository 仍向 ViewModel 暴露部分 Room Entity / 投影，不宣称完整领域隔离。
 - 同一概念只有一个真源：卡片底色来自 `colorArgb`，周期来自 `AnnualFeeCycle`，卡组织视觉布局来自共享卡面布局函数。
-- 跨页面一次性结果进入有界事件队列：短暂没有订阅者时不丢失，消费后不因界面重建而重放。
+- 跨页面一次性结果进入有界事件队列：短暂没有订阅者时不丢失，消费后不因界面重建而重放。界面只在 STARTED 及以上时消费（`ObserveAsEvents`），应用在后台时事件留在队列里，回到前台再显示；正在显示时被 STOP 打断的事件，回到前台后重新显示。
 
 ## 3. 数据模型
 
