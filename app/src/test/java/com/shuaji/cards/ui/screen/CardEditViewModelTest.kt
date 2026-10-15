@@ -679,16 +679,71 @@ class CardEditViewModelTest {
     @Test
     fun recreatedAfterProcessDeath_existingCardKeepsStoredImage() =
         runTest {
-            val id = repository.upsertCard(CardEntity(name = "有图卡", bank = "", cardNumberMasked = "", requiredCount = 6, colorArgb = 0))
+            val id =
+                repository.upsertCard(
+                    CardEntity(
+                        name = "有图卡",
+                        bank = "",
+                        cardNumberMasked = "",
+                        requiredCount = 6,
+                        colorArgb = 0,
+                        imageSourceType = ImageSourceType.USER.key,
+                        imageUri = "content://gallery/stored",
+                    ),
+                )
             val handle = SavedStateHandle()
             val before = CardEditViewModel(repository, cardId = id, savedStateHandle = handle)
-            val loaded = before.uiState.first { it.loadState == CardEditLoadState.READY }
+            before.uiState.first { it.loadState == CardEditLoadState.READY }
             before.selectUserImage("content://card/replacement-before-death")
             advanceUntilIdle()
 
             val after = CardEditViewModel(repository, cardId = id, savedStateHandle = handle.afterProcessDeath())
 
-            assertEquals(loaded.userImage, after.uiState.value.userImage)
+            assertEquals(UserImageDraft.Unchanged("content://gallery/stored"), after.uiState.value.userImage)
+            assertEquals(ImageSourceType.USER, after.uiState.value.imageSourceType)
+        }
+
+    @Test
+    fun recreatedAfterProcessDeath_droppedImageRestoresPreviousSourceType() =
+        runTest {
+            val id =
+                repository.upsertCard(
+                    CardEntity(
+                        name = "卡组织卡",
+                        bank = "",
+                        cardNumberMasked = "",
+                        requiredCount = 6,
+                        colorArgb = 0,
+                        imageSourceType = ImageSourceType.PROVIDER.key,
+                        imageProviderKey = CardNetworkProvider.VISA.key,
+                    ),
+                )
+            val handle = SavedStateHandle()
+            val before = CardEditViewModel(repository, cardId = id, savedStateHandle = handle)
+            before.uiState.first { it.loadState == CardEditLoadState.READY }
+            before.selectUserImage("content://card/first-pick")
+            advanceUntilIdle()
+            before.selectUserImage("content://card/second-pick")
+            advanceUntilIdle()
+
+            val after = CardEditViewModel(repository, cardId = id, savedStateHandle = handle.afterProcessDeath())
+
+            assertEquals(ImageSourceType.PROVIDER, after.uiState.value.imageSourceType)
+        }
+
+    @Test
+    fun recreatedAfterProcessDeath_afterSuccessfulSaveStartsFresh() =
+        runTest {
+            val handle = SavedStateHandle()
+            val before = CardEditViewModel(repository, savedStateHandle = handle)
+            before.update { it.copy(name = "已保存") }
+            before.save()
+            before.uiState.first { it.saveResult is CardEditSaveResult.Saved }
+
+            val after = CardEditViewModel(repository, savedStateHandle = handle.afterProcessDeath())
+
+            assertEquals("", after.uiState.value.name)
+            assertEquals(CardEditSaveResult.Idle, after.uiState.value.saveResult)
         }
 
     private fun SavedStateHandle.afterProcessDeath() = SavedStateHandle(keys().associateWith { get<Any>(it) })
