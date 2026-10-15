@@ -44,7 +44,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.shuaji.cards.R
 import com.shuaji.cards.data.AnnualFeeCycle
-import com.shuaji.cards.data.DateToken
 import com.shuaji.cards.data.local.CardOrientation
 import com.shuaji.cards.data.local.cardOrientationEnum
 import com.shuaji.cards.ui.screen.CardUi
@@ -225,6 +224,7 @@ private fun ExpiredBanner() {
 
 @Composable
 private fun CompactInfoArea(card: CardUi) {
+    val dates = rememberUiDateFormatter()
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         CycleProgressContent(
             cycle = card.cycle,
@@ -233,8 +233,8 @@ private fun CompactInfoArea(card: CardUi) {
             variant = CycleProgressVariant.COMPACT,
         )
         val dateText =
-            card.card.nextDueDateMillis?.let { stringResource(R.string.card_date_next_due, DateToken.formatAnnualDue(it)) }
-                ?: card.card.validUntilMillis?.let { stringResource(R.string.card_date_valid_until, DateToken.format(it)) }
+            card.card.nextDueDateMillis?.let { stringResource(R.string.card_date_next_due, dates.annualDue(it)) }
+                ?: card.card.validUntilMillis?.let { stringResource(R.string.card_date_valid_until, dates.dateToken(it)) }
         if (dateText != null) {
             Text(
                 dateText,
@@ -253,6 +253,7 @@ private fun FullInfoArea(
     onSwipe: () -> Unit,
     onDetail: () -> Unit,
 ) {
+    val dates = rememberUiDateFormatter()
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         // 进度块
         CycleProgressContent(
@@ -269,7 +270,7 @@ private fun FullInfoArea(
                 DateRow(
                     icon = Icons.Default.CreditCard,
                     label = stringResource(R.string.card_label_valid_until),
-                    value = DateToken.format(card.card.validUntilMillis),
+                    value = dates.dateToken(card.card.validUntilMillis),
                     isWarning = card.isExpired,
                 )
             }
@@ -277,7 +278,7 @@ private fun FullInfoArea(
                 DateRow(
                     icon = Icons.Default.Event,
                     label = stringResource(R.string.card_label_next_due),
-                    value = DateToken.formatAnnualDue(card.card.nextDueDateMillis),
+                    value = dates.annualDue(card.card.nextDueDateMillis),
                     isWarning = false,
                 )
             }
@@ -329,10 +330,11 @@ fun CycleProgressContent(
     requiredCount: Int,
     variant: CycleProgressVariant,
 ) {
+    val dates = rememberUiDateFormatter()
     when (cycle) {
         is AnnualFeeCycle.Upcoming ->
             Text(
-                text = stringResource(R.string.card_counting_starts_later, cycle.startDate.toString()),
+                text = stringResource(R.string.card_counting_starts_later, dates.date(cycle.startDate)),
                 style =
                     if (variant ==
                         CycleProgressVariant.DETAIL
