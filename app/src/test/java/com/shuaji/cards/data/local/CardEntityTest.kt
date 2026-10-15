@@ -10,9 +10,13 @@ import java.time.ZoneId
 
 class CardEntityTest {
     @Test
-    fun imageSourceTypeEnum_parsesKnownValueAndFallsBackForUnknownValue() {
-        assertEquals(ImageSourceType.PROVIDER, card(imageSourceType = ImageSourceType.PROVIDER.key).imageSourceTypeEnum)
-        assertEquals(ImageSourceType.NONE, card(imageSourceType = "FUTURE_TYPE").imageSourceTypeEnum)
+    fun enumConverters_roundTripStableKeysAndFallBackForUnknownKeys() {
+        assertEquals("PROVIDER", CardEnumConverters.imageSourceTypeToKey(ImageSourceType.PROVIDER))
+        assertEquals(ImageSourceType.NONE, CardEnumConverters.keyToImageSourceType("FUTURE_TYPE"))
+        assertEquals("PORTRAIT", CardEnumConverters.cardOrientationToKey(CardOrientation.PORTRAIT))
+        assertEquals(CardOrientation.LANDSCAPE, CardEnumConverters.keyToCardOrientation("FUTURE_ORIENTATION"))
+        assertEquals("CREDIT", CardEnumConverters.cardTypeToKey(CardType.CREDIT))
+        assertEquals(CardType.UNSPECIFIED, CardEnumConverters.keyToCardType("FUTURE_CARD_TYPE"))
     }
 
     @Test
@@ -32,39 +36,29 @@ class CardEntityTest {
     fun withNormalizedCreditDetails_enforcesTypeSpecificInvariant() {
         val credit =
             card(
-                cardType = CardType.CREDIT.key,
+                cardType = CardType.CREDIT,
                 statementDay = 1,
                 repaymentDay = 31,
             ).withNormalizedCreditDetails()
-        assertEquals(CardType.CREDIT, credit.cardTypeEnum)
+        assertEquals(CardType.CREDIT, credit.cardType)
         assertEquals(1, credit.statementDay)
         assertEquals(31, credit.repaymentDay)
 
         val debit =
             card(
-                cardType = CardType.DEBIT.key,
+                cardType = CardType.DEBIT,
                 statementDay = 8,
                 repaymentDay = 21,
             ).withNormalizedCreditDetails()
-        assertEquals(CardType.DEBIT, debit.cardTypeEnum)
+        assertEquals(CardType.DEBIT, debit.cardType)
         assertEquals(null, debit.statementDay)
         assertEquals(null, debit.repaymentDay)
 
-        val unknown =
-            card(
-                cardType = "FUTURE_CARD_TYPE",
-                statementDay = 8,
-                repaymentDay = 21,
-            ).withNormalizedCreditDetails()
-        assertEquals(CardType.UNSPECIFIED.key, unknown.cardType)
-        assertEquals(null, unknown.statementDay)
-        assertEquals(null, unknown.repaymentDay)
-
         assertThrows(IllegalArgumentException::class.java) {
-            card(cardType = CardType.CREDIT.key, statementDay = 0).withNormalizedCreditDetails()
+            card(cardType = CardType.CREDIT, statementDay = 0).withNormalizedCreditDetails()
         }
         assertThrows(IllegalArgumentException::class.java) {
-            card(cardType = CardType.CREDIT.key, repaymentDay = 32).withNormalizedCreditDetails()
+            card(cardType = CardType.CREDIT, repaymentDay = 32).withNormalizedCreditDetails()
         }
     }
 
@@ -85,8 +79,8 @@ class CardEntityTest {
     }
 
     private fun card(
-        imageSourceType: String = ImageSourceType.NONE.key,
-        cardType: String = CardType.UNSPECIFIED.key,
+        imageSourceType: ImageSourceType = ImageSourceType.NONE,
+        cardType: CardType = CardType.UNSPECIFIED,
         statementDay: Int? = null,
         repaymentDay: Int? = null,
         validUntilMillis: Long? = null,
