@@ -85,6 +85,7 @@ import com.shuaji.cards.R
 import com.shuaji.cards.ui.ViewModelFactories
 import com.shuaji.cards.ui.component.CardListItem
 import com.shuaji.cards.ui.component.CompactCardListItem
+import com.shuaji.cards.ui.component.ObserveAsEvents
 
 /**
  * 主页：卡类型/文件夹过滤 + 卡片列表/网格切换。
@@ -107,25 +108,21 @@ fun CardListScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val context = LocalContext.current
 
-    LaunchedEffect(viewModel) {
-        viewModel.swipeFeedback.collect { feedback ->
-            val message =
-                when (feedback) {
-                    is SwipeFeedback.CountingNotStarted ->
-                        context.getString(R.string.card_record_not_started_feedback, feedback.startDate.toString())
-                    SwipeFeedback.CardMissing -> context.getString(R.string.card_missing)
-                }
-            snackbarHostState.showSnackbar(message)
-        }
-    }
-    LaunchedEffect(viewModel) {
-        viewModel.events.collect { event ->
-            when (event) {
-                CardListEvent.DeleteFailed ->
-                    snackbarHostState.showSnackbar(context.getString(R.string.card_delete_failed))
-                CardListEvent.WriteFailed ->
-                    snackbarHostState.showSnackbar(context.getString(R.string.common_operation_failed))
+    ObserveAsEvents(viewModel.swipeFeedback) { feedback ->
+        val message =
+            when (feedback) {
+                is SwipeFeedback.CountingNotStarted ->
+                    context.getString(R.string.card_record_not_started_feedback, feedback.startDate.toString())
+                SwipeFeedback.CardMissing -> context.getString(R.string.card_missing)
             }
+        snackbarHostState.showSnackbar(message)
+    }
+    ObserveAsEvents(viewModel.events) { event ->
+        when (event) {
+            CardListEvent.DeleteFailed ->
+                snackbarHostState.showSnackbar(context.getString(R.string.card_delete_failed))
+            CardListEvent.WriteFailed ->
+                snackbarHostState.showSnackbar(context.getString(R.string.common_operation_failed))
         }
     }
 
