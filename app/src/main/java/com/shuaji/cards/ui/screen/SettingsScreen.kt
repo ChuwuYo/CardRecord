@@ -69,6 +69,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
@@ -233,6 +234,8 @@ fun SettingsScreen(onBack: () -> Unit) {
     var showColorPicker by rememberSaveable { mutableStateOf(false) }
 
     var showLanguageDialog by rememberSaveable { mutableStateOf(false) }
+    var languageChanges by remember { mutableIntStateOf(0) }
+    val currentLanguage = remember(LocalConfiguration.current, languageChanges) { AppLanguage.current() }
 
     fun inspectSelection(uri: android.net.Uri?) {
         if (uri == null) return
@@ -523,7 +526,6 @@ fun SettingsScreen(onBack: () -> Unit) {
                     }
                 }
                 item {
-                    val currentLanguage = AppLanguage.current()
                     ListItem(
                         leadingContent = {
                             Icon(
@@ -606,7 +608,7 @@ fun SettingsScreen(onBack: () -> Unit) {
     }
 
     if (showLanguageDialog) {
-        val current = AppLanguage.current()
+        val current = currentLanguage
         AlertDialog(
             onDismissRequest = { showLanguageDialog = false },
             title = { Text(stringResource(R.string.settings_language_dialog_title)) },
@@ -622,7 +624,10 @@ fun SettingsScreen(onBack: () -> Unit) {
                                         role = Role.RadioButton,
                                         onClick = {
                                             showLanguageDialog = false
-                                            if (lang != current) AppLanguage.apply(lang)
+                                            if (lang != current) {
+                                                AppLanguage.apply(lang)
+                                                languageChanges++
+                                            }
                                         },
                                     ).padding(vertical = 12.dp),
                             verticalAlignment = Alignment.CenterVertically,

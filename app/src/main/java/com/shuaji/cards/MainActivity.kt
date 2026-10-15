@@ -1,6 +1,9 @@
 package com.shuaji.cards
 
+import android.content.res.Configuration
+import android.os.Build
 import android.os.Bundle
+import android.os.LocaleList
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -30,10 +33,12 @@ import com.shuaji.cards.ui.theme.resolveDarkTheme
 // 来应用 / 恢复语言。Compose 在 AppCompatActivity 上正常工作。
 class MainActivity : AppCompatActivity() {
     private val themeViewModel: AppThemeViewModel by viewModels { ViewModelFactories.AppTheme }
+    private var composedLocales: LocaleList? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         AppLocales.record(this, AppCompatDelegate.getApplicationLocales())
+        composedLocales = resources.configuration.locales
         val settingsRepo = requireShuajiApplication().container.settings
         enableEdgeToEdge()
         setContent {
@@ -70,5 +75,14 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        AppLocales.record(this, AppCompatDelegate.getApplicationLocales())
+        val localesChanged = newConfig.locales != composedLocales
+        composedLocales = newConfig.locales
+        // Android 12 及以下 AppCompat 只回调 Activity，不会把新语言分发给 Compose 的 View，只能重建。
+        if (localesChanged && Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) recreate()
     }
 }
