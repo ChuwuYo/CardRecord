@@ -13,7 +13,7 @@
 ## 环境与构建
 
 - 始终使用仓库的 `./gradlew`；Java 17，compile/target SDK 36。
-- `gradle.properties` 可能包含本机代理配置。代理不可用时只在命令行临时覆盖，不为适配单台机器提交环境专属改动。
+- 仓库 `gradle.properties` 不含代理等本机配置。需要代理的环境把 `systemProp.http(s).proxyHost` 等写进 `~/.gradle/gradle.properties`（Gradle 用户目录的属性优先于项目属性），不为适配单台机器提交环境专属改动。
 - 正式签名只通过 `CARDRECORD_RELEASE_*` 环境变量或 GitHub Secrets 注入；密钥、密码和本机路径不得进入 Git。变量缺失时 Release 必须失败，禁止回退到 debug 签名。
 - 常用验证：
 
@@ -49,7 +49,7 @@
 
 - 测试使用 JUnit4、Robolectric、Room in-memory 与 `kotlinx-coroutines-test`。静态编译、单测、Lint、构建、模拟器/真机和云端 CI 是不同验证层级，只报告实际完成的层级。
 - 测试只验证本仓库自己的行为：业务规则、数据不变量、迁移、边界（0、负数、差一、损坏数据、配置变更导致的重建）和真实回归。不写只验证框架或库本身的测试（如 `StateFlow` 缓存、`ViewModel` 跨重建存活），也不为覆盖率补测试。
-- `ci-release.yml` 以单一 `verify → build-sign → publish` 依赖链执行验证与发布；所有 push / PR / 手动运行先执行无密钥验证，仅验证通过且 tip 仍可发布的 `main` push 或手动运行继续签名并更新滚动测试包（tip 仅为官方 `[skip ci]` 类提交时，允许已通过验证的前一提交完成发布；被更新的实质提交则软跳过签名）。发布纪律见 `docs/RELEASE_CHECKLIST.md`。
+- `ci-release.yml` 以单一 `verify → build-sign → publish` 依赖链执行验证与发布；所有 push / PR / 手动运行先执行无密钥验证，仅验证通过且仍是 `main` 头的 `main` push 或手动运行继续签名并更新滚动测试包；`main` 已前进的旧运行软跳过签名（不标红），重跑发布 job 时直接失败。JDK、SDK 与 Gradle 缓存配置集中在 `.github/actions/setup-android-build`。发布纪律见 `docs/RELEASE_CHECKLIST.md`。
 - 并行代理只能领取互不重叠的文件或只读审查。整合后主代理必须复查完整 diff，并分别进行规范审查与需求审查。
 - 文档必须对应真实代码并明确当前状态；完成项及时收口。优先合并或删除重复、过期文档，不为一次性过程创建长期文档。
 - 临时报告、截图、专用 Debug 入口、APK 与仓库构建缓存只保留到最终交叉审查结束；清理后不要再次生成一批待删除产物。
