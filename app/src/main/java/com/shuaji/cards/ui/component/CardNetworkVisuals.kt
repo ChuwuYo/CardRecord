@@ -58,7 +58,6 @@ internal data class ProviderDecorationLayout(
     val smallRing: RingLayout,
     val ringStroke: Dp,
 ) {
-    /** 从装饰组最左侧派生文字安全区，不能只按水印宽度忽略向左伸出的圆环。 */
     val motifEndPadding: Dp
         get() {
             val leftEdge =
@@ -71,7 +70,6 @@ internal data class ProviderDecorationLayout(
         }
 }
 
-/** 以卡面右上角为锚统一缩放水印、双环及描边，保持装饰组内部关系不变。 */
 internal fun ProviderDecorationLayout.scaledFromTopEnd(scale: Float): ProviderDecorationLayout =
     copy(
         watermarkWidth = watermarkWidth * scale,
@@ -139,7 +137,6 @@ internal fun BoxScope.ProviderNetworkDecoration(
                 .padding(top = layout.watermarkTop, end = layout.watermarkRight)
                 .size(width = layout.watermarkWidth, height = layout.watermarkHeight),
     ) {
-        // 白色半透明水印在浅色卡面会完全消失；同形暗色底层只补轮廓，不改变品牌图形。
         Image(
             painter = painterResource(network.markRes),
             contentDescription = null,
@@ -202,7 +199,6 @@ internal fun BoxScope.NetworkCornerBadge(
                 .padding(end = layout.badgeInset, bottom = layout.badgeInset)
                 .size(width = layout.badgeWidth, height = layout.badgeHeight),
     ) {
-        // 底板保留原透明度；暗色同形底层提供浅色卡面上的边界与轻微纵深。
         Box(
             modifier =
                 Modifier
