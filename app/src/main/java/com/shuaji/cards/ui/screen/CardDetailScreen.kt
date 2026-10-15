@@ -227,7 +227,7 @@ fun CardDetailScreen(
         }
     }
 
-    if (showResetDialog) {
+    if (showResetDialog && card != null) {
         AlertDialog(
             onDismissRequest = { showResetDialog = false },
             title = { Text(stringResource(R.string.detail_reset_dialog_title)) },
@@ -244,7 +244,7 @@ fun CardDetailScreen(
         )
     }
 
-    if (showDeleteDialog) {
+    if (showDeleteDialog && card != null) {
         AlertDialog(
             onDismissRequest = { showDeleteDialog = false },
             title = { Text(stringResource(R.string.detail_delete_dialog_title)) },
