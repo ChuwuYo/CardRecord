@@ -62,17 +62,14 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.shuaji.cards.R
 import com.shuaji.cards.data.AnnualFeeCycle
-import com.shuaji.cards.data.DateToken
 import com.shuaji.cards.data.local.CardType
 import com.shuaji.cards.data.local.TransactionEntity
 import com.shuaji.cards.ui.ViewModelFactories
 import com.shuaji.cards.ui.component.CardVisual
 import com.shuaji.cards.ui.component.CycleProgressContent
 import com.shuaji.cards.ui.component.CycleProgressVariant
+import com.shuaji.cards.ui.component.LocalUiDateFormatter
 import com.shuaji.cards.ui.component.ObserveAsEvents
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
 /** 卡片元数据、当前周期进度与完整流水的详情页。 */
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
@@ -81,6 +78,7 @@ fun CardDetailScreen(
     onBack: () -> Unit,
     onEdit: () -> Unit,
 ) {
+    val dates = LocalUiDateFormatter.current
     val resources = LocalResources.current
     val viewModel: CardDetailViewModel = viewModel(factory = ViewModelFactories.Detail)
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -112,7 +110,7 @@ fun CardDetailScreen(
         val message =
             when (feedback) {
                 is SwipeFeedback.CountingNotStarted ->
-                    resources.getString(R.string.card_record_not_started_feedback, feedback.startDate.toString())
+                    resources.getString(R.string.card_record_not_started_feedback, dates.date(feedback.startDate))
                 SwipeFeedback.CardMissing -> resources.getString(R.string.card_missing)
             }
         snackbarHostState.showSnackbar(message)
@@ -265,7 +263,7 @@ fun CardDetailScreen(
         AlertDialog(
             onDismissRequest = { swipeToDeleteId = null },
             title = { Text(stringResource(R.string.detail_delete_swipe_dialog_title)) },
-            text = { Text(stringResource(R.string.detail_delete_swipe_dialog_message, formatDateTime(target.occurredAtMillis))) },
+            text = { Text(stringResource(R.string.detail_delete_swipe_dialog_message, dates.dateTime(target.occurredAtMillis))) },
             confirmButton = {
                 TextButton(onClick = {
                     viewModel.deleteSwipe(target.id)
@@ -379,6 +377,7 @@ private fun SwipeListRow(
     isCurrentPeriod: Boolean,
     onRequestDelete: (TransactionEntity) -> Unit,
 ) {
+    val dates = LocalUiDateFormatter.current
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.medium,
@@ -399,7 +398,7 @@ private fun SwipeListRow(
             )
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = formatDateTime(transaction.occurredAtMillis),
+                    text = dates.dateTime(transaction.occurredAtMillis),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurface,
                     fontWeight = FontWeight.Medium,
@@ -491,6 +490,7 @@ private fun ProgressBlock(
  */
 @Composable
 private fun CardInfoSection(detail: CardDetailUi) {
+    val dates = LocalUiDateFormatter.current
     val c = detail.card
     val rows =
         listOfNotNull(
@@ -526,7 +526,7 @@ private fun CardInfoSection(detail: CardDetailUi) {
                 CardInfoRow(
                     icon = Icons.Default.CreditCard,
                     label = stringResource(R.string.card_label_valid_until),
-                    value = DateToken.format(it),
+                    value = dates.dateToken(it),
                     valueColor = if (detail.isExpired) MaterialTheme.colorScheme.error else null,
                 )
             },
@@ -534,7 +534,7 @@ private fun CardInfoSection(detail: CardDetailUi) {
                 CardInfoRow(
                     icon = Icons.Default.Event,
                     label = stringResource(R.string.card_label_next_due),
-                    value = DateToken.formatAnnualDue(it),
+                    value = dates.annualDue(it),
                 )
             },
             detail.statementDay?.let {
@@ -636,9 +636,4 @@ private fun InfoRow(
             )
         }
     }
-}
-
-private fun formatDateTime(millis: Long): String {
-    val fmt = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
-    return fmt.format(Date(millis))
 }

@@ -97,6 +97,7 @@ import com.shuaji.cards.data.local.CardOrientation
 import com.shuaji.cards.data.local.CardType
 import com.shuaji.cards.data.local.ImageSourceType
 import com.shuaji.cards.ui.ViewModelFactories
+import com.shuaji.cards.ui.component.LocalUiDateFormatter
 import com.shuaji.cards.ui.component.ModernColorPicker
 import com.shuaji.cards.ui.component.ObserveAsEvents
 import java.time.LocalDate
@@ -107,6 +108,7 @@ fun CardEditScreen(
     cardId: Long?,
     onBack: () -> Unit,
 ) {
+    val dates = LocalUiDateFormatter.current
     val viewModel: CardEditViewModel = viewModel(factory = ViewModelFactories.Edit)
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val folders by viewModel.folders.collectAsStateWithLifecycle()
@@ -529,6 +531,7 @@ fun CardEditScreen(
                 millis = state.validUntilMillis,
                 onClick = { dateDialogTarget = DateField.VALID_UNTIL },
                 onClear = { viewModel.update { it.copy(validUntilMillis = null) } },
+                formatMillis = dates::dateToken,
             )
             DateRow(
                 label = nextDueLabel,
@@ -538,7 +541,7 @@ fun CardEditScreen(
                 millis = state.nextDueDateMillis,
                 onClick = { dateDialogTarget = DateField.NEXT_DUE },
                 onClear = { viewModel.update { it.copy(nextDueDateMillis = null) } },
-                formatMillis = DateToken::formatAnnualDue,
+                formatMillis = dates::annualDue,
                 supportingText =
                     nextDueError.takeIf {
                         state.saveResult == CardEditSaveResult.ValidationError(CardEditValidation.NEXT_DUE_MUST_BE_FUTURE)
@@ -1030,7 +1033,7 @@ private fun DateRow(
     millis: Long?,
     onClick: () -> Unit,
     onClear: () -> Unit,
-    formatMillis: (Long) -> String = DateToken::format,
+    formatMillis: (Long) -> String,
     supportingText: String? = null,
     isError: Boolean = false,
 ) {

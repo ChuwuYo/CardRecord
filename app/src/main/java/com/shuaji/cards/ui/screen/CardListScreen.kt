@@ -85,6 +85,7 @@ import com.shuaji.cards.R
 import com.shuaji.cards.ui.ViewModelFactories
 import com.shuaji.cards.ui.component.CardListItem
 import com.shuaji.cards.ui.component.CompactCardListItem
+import com.shuaji.cards.ui.component.LocalUiDateFormatter
 import com.shuaji.cards.ui.component.ObserveAsEvents
 
 /**
@@ -102,6 +103,7 @@ fun CardListScreen(
     onManageFolders: () -> Unit = {},
     onOpenSettings: () -> Unit = {},
 ) {
+    val dates = LocalUiDateFormatter.current
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val pendingDelete by viewModel.pendingDelete.collectAsStateWithLifecycle()
     val defaultName = stringResource(R.string.card_default_name)
@@ -112,7 +114,7 @@ fun CardListScreen(
         val message =
             when (feedback) {
                 is SwipeFeedback.CountingNotStarted ->
-                    resources.getString(R.string.card_record_not_started_feedback, feedback.startDate.toString())
+                    resources.getString(R.string.card_record_not_started_feedback, dates.date(feedback.startDate))
                 SwipeFeedback.CardMissing -> resources.getString(R.string.card_missing)
             }
         snackbarHostState.showSnackbar(message)

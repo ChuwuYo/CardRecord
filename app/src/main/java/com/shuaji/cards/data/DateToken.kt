@@ -24,8 +24,5 @@ object DateToken {
             date
         }
 
-    fun format(tokenMillis: Long): String = toLocalDate(tokenMillis).toString()
-
-    /** 年费结算日把 2 月 28/29 日统一显示为对应年份的二月月末。 */
-    fun formatAnnualDue(tokenMillis: Long): String = normalizeAnnualDate(toLocalDate(tokenMillis)).toString()
+    fun annualDueDate(tokenMillis: Long): LocalDate = normalizeAnnualDate(toLocalDate(tokenMillis))
 }
