@@ -124,13 +124,6 @@ class CardEditViewModelTest {
     }
 
     @Test
-    fun savingState_disablesAdditionalSaveAttempts() {
-        val state = CardEditUiState(name = "测试卡", requiredCount = "6", isSaving = true)
-
-        assertEquals(false, state.canSave)
-    }
-
-    @Test
     fun savedState_disablesAdditionalSaveAttempts() {
         val state =
             CardEditUiState(

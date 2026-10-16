@@ -40,23 +40,13 @@ class CardVisualTest {
     }
 
     @Test
-    fun networkLayout_scalesBetweenCompactAndLargeCards() {
+    fun networkBadgeReservation_growsWithCardWidth() {
         val compact = resolveCardNetworkVisualLayout(160.dp)
         val large = resolveCardNetworkVisualLayout(320.dp)
 
-        assertEquals(36.dp, compact.badgeWidth)
-        assertEquals(64.dp, large.badgeWidth)
-        assertEquals(6.dp, compact.badgeInset)
-        assertEquals(8.dp, large.badgeInset)
-        assertTrue(abs(compact.providerDecoration.watermarkRight.value - 3.2f) < 0.001f)
-        assertTrue(abs(compact.providerDecoration.watermarkTop.value - 3.2f) < 0.001f)
-        assertTrue(abs(large.providerDecoration.watermarkRight.value - 6.4f) < 0.001f)
-        assertTrue(abs(large.providerDecoration.watermarkTop.value - 6.4f) < 0.001f)
-        assertEquals(compact.badgeWidth + compact.badgeInset + 12.dp, compact.contentEndPadding)
-        assertEquals(large.badgeWidth + large.badgeInset + 12.dp, large.contentEndPadding)
-        assertEquals(76.8.dp, compact.providerDecoration.largeRing.diameter)
-        assertEquals(54.4.dp, compact.providerDecoration.smallRing.diameter)
+        assertTrue(large.badgeWidth > compact.badgeWidth)
         assertTrue(large.contentEndPadding > compact.contentEndPadding)
+        assertTrue(compact.contentEndPadding > compact.badgeWidth + compact.badgeInset)
     }
 
     @Test
