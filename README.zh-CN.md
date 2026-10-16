@@ -15,11 +15,11 @@
 
 ## 下载
 
-需要 Android 8.0 及以上。最新安装包见 [apk-latest](https://github.com/ChuwuYo/CardRecord/releases/tag/apk-latest)，更新内容见 [更新日志](docs/CHANGELOG.md)。
+需要 Android 8.0 及以上。最新测试版（随 `main` 每次改动自动构建）见 [apk-latest](https://github.com/ChuwuYo/CardRecord/releases/tag/apk-latest)，更新内容见 [更新日志](docs/CHANGELOG.md)。
 
 ## 隐私
 
-没有账号，也没有服务器，数据只存在你的手机上。只有你主动导出备份时，数据才会离开应用。备份里是未加密的卡片信息和卡面图片，请妥善保管；导入成功后可以删掉备份。
+没有账号，也没有服务器。除非你主动导出备份，数据不会离开你的手机。备份里是未加密的卡片信息和卡面图片，请妥善保管；导入成功后可以删掉备份。
 
 ## 本地构建
 
