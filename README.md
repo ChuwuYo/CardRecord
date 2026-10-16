@@ -15,7 +15,7 @@ CardRecord is a local-first Android app for counting card swipes, so you can see
 
 ## Download
 
-Requires Android 8.0 or later. Get the latest test build, rebuilt from every change on `main`, at [apk-latest](https://github.com/ChuwuYo/CardRecord/releases/tag/apk-latest); see the [changelog](docs/CHANGELOG.md) (Chinese) for what's new.
+Requires Android 8.0 or later. Get the latest test build from [apk-latest](https://github.com/ChuwuYo/CardRecord/releases/tag/apk-latest); see the [changelog](docs/CHANGELOG.md) (Chinese) for what's new.
 
 ## Privacy
 
