@@ -51,7 +51,7 @@
 ## 测试、审查与交付
 
 - 测试使用 JUnit4、Robolectric、Room in-memory 与 `kotlinx-coroutines-test`。静态编译、单测、Lint、构建、模拟器/真机和云端 CI 是不同验证层级，只报告实际完成的层级。
-- 测试只验证本仓库自己的行为：业务规则、数据不变量、迁移、边界（0、负数、差一、损坏数据、配置变更导致的重建）和真实回归。不写只验证框架或库本身的测试（如 `StateFlow` 缓存、`ViewModel` 跨重建存活），也不为覆盖率补测试。
+- 只测试坏了用户看不出、但会丢数据或算错的纯逻辑：备份格式与导入导出、Room 迁移与 Repository 写入语义、年费周期与提醒日期计算、图片存储。不写 ViewModel、界面、主题、动画或框架行为测试，也不为覆盖率或单次回归补测试；界面行为以 `apk-latest` 真机验证为准。
 - `ci-release.yml` 以单一 `verify → build-sign → publish` 依赖链执行验证与发布；所有 push / PR / 手动运行先执行无密钥验证，仅验证通过且仍是 `main` 头的 `main` push 或手动运行继续签名并更新滚动测试包；verify 结束时 `main` 已前进的运行软跳过签名（不标红），之后才前进的运行在恢复签名密钥前或发布时失败。JDK、SDK 与 Gradle 缓存配置集中在 `.github/actions/setup-android-build`。发布纪律见 `docs/RELEASE_CHECKLIST.md`。
 - 并行代理只能领取互不重叠的文件或只读审查。整合后主代理必须复查完整 diff，并分别进行规范审查与需求审查。
 - 文档必须对应真实代码并明确当前状态；完成项及时收口。优先合并或删除重复、过期文档，不为一次性过程创建长期文档。
