@@ -1,34 +1,38 @@
-# 刷记（CardRecord）
+# CardRecord (刷记)
 
-刷记是一款本地优先的 Android 卡片消费笔数记录工具。它用于手动记录刷卡次数，并按年费统计窗口显示免年费进度。
+**English** | [简体中文](README.zh-CN.md)
 
-## 主要功能
+CardRecord is a local-first Android app for counting card swipes, so you can see how close each card is to an annual-fee waiver.
 
-- 管理多张卡片与文件夹，并可区分借记卡、信用卡
-- 记录有效期、下次年费结算日，以及信用卡的账单日和还款日
-- 按“下次结算日前一个日历年”统计有效消费笔数
-- 窗口尚未开始时不显示误导性的 `0 / N` 进度
-- 支持纯色、卡组织预设和用户图片三种卡面，以及横版/竖版布局
-- 长按删除前二次确认；删除卡片时同时删除其消费记录
-- 简体中文与 English
-- 通过系统文件选择器手动导入、导出包含 JSON 与自定义卡面的备份目录
+## Features
 
-## 隐私
+- Manage multiple debit and credit cards, grouped into folders
+- Track expiry, the next annual-fee date, and credit card statement and payment due days
+- Count purchases in the year before each annual-fee date and show waiver progress
+- Get a progress reminder about 30 and 10 days before the annual-fee date
+- Pick a solid color, a card network preset, or your own photo as the card face, in landscape or portrait
+- Import and export backups, custom card faces included
 
-应用没有账号和后端，数据保存在设备本地。系统云备份与设备迁移已关闭；只有用户主动导出时，数据才会离开应用私有存储。备份含明文卡片信息和自定义卡面，请妥善保管；成功导入后可删除导出的备份目录。
+## Download
 
-## 本地构建
+Requires Android 8.0 or later. Get the latest test build from [apk-latest](https://github.com/ChuwuYo/CardRecord/releases/tag/apk-latest); see the [changelog](docs/CHANGELOG.md) (Chinese) for what's new.
 
-需要 Android SDK 与 Java 17。仓库包含 Gradle Wrapper：
+## Privacy
+
+No account and no server: your data never leaves your phone unless you export a backup yourself. Backups hold unencrypted card details and card face images, so keep them safe; you can delete a backup once it has been imported.
+
+## Building
+
+Requires the Android SDK and Java 17:
 
 ```bash
 ./gradlew :app:assembleDebug
 ```
 
-正式发布使用仓库外保存的固定签名，流程见 [`docs/RELEASE_CHECKLIST.md`](docs/RELEASE_CHECKLIST.md)。架构与数据约束见 [`docs/Design.md`](docs/Design.md)。
+Signing and release steps are in [`docs/RELEASE_CHECKLIST.md`](docs/RELEASE_CHECKLIST.md); architecture and data rules are in [`docs/Design.md`](docs/Design.md) (both in Chinese).
 
-## 卡组织资源与商标
+## Card network artwork and trademarks
 
-Visa、Mastercard、JCB、American Express、Diners Club 与 Discover 的图形路径参考 [Simple Icons](https://simpleicons.org/) 对应条目并转换为 Android VectorDrawable；UnionPay / 银联闪付图形由项目内维护。
+The Visa, Mastercard, JCB, American Express, Diners Club, and Discover paths are based on the matching [Simple Icons](https://simpleicons.org/) entries, converted to Android VectorDrawables. The UnionPay / QuickPass artwork is maintained in this project.
 
-品牌名称与标识归各自权利人所有，本项目仅将其用于识别卡组织。资源许可与品牌使用要求以来源项目和权利人的最新条款为准。
+Brand names and logos belong to their respective owners and are used here only to identify card networks. Asset licenses and brand guidelines follow the latest terms of the source projects and rights holders.
