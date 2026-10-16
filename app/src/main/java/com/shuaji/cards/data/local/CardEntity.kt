@@ -9,8 +9,8 @@ import com.shuaji.cards.data.DateToken
 import java.time.Instant
 import java.time.ZoneId
 
-internal const val IMAGE_SOURCE_USER_KEY = "USER"
-internal const val CARD_ORIENTATION_LANDSCAPE_KEY = "LANDSCAPE"
+private const val IMAGE_SOURCE_USER_KEY = "USER"
+private const val CARD_ORIENTATION_LANDSCAPE_KEY = "LANDSCAPE"
 
 @Entity(
     tableName = "cards",
