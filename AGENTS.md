@@ -27,7 +27,7 @@
 - 从用户体验、数据不变量和失败语义出发，先修根因再抽象。只有出现真实重复规则或变化轴时才增加抽象，避免包装层和“架构感”代码。
 - 保持职责单一、依赖方向清楚、同一概念一个可测试真源；主动删除确认无调用的死代码、重复实现、错误或广告式注释。
 - 默认不写注释。约束优先落到类型、测试或 lint，让 CI 能拦住；评审里重复提过的要求同样落到代码，而不是写成注释。只有我们改不了的外部行为（平台或框架怪癖、第三方协议）才写注释，用中文说明现象与出处，不写修复过程、评审对话或历史。
-- 界面资源、公开 README 与 Changelog 使用用户语言，只描述能力、结果和可采取的操作，不暴露 schema、DTO、URI 等实现术语；`docs/Design.md`、本文件与发布清单才记录技术约束。
+- 界面资源、公开 README（`README.md` 与 `README.en.md` 同步修改）与 Changelog 使用用户语言，只描述能力、结果和可采取的操作，不暴露 schema、DTO、URI 等实现术语；`docs/Design.md`、本文件与发布清单才记录技术约束。
 - 所有界面文案进入 `values/strings.xml` 与 `values-en/strings.xml`，数量文案使用 `plurals`；两种语言的 key、quantity 和格式化参数必须同步。
 - 新增应用内语言：在 `AppLanguage` 加一项（`tag` 为 BCP-47，与 `res/xml/locales_config.xml` 一致），新建对应资源目录的 `strings.xml`（纯语言用 `values-en`，含区域用 `values-pt-rBR`，含脚本等其他子标签用 `values-b+zh+Hans`），并在 `locales_config.xml` 加对应 `<locale>`；设置页列表由 `AppLanguage.entries` 驱动。
 - Activity 之外（ViewModel、数据层、通知）解析文案必须使用 `AppLocales.localize(context)`：Android 12 及以下，AppCompat 的应用内语言只作用于 AppCompatActivity 的 Context。
