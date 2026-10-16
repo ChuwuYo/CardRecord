@@ -44,14 +44,14 @@
 - 下次结算日是日历日期令牌。有效窗口为 `[上一年同月日, 下次结算日)`，不是固定 365 天；窗口未开始时不计数也不允许记一笔。
 - 卡片有效期按用户本地日历日判断，进入次日后才算过期。
 - 禁止用 SQLite `REPLACE` 写被外键引用的父表。新卡可 `@Upsert`；编辑必须 `@Update` 并在目标已不存在时失败，不能复活已删除卡片。删除卡片必须二次确认并永久级联删除流水。
-- Room 升级必须显式迁移并 fail closed；新增或改列同步导出 `app/schemas/` 并补 `MigrationTest`，不得用 destructive fallback 掩盖缺失迁移。
+- Room 升级必须显式迁移并 fail closed；新增或改列同步导出 `app/schemas/`，不得用 destructive fallback 掩盖缺失迁移。
 - 备份只接受当前 schema `3` 的完整目录，不接受单 JSON 或 schema `1/2`。目录始终含 `cardrecord_backup.json`；仅当卡片实际引用图片时创建 `card_images/`，图片内容 ID 同时作为稳定引用与文件名真源，不另存“有无图片”或图片数量等派生字段。导入会核对引用、文件内容并复制回应用私有目录。任何字段、ID、归一化或写入路径变更都要验证导出、REPLACE、MERGE 与当前格式往返；多表导出取同一事务快照，导入写入保持单事务。备份 `settings` 只允许应用偏好（年费提醒开关），禁止写入系统通知权限；REPLACE 导入后须清空提醒去重/已排登记再应用开关，MERGE 不覆盖本机提醒开关。
 - 年费进度本地提醒：开关与去重在 SharedPreferences；调度边界与失败语义见 `docs/Design.md` §10。改提醒行为时按「用户体验 / 数据不变量 / 失败语义」三条一起核对，不要只改一条路径。
 
 ## 测试、审查与交付
 
 - 测试使用 JUnit4、Robolectric、Room in-memory 与 `kotlinx-coroutines-test`。静态编译、单测、Lint、构建、模拟器/真机和云端 CI 是不同验证层级，只报告实际完成的层级。
-- 只测试坏了用户看不出、但会丢数据或算错的数据层行为：备份格式与导入导出、Room 迁移与 Repository 写入语义、年费周期与提醒日期计算、图片存储。不写 ViewModel、界面、主题、动画或框架行为测试，也不为覆盖率或单次回归补测试；界面行为用当前提交构建的 APK 真机验证；`apk-latest` 只代表 `main` 已发布的包。
+- 只测试坏了用户看不出、但会丢数据或算错的数据层行为：备份格式与导入导出、Repository 写入语义、年费周期与提醒日期计算、图片存储。不写 ViewModel、界面、主题、动画或框架行为测试，也不为覆盖率或单次回归补测试；界面行为用当前提交构建的 APK 真机验证；`apk-latest` 只代表 `main` 已发布的包。
 - `ci-release.yml` 以单一 `verify → build-sign → publish` 依赖链执行验证与发布；所有 push / PR / 手动运行先执行无密钥验证，仅验证通过且仍是 `main` 头的 `main` push 或手动运行继续签名并更新滚动测试包；verify 结束时 `main` 已前进的运行软跳过签名（不标红），之后才前进的运行在恢复签名密钥前或发布时失败。JDK、SDK 与 Gradle 缓存配置集中在 `.github/actions/setup-android-build`。发布纪律见 `docs/RELEASE_CHECKLIST.md`。
 - 并行代理只能领取互不重叠的文件或只读审查。整合后主代理必须复查完整 diff，并分别进行规范审查与需求审查。
 - 文档必须对应真实代码并明确当前状态；完成项及时收口。优先合并或删除重复、过期文档，不为一次性过程创建长期文档。
