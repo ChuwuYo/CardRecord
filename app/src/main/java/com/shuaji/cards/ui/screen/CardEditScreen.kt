@@ -775,12 +775,12 @@ private fun CardEditLoadScaffold(
     }
 }
 
-internal data class CardNetworkPickerPresentation(
+private data class CardNetworkPickerPresentation(
     val visible: Boolean,
     val selectedKey: String?,
 )
 
-internal fun resolveCardNetworkPickerPresentation(
+private fun resolveCardNetworkPickerPresentation(
     sourceType: ImageSourceType,
     selectedKey: String?,
 ): CardNetworkPickerPresentation =

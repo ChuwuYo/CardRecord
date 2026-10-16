@@ -560,16 +560,16 @@ private const val DRAFT_KEY = "card_edit_draft"
 
 internal fun normalizeAnnualDueDate(date: LocalDate): LocalDate = DateToken.normalizeAnnualDate(date)
 
-internal fun validateNextDue(
+private fun validateNextDue(
     date: LocalDate,
     today: LocalDate,
 ): CardEditValidation? = if (date.isAfter(today)) null else CardEditValidation.NEXT_DUE_MUST_BE_FUTURE
 
-internal fun isOptionalCardMonthDayValid(input: String): Boolean = input.isBlank() || parseCardMonthDay(input) != null
+private fun isOptionalCardMonthDayValid(input: String): Boolean = input.isBlank() || parseCardMonthDay(input) != null
 
-internal fun parseCardMonthDay(input: String): Int? = input.toIntOrNull()?.takeIf(Int::isValidCardMonthDay)
+private fun parseCardMonthDay(input: String): Int? = input.toIntOrNull()?.takeIf(Int::isValidCardMonthDay)
 
-internal fun persistedCardMonthDay(
+private fun persistedCardMonthDay(
     cardType: CardType,
     input: String,
 ): Int? = if (cardType == CardType.CREDIT) parseCardMonthDay(input) else null

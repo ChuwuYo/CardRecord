@@ -162,7 +162,7 @@ private fun CardListItemContent(
     }
 }
 
-internal fun resolveCardVisualWidthFraction(
+private fun resolveCardVisualWidthFraction(
     compact: Boolean,
     portrait: Boolean,
 ): Float =

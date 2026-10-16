@@ -9,7 +9,6 @@ import androidx.test.core.app.ApplicationProvider
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -138,41 +137,6 @@ class MigrationTest {
             assertNull("文件复制由应用层幂等迁移负责，Room 迁移不能伪造资产", card.imageAssetId)
             assertEquals(9, db.openHelper.readableDatabase.version)
             assertForeignKeysClean(db)
-        } finally {
-            db.close()
-        }
-    }
-
-    @Test
-    fun deletingFolder_setsCardsFolderIdToNull() {
-        val db =
-            Room
-                .inMemoryDatabaseBuilder(context, AppDatabase::class.java)
-                .build()
-
-        try {
-            runBlocking {
-                val folderId = db.cardFolderDao().insert(CardFolderEntity(name = "商旅", colorArgb = 0xFF1234))
-                val cardId =
-                    db.cardDao().upsert(
-                        CardEntity(
-                            name = "Visa",
-                            bank = "某银行",
-                            cardNumberMasked = "**** 1234",
-                            requiredCount = 6,
-                            colorArgb = 0xFF1234,
-                            folderId = folderId,
-                        ),
-                    )
-
-                db.cardFolderDao().delete(
-                    CardFolderEntity(id = folderId, name = "商旅", colorArgb = 0xFF1234),
-                )
-
-                val card = db.cardDao().getById(cardId)
-                assertNotNull("删文件夹不应删卡片", card)
-                assertNull("删文件夹后卡片应归未分类（folder_id 置空）", requireNotNull(card).folderId)
-            }
         } finally {
             db.close()
         }

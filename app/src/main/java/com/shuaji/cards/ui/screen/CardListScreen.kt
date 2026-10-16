@@ -73,7 +73,6 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalResources
-import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -282,7 +281,7 @@ private fun ListTopBar(
 
 private const val LIST_SUBTITLE_MAX_LINES = 2
 
-internal val DEFAULT_CARD_FILTERS: List<CardFilter> =
+private val DEFAULT_CARD_FILTERS: List<CardFilter> =
     listOf(
         CardFilter.All,
         CardFilter.Debit,
@@ -290,7 +289,7 @@ internal val DEFAULT_CARD_FILTERS: List<CardFilter> =
         CardFilter.Unfiled,
     )
 
-internal fun cardFilterKey(filter: CardFilter): String =
+private fun cardFilterKey(filter: CardFilter): String =
     when (filter) {
         CardFilter.All -> "all"
         CardFilter.Debit -> "debit"
@@ -299,7 +298,7 @@ internal fun cardFilterKey(filter: CardFilter): String =
         is CardFilter.Folder -> "folder-${filter.folderId}"
     }
 
-internal fun resolveListTopBarMinimumHeight(
+private fun resolveListTopBarMinimumHeight(
     titleLineHeight: Dp,
     subtitleLineHeight: Dp,
 ): Dp = titleLineHeight + subtitleLineHeight * LIST_SUBTITLE_MAX_LINES + 20.dp
@@ -414,7 +413,7 @@ private fun FilterBar(
 }
 
 @Composable
-internal fun CardFilterSheetContent(
+private fun CardFilterSheetContent(
     state: ListUiState,
     onSelectFilter: (CardFilter) -> Unit,
     onManageFolders: () -> Unit,
@@ -452,8 +451,7 @@ internal fun CardFilterSheetContent(
                 modifier =
                     Modifier
                         .fillMaxSize()
-                        .selectableGroup()
-                        .testTag(FILTER_OPTIONS_LIST_TAG),
+                        .selectableGroup(),
             ) {
                 item(key = "filter-shortcuts") {
                     FilterShortcutSection(
@@ -680,7 +678,6 @@ private fun FilterScrollCue(
 
 private const val FILTER_SHEET_HEADER_ITEM_COUNT = 2
 private const val FILTER_SHORTCUT_COLUMN_COUNT = 2
-internal const val FILTER_OPTIONS_LIST_TAG = "card-filter-options"
 
 private val FILTER_SHEET_MAX_HEIGHT = 460.dp
 private val FILTER_FOLDER_ROW_HEIGHT = 52.dp
@@ -765,7 +762,7 @@ private fun FolderHeader(
     }
 }
 
-internal sealed interface CardGridCell {
+private sealed interface CardGridCell {
     val key: String
 
     data class Header(

@@ -52,8 +52,8 @@ import java.time.format.DateTimeFormatter
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 
-internal const val DEFAULT_MAX_BACKUP_BYTES: Long = 16L * 1024L * 1024L
-internal const val DEFAULT_MAX_BACKUP_IMAGE_BYTES: Long = 32L * 1024L * 1024L
+private const val DEFAULT_MAX_BACKUP_BYTES: Long = 16L * 1024L * 1024L
+private const val DEFAULT_MAX_BACKUP_IMAGE_BYTES: Long = 32L * 1024L * 1024L
 
 class BackupRepository internal constructor(
     private val context: Context,

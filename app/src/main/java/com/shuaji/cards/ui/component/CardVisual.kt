@@ -300,7 +300,7 @@ private fun PortraitCardBody(
 @Composable
 private fun cardSurfaceBrush(card: CardEntity): Brush = Brush.linearGradient(colors = resolveCardSurfaceColors(card.colorArgb))
 
-internal fun resolveCardSurfaceColors(colorArgb: Int): List<Color> {
+private fun resolveCardSurfaceColors(colorArgb: Int): List<Color> {
     val base = Color(colorArgb).copy(alpha = 1f)
     return listOf(
         base,
@@ -331,30 +331,30 @@ private fun CardImageLayer(
     }
 }
 
-internal fun shouldShowProviderDecoration(
+private fun shouldShowProviderDecoration(
     sourceType: ImageSourceType,
     networkPresent: Boolean,
 ): Boolean = sourceType == ImageSourceType.PROVIDER && networkPresent
 
-internal fun shouldShowNetworkBadge(
+private fun shouldShowNetworkBadge(
     sourceType: ImageSourceType,
     networkPresent: Boolean,
 ): Boolean = sourceType != ImageSourceType.USER && networkPresent
 
-internal data class CardContentPlacement(
+private data class CardContentPlacement(
     val start: Dp,
     val top: Dp,
     val bottom: Dp,
 )
 
-internal fun isCompactCardContent(contentLayout: CardVisualContentLayout): Boolean = contentLayout == CardVisualContentLayout.COMPACT
+private fun isCompactCardContent(contentLayout: CardVisualContentLayout): Boolean = contentLayout == CardVisualContentLayout.COMPACT
 
-internal fun resolveCardHeight(
+private fun resolveCardHeight(
     width: Dp,
     orientation: CardOrientation,
 ): Dp = width / orientation.aspectRatio
 
-internal fun resolveCompactCardMinimumHeight(
+private fun resolveCompactCardMinimumHeight(
     bankLineHeight: Dp,
     nameLineHeight: Dp,
     numberLineHeight: Dp?,
@@ -367,7 +367,7 @@ internal fun resolveCompactCardMinimumHeight(
         (numberLineHeight?.let { 2.dp + it } ?: 0.dp) +
         contentPlacement.bottom
 
-internal fun resolveCardContentPlacement(
+private fun resolveCardContentPlacement(
     contentLayout: CardVisualContentLayout,
     networkLayout: CardNetworkVisualLayout,
     badgeVisible: Boolean,
@@ -393,13 +393,13 @@ internal fun resolveCardContentPlacement(
         )
     }
 
-internal data class CardContentEndPaddings(
+private data class CardContentEndPaddings(
     val bankRow: Dp,
     val nameRow: Dp,
     val numberRow: Dp,
 )
 
-internal fun resolveCardContentEndPaddings(
+private fun resolveCardContentEndPaddings(
     sourceType: ImageSourceType,
     networkPresent: Boolean,
     networkLayout: CardNetworkVisualLayout,
@@ -474,7 +474,7 @@ private fun CardContent(
 }
 
 @Composable
-internal fun BankLabel(
+private fun BankLabel(
     card: CardEntity,
     modifier: Modifier = Modifier,
 ) {

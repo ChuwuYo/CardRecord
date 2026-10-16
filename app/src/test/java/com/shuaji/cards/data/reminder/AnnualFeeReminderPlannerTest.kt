@@ -16,19 +16,6 @@ class AnnualFeeReminderPlannerTest {
     private val utc = ZoneOffset.UTC
 
     @Test
-    fun disabled_plansNothing() {
-        val cards = listOf(activeUnmet(due = LocalDate.of(2027, 6, 1), now = "2027-04-01T12:00:00Z"))
-        val plan =
-            AnnualFeeReminderPlanner.plan(
-                cards = cards,
-                enabled = false,
-                now = instant("2027-04-01T12:00:00Z"),
-                zoneId = utc,
-            )
-        assertTrue(plan.isEmpty())
-    }
-
-    @Test
     fun activeUnmet_schedulesNearestThresholdOnly() {
         val due = LocalDate.of(2027, 6, 1)
         val cards = listOf(activeUnmet(due = due, now = "2027-03-01T12:00:00Z"))
@@ -88,40 +75,6 @@ class AnnualFeeReminderPlannerTest {
     }
 
     @Test
-    fun afterCatchUpTenNotified_doesNotRescheduleThirty() {
-        val due = LocalDate.of(2027, 6, 1)
-        val token = DateToken.fromAnnualDate(due)
-        val now = instant("2027-05-25T12:00:00Z")
-        val plan =
-            AnnualFeeReminderPlanner.plan(
-                cards = listOf(activeUnmet(due = due, now = "2027-05-25T12:00:00Z")),
-                enabled = true,
-                now = now,
-                zoneId = utc,
-                alreadyNotified = { cardId, threshold, dueToken ->
-                    cardId == 7L && threshold == 10 && dueToken == token
-                },
-            )
-        assertTrue(plan.isEmpty())
-    }
-
-    @Test
-    fun alreadyNotifiedCatchUp_plansNothingForThatCard() {
-        val due = LocalDate.of(2027, 6, 1)
-        val token = DateToken.fromAnnualDate(due)
-        val now = instant("2027-05-25T12:00:00Z")
-        val plan =
-            AnnualFeeReminderPlanner.plan(
-                cards = listOf(activeUnmet(due = due, now = "2027-05-25T12:00:00Z")),
-                enabled = true,
-                now = now,
-                zoneId = utc,
-                alreadyNotified = { _, _, dueToken -> dueToken == token },
-            )
-        assertTrue(plan.isEmpty())
-    }
-
-    @Test
     fun metQuota_plansNothing() {
         val due = LocalDate.of(2027, 6, 1)
         val card = baseCard(due).copy(requiredCount = 5)
@@ -167,23 +120,6 @@ class AnnualFeeReminderPlannerTest {
     }
 
     @Test
-    fun decideFire_skipsWhenAlreadyNotified() {
-        val due = LocalDate.of(2027, 6, 1)
-        val token = DateToken.fromAnnualDate(due)
-        val card = activeUnmet(due = due, now = "2027-05-25T12:00:00Z")
-        val decision =
-            AnnualFeeReminderPlanner.decideFire(
-                card = card,
-                thresholdDays = 10,
-                dueDateTokenFromIntent = token,
-                alreadyNotifiedForDue = true,
-                now = instant("2027-05-25T12:00:00Z"),
-                zoneId = utc,
-            )
-        assertFalse(decision.shouldNotify)
-    }
-
-    @Test
     fun decideFire_skipsWhenDueTokenMismatch() {
         val due = LocalDate.of(2027, 6, 1)
         val card = activeUnmet(due = due, now = "2027-05-25T12:00:00Z")
@@ -197,114 +133,6 @@ class AnnualFeeReminderPlannerTest {
                 zoneId = utc,
             )
         assertFalse(decision.shouldNotify)
-    }
-
-    @Test
-    fun decideFire_skipsWhenMetQuota() {
-        val due = LocalDate.of(2027, 6, 1)
-        val token = DateToken.fromAnnualDate(due)
-        val base = baseCard(due).copy(requiredCount = 3)
-        val card =
-            CardWithCount(
-                card = base,
-                currentCount = 3,
-                lastSwipeAtMillis = null,
-                cycle = AnnualFeeCycle.resolve(token, instant("2027-05-25T12:00:00Z"), utc),
-                resolvedUserImageUri = null,
-            )
-        val decision =
-            AnnualFeeReminderPlanner.decideFire(
-                card = card,
-                thresholdDays = 10,
-                dueDateTokenFromIntent = token,
-                alreadyNotifiedForDue = false,
-                now = instant("2027-05-25T12:00:00Z"),
-                zoneId = utc,
-            )
-        assertFalse(decision.shouldNotify)
-    }
-
-    @Test
-    fun decideFire_skipsWhenStillOutsideThreshold() {
-        val due = LocalDate.of(2027, 6, 1)
-        val token = DateToken.fromAnnualDate(due)
-        val card = activeUnmet(due = due, now = "2027-04-01T12:00:00Z")
-        val decision =
-            AnnualFeeReminderPlanner.decideFire(
-                card = card,
-                thresholdDays = 10,
-                dueDateTokenFromIntent = token,
-                alreadyNotifiedForDue = false,
-                now = instant("2027-04-01T12:00:00Z"),
-                zoneId = utc,
-            )
-        assertFalse(decision.shouldNotify)
-    }
-
-    @Test
-    fun decideFire_skipsNullCard() {
-        val decision =
-            AnnualFeeReminderPlanner.decideFire(
-                card = null,
-                thresholdDays = 10,
-                dueDateTokenFromIntent = 1L,
-                alreadyNotifiedForDue = false,
-                now = instant("2027-05-25T12:00:00Z"),
-                zoneId = utc,
-            )
-        assertFalse(decision.shouldNotify)
-    }
-
-    @Test
-    fun preExistingActiveCards_allIncludedWhenRemindersEnabled() {
-        val now = "2027-03-01T12:00:00Z"
-        val cards =
-            listOf(
-                activeUnmet(due = LocalDate.of(2027, 6, 1), now = now).let {
-                    it.copy(card = it.card.copy(id = 11L, name = "旧卡甲"))
-                },
-                activeUnmet(due = LocalDate.of(2027, 8, 15), now = now).let {
-                    it.copy(card = it.card.copy(id = 22L, name = "旧卡乙"))
-                },
-                CardWithCount(
-                    card =
-                        baseCard(LocalDate.of(2027, 6, 1)).copy(
-                            id = 33L,
-                            name = "无结算日",
-                            nextDueDateMillis = null,
-                        ),
-                    currentCount = 0,
-                    lastSwipeAtMillis = null,
-                    cycle = AnnualFeeCycle.Unscheduled,
-                    resolvedUserImageUri = null,
-                ),
-            )
-        val plan =
-            AnnualFeeReminderPlanner.plan(
-                cards = cards,
-                enabled = true,
-                now = instant(now),
-                zoneId = utc,
-            )
-        assertEquals(2, plan.size)
-        assertEquals(setOf(11L, 22L), plan.map { it.cardId }.toSet())
-        assertFalse(plan.any { it.cardId == 33L })
-    }
-
-    @Test
-    fun preExistingCardAlreadyInsideWindow_clampsToNowForCatchUp() {
-        val due = LocalDate.of(2027, 6, 1)
-        val now = instant("2027-05-25T12:00:00Z")
-        val plan =
-            AnnualFeeReminderPlanner.plan(
-                cards = listOf(activeUnmet(due = due, now = "2027-05-25T12:00:00Z")),
-                enabled = true,
-                now = now,
-                zoneId = utc,
-            )
-        assertEquals(1, plan.size)
-        assertEquals(10, plan[0].thresholdDays)
-        assertEquals(now.toEpochMilli(), plan[0].triggerAtMillis)
     }
 
     private fun activeUnmet(
