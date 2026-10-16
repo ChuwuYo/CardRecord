@@ -455,7 +455,7 @@ class ContentResolverUserCardImageStore(
     }
 }
 
-internal const val DEFAULT_MAX_USER_IMAGE_BYTES: Long = 32L * 1024L * 1024L
+private const val DEFAULT_MAX_USER_IMAGE_BYTES: Long = 32L * 1024L * 1024L
 
 private fun ByteArray.toLowerHex(): String = joinToString(separator = "") { byte -> "%02x".format(byte.toInt() and 0xFF) }
 
