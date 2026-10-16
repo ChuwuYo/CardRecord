@@ -70,7 +70,7 @@ internal data class ProviderDecorationLayout(
         }
 }
 
-internal fun ProviderDecorationLayout.scaledFromTopEnd(scale: Float): ProviderDecorationLayout =
+private fun ProviderDecorationLayout.scaledFromTopEnd(scale: Float): ProviderDecorationLayout =
     copy(
         watermarkWidth = watermarkWidth * scale,
         watermarkHeight = watermarkHeight * scale,
