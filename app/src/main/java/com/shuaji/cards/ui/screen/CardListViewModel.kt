@@ -193,7 +193,7 @@ class CardListViewModel(
     }
 }
 
-internal fun normalizeCardFilter(
+private fun normalizeCardFilter(
     filter: CardFilter,
     folders: List<CardFolderEntity>,
 ): CardFilter =
@@ -223,7 +223,7 @@ private fun CardWithCount.toCardUi(
         cycle = cycle,
     )
 
-internal fun calculateOverallProgress(cards: List<CardUi>): OverallProgress {
+private fun calculateOverallProgress(cards: List<CardUi>): OverallProgress {
     val participants = cards.filter { it.cycle.participatesInProgress && it.card.requiredCount > 0 }
     val required = participants.sumOf { it.card.requiredCount.toLong() }
     val current = participants.sumOf { minOf(it.currentCount, it.card.requiredCount).toLong() }
@@ -236,7 +236,7 @@ internal fun calculateOverallProgress(cards: List<CardUi>): OverallProgress {
     )
 }
 
-internal fun sortCardsForOverall(cards: List<CardUi>): List<CardUi> =
+private fun sortCardsForOverall(cards: List<CardUi>): List<CardUi> =
     cards.sortedWith(
         compareBy<CardUi> { cycleRank(it.cycle) }
             .thenBy { it.card.requiredCount == 0 }
@@ -256,7 +256,7 @@ private fun cycleRank(cycle: AnnualFeeCycle): Int =
 private fun cappedProgressRatio(card: CardUi): Double =
     if (card.card.requiredCount <= 0) 0.0 else (card.currentCount.toDouble() / card.card.requiredCount).coerceAtMost(1.0)
 
-internal fun groupCardsForList(
+private fun groupCardsForList(
     cards: List<CardUi>,
     folders: List<CardFolderEntity>,
     filter: CardFilter,
