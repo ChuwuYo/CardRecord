@@ -121,7 +121,7 @@ Room v9 有三张表：
 
 - 重建父表时先处理/重连子表外键，不能依赖事务内无效的 `PRAGMA foreign_keys=OFF`。
 - 历史文件夹、卡片和流水必须保留；悬空 folder 引用可归一化为 `NULL`。
-- 当前 schema 导出到 `app/schemas/`；任何列、约束或索引变化都要同步迁移、schema 与 `MigrationTest`。
+- 当前 schema 导出到 `app/schemas/`；任何列、约束或索引变化都要同步迁移与 schema。
 
 ## 9. 设置、国际化与主题
 
@@ -159,7 +159,7 @@ Room v9 有三张表：
 
 ## 11. 验证与发布边界
 
-- JVM 测试只覆盖坏了用户看不出的数据层：周期、日期、迁移、Repository、备份、提醒规划与图片存储；Robolectric + Room in-memory 验证 Android/数据库边界。ViewModel 与界面不写测试，以当前提交构建的 APK 真机验证。
+- JVM 测试只覆盖坏了用户看不出的数据层：周期、日期、Repository、备份、提醒规划与图片存储；Robolectric + Room in-memory 验证 Android/数据库边界。ViewModel 与界面不写测试，以当前提交构建的 APK 真机验证。
 - `ktlint`、单测、Lint、构建、模拟器/真机和 GitHub Actions 是不同证据层级，报告时必须区分。
 - 单一 CI 工作流对 push / PR / 手动运行执行格式、单测与 Debug/Release Lint；签名 job 通过 `needs` 依赖同一提交的验证结果。正式签名 Secrets 只注入验证通过且仍为当前头的 `main` push 或手动运行的签名步骤，发布写权限再隔离到后续 job；密钥材料不进入仓库或构建 artifact。仓库规则与受保护 Environment 属于 GitHub 侧权限边界，不能由应用代码替代。
 - `apk-latest` 只由 `main` 头的提交更新。`main` 上的运行共用一个不取消进行中运行的并发组：同时最多一个在跑、一个排队，新的 `main` 运行会取代排队中的旧运行；验证结束、恢复签名密钥前、上传前、删除旧 APK 前和移动 tag 前各核对一次 `main` 头；验证结束时已过期只软跳过签名，之后才过期的运行直接失败。这些是时点检查，用来拦住已被取代的运行和旧运行的 Re-run，不是原子锁。新 APK 先以本次运行独有的名字上传，下载核对 SHA-256 与构建产物一致后才删除旧 APK 并改名为固定的 `app-release.apk`，因此上传或校验失败都不会丢失旧包；最后断言 tag 指向本提交且只剩一个 APK。
