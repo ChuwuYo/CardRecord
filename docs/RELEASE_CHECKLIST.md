@@ -6,7 +6,7 @@
 
 - [ ] `./gradlew ktlintCheck :app:testDebugUnitTest :app:lintDebug :app:lintRelease` 通过
 - [ ] 简中/英文资源 key 与格式化参数一致，无用户可见硬编码文案
-- [ ] Room schema、迁移测试与备份 schema 3 已核对；零图片/有图片目录布局、图片恢复、旧版本与单 JSON 拒绝路径均通过
+- [ ] Room schema 与备份 schema 3 已核对；零图片/有图片目录布局、图片恢复、旧版本与单 JSON 拒绝路径均通过
 - [ ] main 源码没有遗留 TODO/FIXME、Debug 入口、临时日志或生成产物
 - [ ] `docs/CHANGELOG.md` 的 Unreleased 已准确描述用户可感知变化
 
