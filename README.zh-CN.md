@@ -15,7 +15,7 @@
 
 ## 下载
 
-需要 Android 8.0 及以上。最新测试版（随 `main` 每次改动自动构建）见 [apk-latest](https://github.com/ChuwuYo/CardRecord/releases/tag/apk-latest)，更新内容见 [更新日志](docs/CHANGELOG.md)。
+需要 Android 8.0 及以上。最新测试版见 [apk-latest](https://github.com/ChuwuYo/CardRecord/releases/tag/apk-latest)，更新内容见 [更新日志](docs/CHANGELOG.md)。
 
 ## 隐私
 
