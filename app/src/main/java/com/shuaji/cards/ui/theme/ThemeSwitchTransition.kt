@@ -34,7 +34,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.math.hypot
 
-internal const val THEME_REVEAL_DURATION_MILLIS = 400
+private const val THEME_REVEAL_DURATION_MILLIS = 400
 private const val THEME_SNAPSHOT_TIMEOUT_MILLIS = 250L
 
 private class PressPosition {
