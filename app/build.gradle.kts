@@ -109,10 +109,10 @@ dependencies {
     implementation("androidx.core:core-ktx:1.18.0")
     // 应用内语言切换依赖 AppCompatDelegate.setApplicationLocales。
     implementation("androidx.appcompat:appcompat:1.8.0")
-    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.11.0")
-    implementation("androidx.lifecycle:lifecycle-process:2.11.0")
-    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.11.0")
-    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.11.0")
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.10.0")
+    implementation("androidx.lifecycle:lifecycle-process:2.10.0")
+    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.10.0")
+    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.10.0")
     implementation("androidx.activity:activity-compose:1.13.0")
     implementation(platform("org.jetbrains.kotlinx:kotlinx-coroutines-bom:1.11.0"))
     implementation(platform("androidx.compose:compose-bom:2026.06.01"))
@@ -126,9 +126,9 @@ dependencies {
     implementation("androidx.room:room-ktx:2.8.5")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.12.0")
     implementation("androidx.datastore:datastore-preferences:1.3.0")
-    implementation("io.coil-kt.coil3:coil-compose:3.6.3")
+    implementation("io.coil-kt.coil3:coil-compose:3.5.0")
     // HSV 取色器。
-    implementation("com.github.skydoves:colorpicker-compose:1.3.0")
+    implementation("com.github.skydoves:colorpicker-compose:1.2.0")
     // 种子色生成 Material 3 HCT 色板。
     implementation("com.materialkolor:material-kolor:2.1.1")
     debugImplementation("androidx.compose.ui:ui-tooling")
