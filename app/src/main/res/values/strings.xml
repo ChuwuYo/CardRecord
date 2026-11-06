@@ -95,6 +95,7 @@
     <string name="reminder_channel_name">年费进度提醒</string>
     <string name="reminder_channel_description">未刷满年费笔数时的本地提醒</string>
     <string name="reminder_notification_title">年费进度提醒</string>
+    <string name="reminder_notification_public_text">有卡片的年费进度需要关注</string>
     <plurals name="reminder_notification_body">
         <item quantity="one">%1$s %2$s：距结算日约还剩 %3$d 天，当前 %4$d / %5$d 笔</item>
         <item quantity="other">%1$s %2$s：距结算日约还剩 %3$d 天，当前 %4$d / %5$d 笔</item>
