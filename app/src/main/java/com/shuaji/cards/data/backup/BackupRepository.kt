@@ -8,6 +8,7 @@ import android.util.Log
 import androidx.room.withTransaction
 import com.shuaji.cards.R
 import com.shuaji.cards.core.AppLocales
+import com.shuaji.cards.data.DateToken
 import com.shuaji.cards.data.ImageAssetId
 import com.shuaji.cards.data.StagedUserImage
 import com.shuaji.cards.data.UserCardImageStore
@@ -720,7 +721,9 @@ private fun BackupBundle.hasValidStructure(): Boolean {
                 (card.imageAssetId == null || ImageAssetId.parse(card.imageAssetId) != null) &&
                 parsedType != null &&
                 (card.statementDay == null || card.statementDay.isValidCardMonthDay()) &&
-                (card.repaymentDay == null || card.repaymentDay.isValidCardMonthDay())
+                (card.repaymentDay == null || card.repaymentDay.isValidCardMonthDay()) &&
+                (card.validUntilMillis == null || DateToken.isSupported(card.validUntilMillis)) &&
+                (card.nextDueDateMillis == null || DateToken.isSupported(card.nextDueDateMillis))
         } &&
         transactions.all { it.cardId > 0L }
 }
